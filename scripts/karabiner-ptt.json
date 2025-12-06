@@ -2,14 +2,14 @@
   "title": "Whisper Go Push-to-Talk",
   "rules": [
     {
-      "description": "Cmd+Shift+K: Push-to-Talk für Spracheingabe",
+      "description": "Fn+Space: Push-to-Talk für Spracheingabe",
       "manipulators": [
         {
           "type": "basic",
           "from": {
-            "key_code": "k",
+            "key_code": "spacebar",
             "modifiers": {
-              "mandatory": ["command", "shift"]
+              "mandatory": ["fn"]
             }
           },
           "to": [

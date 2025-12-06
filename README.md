@@ -76,8 +76,8 @@ Für echtes Push-to-Talk (Taste halten = Aufnahme, loslassen = einfügen):
 
 **Nutzung (Push-to-Talk):**
 
-- ⌘⇧K halten → Aufnahme läuft
-- ⌘⇧K loslassen → Transkript wird eingefügt
+- **Fn+Space** halten → Aufnahme läuft
+- **Fn+Space** loslassen → Transkript wird eingefügt
 
 > **Hinweis:** Die Karabiner-Rule sendet intern ⌥⌥, daher muss in Raycast "Double-Tap Right Option" als Hotkey gesetzt sein.
 
