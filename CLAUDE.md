@@ -2,44 +2,50 @@
 
 ## Projekt-Übersicht
 
-**whisper_go** – CLI-Tool für Audio-Transkription mit OpenAI Whisper (API + lokal).
+**whisper_go** – Minimalistische Spracheingabe für macOS, inspiriert von [Wispr Flow](https://wisprflow.ai).
+
+Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
 
 ## Architektur
 
 ```
 whisper_go/
-├── transcribe.py      # Einziger Einstiegspunkt (CLI)
+├── transcribe.py      # CLI für Transkription
 ├── requirements.txt   # Dependencies
 ├── README.md          # Benutzer-Dokumentation
 ├── CLAUDE.md          # Diese Datei
 └── docs/
-    └── doc.md         # Ursprüngliche Planungs-Doku
+    └── VISION.md      # Produkt-Vision & Roadmap
 ```
 
 ## Kern-Datei: `transcribe.py`
 
 **Funktionen:**
 
-- `record_audio()` – Mikrofon-Aufnahme mit sounddevice
-- `copy_to_clipboard()` – Text in Zwischenablage (pyperclip)
-- `transcribe_api()` – OpenAI API Transkription
-- `transcribe_local()` – Lokales Whisper-Modell
-- `main()` – CLI-Argument-Handling
+| Funktion                | Zweck                                  |
+| ----------------------- | -------------------------------------- |
+| `record_audio()`        | Mikrofon-Aufnahme mit sounddevice      |
+| `transcribe()`          | Zentrale API – wählt Modus automatisch |
+| `transcribe_with_api()` | OpenAI API Transkription               |
+| `transcribe_locally()`  | Lokales Whisper-Modell                 |
+| `parse_args()`          | CLI-Argument-Handling                  |
 
 **Design-Entscheidungen:**
 
 - Lazy Imports: `openai`, `whisper`, `sounddevice` werden erst bei Bedarf importiert
 - Stderr für Status, Stdout nur für Output → saubere Pipe-Nutzung
 - Eine Datei statt mehrere → KISS-Prinzip
+- Flache Struktur mit Early Returns
 
 ## CLI-Interface
 
 ```bash
 # Datei transkribieren
-python transcribe.py <audio> --mode api|local [--model X] [--language X] [--format X]
+python transcribe.py audio.mp3
+python transcribe.py audio.mp3 --mode local --model large
 
 # Mikrofon-Aufnahme
-python transcribe.py --record --mode api|local [--model X] [--language X]
+python transcribe.py --record --copy --language de
 ```
 
 ## Dependencies
@@ -63,12 +69,4 @@ python transcribe.py --record --mode api|local [--model X] [--language X]
 - Keine unnötigen Abstraktionen
 - Fehler → stderr, Ergebnis → stdout
 - Deutsche CLI-Ausgaben (Zielgruppe)
-
-## Erweiterungsmöglichkeiten
-
-Falls gewünscht, könnten ergänzt werden:
-
-- `--translate` Flag für Übersetzung nach Englisch
-- Batch-Verarbeitung mehrerer Dateien
-- Web-UI mit Streamlit
-- Live-Streaming-Transkription
+- Atomare, kleine Commits
