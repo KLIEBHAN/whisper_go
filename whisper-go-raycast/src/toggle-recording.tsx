@@ -214,7 +214,19 @@ export default async function Command(): Promise<void> {
     return;
   }
 
+  // Prüfe ob Aufnahme läuft: PID-Datei muss existieren UND Prozess muss leben
+  let isRecording = false;
   if (existsSync(IPC.pid)) {
+    try {
+      const pid = parseInt(readFileSync(IPC.pid, "utf-8").trim(), 10);
+      isRecording = Number.isInteger(pid) && pid > 0 && isProcessAlive(pid);
+    } catch {
+      // PID-Datei nicht lesbar → keine Aufnahme
+    }
+    if (!isRecording) deleteIfExists(IPC.pid); // Verwaiste PID-Datei aufräumen
+  }
+
+  if (isRecording) {
     await stopRecording();
   } else {
     await startRecording(prefs);
