@@ -101,6 +101,10 @@ def record_audio() -> Path:
 
     log("✅ Aufnahme beendet.")
 
+    # Leere Aufnahme abfangen – passiert wenn User sofort Enter drückt
+    if not recorded_chunks:
+        raise ValueError("Keine Audiodaten aufgenommen. Bitte länger aufnehmen.")
+
     # Chunks zusammenfügen und als WAV speichern
     audio_data = np.concatenate(recorded_chunks)
     output_path = Path(tempfile.gettempdir()) / TEMP_RECORDING_FILENAME
