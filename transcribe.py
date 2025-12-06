@@ -43,11 +43,21 @@ def error(message: str) -> None:
 
 
 def load_environment() -> None:
-    """Lädt .env-Datei falls python-dotenv installiert ist."""
+    """
+    Lädt .env-Datei falls python-dotenv installiert ist.
+    Sucht in: 1) Script-Verzeichnis (Symlinks aufgelöst), 2) Aktuelles Verzeichnis
+    """
     try:
         from dotenv import load_dotenv
 
-        load_dotenv()
+        # .env im Script-Verzeichnis (resolve() folgt Symlinks)
+        script_dir = Path(__file__).resolve().parent
+        env_file = script_dir / ".env"
+        if env_file.exists():
+            load_dotenv(env_file)
+        else:
+            # Fallback: aktuelles Verzeichnis
+            load_dotenv()
     except ImportError:
         pass
 

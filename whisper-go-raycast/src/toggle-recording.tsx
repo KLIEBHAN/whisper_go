@@ -18,6 +18,7 @@ interface Preferences {
   pythonPath: string;
   scriptPath: string;
   language: string;
+  openaiApiKey: string;
 }
 
 /**
@@ -41,17 +42,12 @@ function findPythonPath(): string | null {
 }
 
 /**
- * Findet transcribe.py relativ zum Extension-Ordner.
- * Pfad: assetsPath → dist → whisper-go-raycast → whisper_go/transcribe.py
+ * Findet transcribe.py via Symlink im assets-Ordner.
+ * Der Symlink wird automatisch bei `npm install` erstellt (postinstall-Script).
  */
 function findScriptPath(): string | null {
   if (environment.assetsPath) {
-    // assets → dist → extension → parent (wo transcribe.py liegt)
-    const distDir = dirname(environment.assetsPath);
-    const extDir = dirname(distDir);
-    const parentDir = dirname(extDir);
-    const scriptPath = join(parentDir, "transcribe.py");
-
+    const scriptPath = join(environment.assetsPath, "transcribe.py");
     if (existsSync(scriptPath)) {
       return scriptPath;
     }
@@ -67,6 +63,7 @@ function resolvePreferences(prefs: Preferences): Preferences {
     pythonPath: prefs.pythonPath || findPythonPath() || "",
     scriptPath: prefs.scriptPath || findScriptPath() || "",
     language: prefs.language,
+    openaiApiKey: prefs.openaiApiKey || "",
   };
 }
 
@@ -160,10 +157,16 @@ async function startRecording(prefs: Preferences): Promise<void> {
     args.push("--language", prefs.language);
   }
 
+  // Umgebungsvariablen: API-Key aus Preference überschreibt .env
+  const env = { ...process.env };
+  if (prefs.openaiApiKey) {
+    env.OPENAI_API_KEY = prefs.openaiApiKey;
+  }
+
   const child = spawn(prefs.pythonPath, args, {
     detached: true,
     stdio: "ignore",
-    env: { ...process.env },
+    env,
   });
 
   child.unref();

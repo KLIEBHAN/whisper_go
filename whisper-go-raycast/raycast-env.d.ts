@@ -13,7 +13,9 @@ type ExtensionPreferences = {
   /** Script Pfad - Pfad zu transcribe.py (leer = Auto-Detect) */
   "scriptPath": string,
   /** Sprache - Sprachcode für Transkription */
-  "language": "de" | "en" | ""
+  "language": "de" | "en" | "",
+  /** OpenAI API Key - API-Key für Transkription (leer = aus .env laden) */
+  "openaiApiKey": string
 }
 
 /** Preferences accessible in all the extension's commands */

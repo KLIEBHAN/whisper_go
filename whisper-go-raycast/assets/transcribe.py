@@ -1,0 +1,1 @@
+/Users/fabi/Documents/workspace/whisper_go/transcribe.py

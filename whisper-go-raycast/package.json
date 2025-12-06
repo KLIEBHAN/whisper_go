@@ -53,6 +53,14 @@
           "value": ""
         }
       ]
+    },
+    {
+      "name": "openaiApiKey",
+      "title": "OpenAI API Key",
+      "description": "API-Key für Transkription (leer = aus .env laden)",
+      "type": "password",
+      "required": false,
+      "default": ""
     }
   ],
   "dependencies": {
@@ -64,6 +72,7 @@
     "typescript": "^5.4.5"
   },
   "scripts": {
+    "postinstall": "ln -sf \"$(dirname \"$PWD\")/transcribe.py\" assets/transcribe.py 2>/dev/null || true",
     "build": "ray build --skip-types -e dist -o dist",
     "dev": "ray develop",
     "lint": "ray lint"
