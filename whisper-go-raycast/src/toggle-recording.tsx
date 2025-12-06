@@ -80,22 +80,22 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function findFirst(candidates: string[]): string | null {
-  return candidates.find(existsSync) ?? null;
-}
-
 // --- Auto-Detection ---
 
-function findScriptPath(): string | null {
-  if (!environment.assetsPath) return null;
-  const path = join(environment.assetsPath, "transcribe.py");
-  return existsSync(path) ? path : null;
-}
-
 function resolvePreferences(raw: Preferences): Preferences {
+  // Python: User-Preference oder erste existierende Candidate
+  const pythonPath = raw.pythonPath || PYTHON_CANDIDATES.find(existsSync) || "";
+
+  // Script: User-Preference oder via assetsPath (Symlink)
+  let scriptPath = raw.scriptPath;
+  if (!scriptPath && environment.assetsPath) {
+    const candidate = join(environment.assetsPath, "transcribe.py");
+    if (existsSync(candidate)) scriptPath = candidate;
+  }
+
   return {
-    pythonPath: raw.pythonPath || findFirst(PYTHON_CANDIDATES) || "",
-    scriptPath: raw.scriptPath || findScriptPath() || "",
+    pythonPath,
+    scriptPath: scriptPath || "",
     language: raw.language,
     openaiApiKey: raw.openaiApiKey || "",
   };
