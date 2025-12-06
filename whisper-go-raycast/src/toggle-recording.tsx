@@ -3,9 +3,12 @@ import {
   Clipboard,
   getPreferenceValues,
   closeMainWindow,
+  environment,
 } from "@raycast/api";
 import { spawn, spawnSync } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
+import { homedir } from "os";
+import { join, dirname } from "path";
 
 const PID_FILE = "/tmp/whisper_go.pid";
 const TRANSCRIPT_FILE = "/tmp/whisper_go.transcript";
@@ -15,6 +18,51 @@ interface Preferences {
   pythonPath: string;
   scriptPath: string;
   language: string;
+}
+
+/**
+ * Findet Python-Pfad automatisch (pyenv, homebrew, system).
+ */
+function findPythonPath(): string | null {
+  const candidates = [
+    join(homedir(), ".pyenv/shims/python3"),
+    join(homedir(), ".pyenv/shims/python"),
+    "/opt/homebrew/bin/python3",
+    "/usr/local/bin/python3",
+    "/usr/bin/python3",
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Findet transcribe.py relativ zum Extension-Ordner.
+ */
+function findScriptPath(): string | null {
+  // Extension liegt in whisper-go-raycast/, Script in parent
+  const extensionDir = environment.assetsPath.replace("/assets", "");
+  const candidate = join(dirname(extensionDir), "transcribe.py");
+
+  if (existsSync(candidate)) {
+    return candidate;
+  }
+  return null;
+}
+
+/**
+ * Resolved Preferences mit Auto-Detection für leere Werte.
+ */
+function resolvePreferences(prefs: Preferences): Preferences {
+  return {
+    pythonPath: prefs.pythonPath || findPythonPath() || "",
+    scriptPath: prefs.scriptPath || findScriptPath() || "",
+    language: prefs.language,
+  };
 }
 
 /**
@@ -189,7 +237,8 @@ async function stopRecording(): Promise<void> {
  * Toggle: Startet oder stoppt die Aufnahme je nach Status.
  */
 export default async function Command(): Promise<void> {
-  const prefs = getPreferenceValues<Preferences>();
+  const rawPrefs = getPreferenceValues<Preferences>();
+  const prefs = resolvePreferences(rawPrefs);
 
   // Konfiguration validieren
   const configError = validateConfig(prefs);

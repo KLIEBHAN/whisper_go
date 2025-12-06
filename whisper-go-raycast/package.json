@@ -19,17 +19,17 @@
     {
       "name": "pythonPath",
       "title": "Python Pfad",
-      "description": "Pfad zur Python-Installation (z.B. /usr/bin/python3)",
+      "description": "Pfad zur Python-Installation (leer = Auto-Detect)",
       "type": "textfield",
-      "required": true,
-      "default": "/usr/bin/python3"
+      "required": false,
+      "default": ""
     },
     {
       "name": "scriptPath",
       "title": "Script Pfad",
-      "description": "Pfad zu transcribe.py",
+      "description": "Pfad zu transcribe.py (leer = Auto-Detect)",
       "type": "textfield",
-      "required": true,
+      "required": false,
       "default": ""
     },
     {
