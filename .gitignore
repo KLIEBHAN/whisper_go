@@ -30,3 +30,6 @@ Thumbs.db
 *.mp3
 *.m4a
 !test_*.wav
+
+# Logs
+logs/
