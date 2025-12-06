@@ -55,13 +55,31 @@ npm install && npm run dev
 **Setup in Raycast:**
 
 1. "Toggle Recording" suchen
-2. ⌘+K → "Assign Hotkey" (z.B. ⌥+Space)
-3. In Extension Settings: Python- und Script-Pfad setzen
+2. ⌘+K → "Assign Hotkey" → **Double-Tap Right Option (⌥⌥)** empfohlen
+3. Python-/Script-Pfad werden automatisch erkannt
 
-**Nutzung:**
+**Nutzung (Toggle-Modus):**
 
-- Hotkey drücken → Aufnahme startet
-- Hotkey erneut → Transkript wird eingefügt
+- ⌥⌥ (doppelt tippen) → Aufnahme startet
+- ⌥⌥ (doppelt tippen) → Transkript wird eingefügt
+
+### Push-to-Talk mit Karabiner-Elements
+
+Für echtes Push-to-Talk (Taste halten = Aufnahme, loslassen = einfügen):
+
+1. [Karabiner-Elements](https://karabiner-elements.pqrs.org/) installieren
+2. Rule importieren:
+   ```bash
+   cp scripts/karabiner-ptt.json ~/.config/karabiner/assets/complex_modifications/
+   ```
+3. In Karabiner: Preferences → Complex Modifications → Add rule → "Whisper Go Push-to-Talk"
+
+**Nutzung (Push-to-Talk):**
+
+- ⌘⇧K halten → Aufnahme läuft
+- ⌘⇧K loslassen → Transkript wird eingefügt
+
+> **Hinweis:** Die Karabiner-Rule sendet intern ⌥⌥, daher muss in Raycast "Double-Tap Right Option" als Hotkey gesetzt sein.
 
 ## CLI-Nutzung
 
