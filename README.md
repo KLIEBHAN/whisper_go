@@ -21,11 +21,19 @@ pip install -r requirements.txt
 
 ### Zusätzliche Abhängigkeiten
 
-**Für API-Modus:**
+**Für API-Modus (OpenAI):**
 
 ```bash
 export OPENAI_API_KEY="dein_api_key"
 ```
+
+**Für Deepgram-Modus:**
+
+```bash
+export DEEPGRAM_API_KEY="dein_api_key"
+```
+
+> **Tipp:** Deepgram bietet 200$ Startguthaben für neue Accounts. [console.deepgram.com](https://console.deepgram.com)
 
 **Für lokalen Modus:**
 
@@ -113,14 +121,14 @@ python transcribe.py --record --copy   # direkt in Zwischenablage
 
 ### Optionen
 
-| Option              | Beschreibung                                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--mode api\|local` | API (default) oder lokales Whisper                                                                             |
-| `--record`, `-r`    | Mikrofon-Aufnahme statt Datei                                                                                  |
-| `--copy`, `-c`      | Ergebnis in Zwischenablage kopieren                                                                            |
-| `--model NAME`      | Modellname (API: `gpt-4o-transcribe`, `whisper-1`; Lokal: `tiny`, `base`, `small`, `medium`, `large`, `turbo`) |
-| `--language CODE`   | Sprachcode z.B. `de`, `en`                                                                                     |
-| `--format FORMAT`   | Output-Format: `text`, `json`, `srt`, `vtt` (nur API)                                                          |
+| Option                        | Beschreibung                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--mode api\|local\|deepgram` | API (default), lokales Whisper oder Deepgram                                                                                    |
+| `--record`, `-r`              | Mikrofon-Aufnahme statt Datei                                                                                                   |
+| `--copy`, `-c`                | Ergebnis in Zwischenablage kopieren                                                                                             |
+| `--model NAME`                | Modellname (API: `gpt-4o-transcribe`; Deepgram: `nova-3`, `nova-2`; Lokal: `tiny`, `base`, `small`, `medium`, `large`, `turbo`) |
+| `--language CODE`             | Sprachcode z.B. `de`, `en`                                                                                                      |
+| `--format FORMAT`             | Output-Format: `text`, `json`, `srt`, `vtt` (nur API)                                                                           |
 
 ### Beispiele
 
@@ -134,17 +142,27 @@ python transcribe.py interview.mp3 --language de --format srt
 # Schnelle lokale Transkription
 python transcribe.py meeting.wav --mode local --model tiny
 
+# Deepgram mit automatischer Formatierung
+python transcribe.py audio.mp3 --mode deepgram --language de
+
 # Aufnahme auf Deutsch, direkt in Zwischenablage
 python transcribe.py --record --language de --copy
 ```
 
 ## Modell-Auswahl
 
-### API-Modelle
+### API-Modelle (OpenAI)
 
 - `gpt-4o-transcribe` (Standard) – Beste Qualität
 - `gpt-4o-mini-transcribe` – Schneller, günstiger
 - `whisper-1` – Original Whisper
+
+### Deepgram-Modelle
+
+- `nova-3` (Standard) – Neuestes Modell, beste Qualität
+- `nova-2` – Bewährtes Modell, etwas günstiger
+
+**Features:** `smart_format` ist aktiviert – automatische Formatierung von Datum, Währung und Absätzen.
 
 ### Lokale Modelle
 

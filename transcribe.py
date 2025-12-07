@@ -24,6 +24,7 @@ WHISPER_SAMPLE_RATE = 16000
 
 DEFAULT_API_MODEL = "gpt-4o-transcribe"
 DEFAULT_LOCAL_MODEL = "turbo"
+DEFAULT_DEEPGRAM_MODEL = "nova-3"
 
 TEMP_RECORDING_FILENAME = "whisper_recording.wav"
 
@@ -243,6 +244,42 @@ def transcribe_with_api(
     return result
 
 
+def transcribe_with_deepgram(
+    audio_path: Path,
+    model: str,
+    language: str | None = None,
+) -> str:
+    """Transkribiert Audio über Deepgram API (smart_format aktiviert)."""
+    from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+
+    logger.info(f"Deepgram-Transkription: model={model}, language={language or 'auto'}")
+    logger.debug(f"Audio-Datei: {audio_path} ({audio_path.stat().st_size} bytes)")
+
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
+
+    client = DeepgramClient(api_key)
+
+    with audio_path.open("rb") as f:
+        payload: FileSource = {"buffer": f.read()}
+
+    options = PrerecordedOptions(
+        model=model,
+        language=language,
+        smart_format=True,
+        punctuate=True,
+    )
+
+    response = client.listen.rest.v("1").transcribe_file(payload, options)
+    result = response.results.channels[0].alternatives[0].transcript
+
+    logger.info(f"Transkription abgeschlossen ({len(result)} Zeichen)")
+    logger.debug(f"Ergebnis: {result[:100]}{'...' if len(result) > 100 else ''}")
+
+    return result
+
+
 def transcribe_locally(
     audio_path: Path,
     model: str,
@@ -269,19 +306,29 @@ def transcribe(
     response_format: str = "text",
 ) -> str:
     """
-    Zentrale Transkriptions-Funktion – wählt API oder lokal.
+    Zentrale Transkriptions-Funktion – wählt API, Deepgram oder lokal.
 
     Dies ist der einzige Einstiegspunkt für Transkription,
     unabhängig vom gewählten Modus.
     """
-    effective_model = model or (
-        DEFAULT_API_MODEL if mode == "api" else DEFAULT_LOCAL_MODEL
-    )
+    if model:
+        effective_model = model
+    elif mode == "api":
+        effective_model = DEFAULT_API_MODEL
+    elif mode == "deepgram":
+        effective_model = DEFAULT_DEEPGRAM_MODEL
+    else:
+        effective_model = DEFAULT_LOCAL_MODEL
 
     if mode == "api":
         return transcribe_with_api(
             audio_path, effective_model, language, response_format
         )
+
+    if mode == "deepgram":
+        if response_format != "text":
+            log("Hinweis: --format wird im Deepgram-Modus ignoriert")
+        return transcribe_with_deepgram(audio_path, effective_model, language)
 
     if response_format != "text":
         log("Hinweis: --format wird im lokalen Modus ignoriert")
@@ -292,12 +339,13 @@ def transcribe(
 def parse_args() -> argparse.Namespace:
     """Parst und validiert CLI-Argumente."""
     parser = argparse.ArgumentParser(
-        description="Audio transkribieren mit Whisper (API oder lokal)",
+        description="Audio transkribieren mit Whisper oder Deepgram",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
   %(prog)s audio.mp3
   %(prog)s audio.mp3 --mode local --model large
+  %(prog)s audio.mp3 --mode deepgram --language de
   %(prog)s --record --copy --language de
         """,
     )
@@ -315,11 +363,14 @@ Beispiele:
         "-c", "--copy", action="store_true", help="Ergebnis in Zwischenablage"
     )
     parser.add_argument(
-        "--mode", choices=["api", "local"], default="api", help="Transkriptions-Modus"
+        "--mode",
+        choices=["api", "local", "deepgram"],
+        default="api",
+        help="Transkriptions-Modus",
     )
     parser.add_argument(
         "--model",
-        help="Modellname (API: gpt-4o-transcribe; Lokal: tiny, base, small, medium, large, turbo)",
+        help="Modellname (API: gpt-4o-transcribe; Deepgram: nova-3, nova-2; Lokal: tiny, base, small, medium, large, turbo)",
     )
     parser.add_argument("--language", help="Sprachcode z.B. 'de', 'en'")
     parser.add_argument(
