@@ -451,7 +451,18 @@ def refine_transcript(
                 model=effective_model,
                 messages=[{"role": "user", "content": full_prompt}],
             )
-            result = response.choices[0].message.content.strip()
+            # content kann String, Liste von Parts oder None sein
+            content = response.choices[0].message.content
+            if content is None:
+                result = ""
+            elif isinstance(content, list):
+                # Liste von Content-Parts → Text-Parts extrahieren
+                result = "".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                ).strip()
+            else:
+                result = content.strip()
         else:
             # OpenAI responses API
             api_params = {"model": effective_model, "input": full_prompt}
@@ -478,6 +489,10 @@ def maybe_refine_transcript(transcript: str, args: argparse.Namespace) -> str:
             model=args.refine_model,
             provider=args.refine_provider,
         )
+    except ValueError as e:
+        # Fehlende API-Keys (z.B. OPENROUTER_API_KEY)
+        logger.warning(f"LLM-Nachbearbeitung übersprungen: {e}")
+        return transcript
     except (APIError, APIConnectionError, RateLimitError) as e:
         logger.warning(f"LLM-Nachbearbeitung fehlgeschlagen: {e}")
         return transcript
@@ -504,7 +519,11 @@ def transcribe(
     Dies ist der einzige Einstiegspunkt für Transkription,
     unabhängig vom gewählten Modus.
     """
-    effective_model = model or DEFAULT_MODELS[mode]
+    default_model = DEFAULT_MODELS.get(mode)
+    if default_model is None:
+        supported = ", ".join(sorted(DEFAULT_MODELS.keys()))
+        raise ValueError(f"Ungültiger Modus '{mode}'. Unterstützt: {supported}")
+    effective_model = model or default_model
 
     if mode == "api":
         return transcribe_with_api(
