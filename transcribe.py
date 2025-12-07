@@ -330,12 +330,17 @@ def refine_transcript(
 
     client = OpenAI()
 
-    # GPT-5 API: client.responses.create statt chat.completions
-    response = client.responses.create(
-        model=effective_model,
-        input=f"{prompt or DEFAULT_REFINE_PROMPT}\n\nTranskript:\n{transcript}",
-        reasoning={"effort": "minimal"},
-    )
+    # API-Parameter je nach Modell anpassen
+    api_params = {
+        "model": effective_model,
+        "input": f"{prompt or DEFAULT_REFINE_PROMPT}\n\nTranskript:\n{transcript}",
+    }
+
+    # Reasoning nur für GPT-5 Modelle (minimal), andere nutzen low/medium/high
+    if effective_model.startswith("gpt-5"):
+        api_params["reasoning"] = {"effort": "minimal"}
+
+    response = client.responses.create(**api_params)
 
     result = response.output_text.strip()
     logger.info(f"Nachbearbeitung abgeschlossen ({len(result)} Zeichen)")
