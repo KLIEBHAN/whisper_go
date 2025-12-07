@@ -250,7 +250,7 @@ def transcribe_with_deepgram(
     language: str | None = None,
 ) -> str:
     """Transkribiert Audio über Deepgram API (smart_format aktiviert)."""
-    from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+    from deepgram import DeepgramClient
 
     logger.info(f"Deepgram-Transkription: model={model}, language={language or 'auto'}")
     logger.debug(f"Audio-Datei: {audio_path} ({audio_path.stat().st_size} bytes)")
@@ -259,19 +259,20 @@ def transcribe_with_deepgram(
     if not api_key:
         raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
 
-    client = DeepgramClient(api_key)
+    client = DeepgramClient(api_key=api_key)
 
     with audio_path.open("rb") as f:
-        payload: FileSource = {"buffer": f.read()}
+        audio_data = f.read()
 
-    options = PrerecordedOptions(
+    # SDK v5 API: listen.v1.media.transcribe_file
+    response = client.listen.v1.media.transcribe_file(
+        request=audio_data,
         model=model,
         language=language,
         smart_format=True,
         punctuate=True,
     )
 
-    response = client.listen.rest.v("1").transcribe_file(payload, options)
     result = response.results.channels[0].alternatives[0].transcript
 
     logger.info(f"Transkription abgeschlossen ({len(result)} Zeichen)")
