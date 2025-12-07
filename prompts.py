@@ -42,6 +42,19 @@ Gib NUR den korrigierten Text zurück.""",
     "default": DEFAULT_REFINE_PROMPT,
 }
 
+
+def get_prompt_for_context(context: str) -> str:
+    """Gibt den Prompt für einen Kontext zurück, mit Fallback auf 'default'.
+
+    Args:
+        context: Kontext-Typ (email, chat, code, default)
+
+    Returns:
+        Der passende Prompt-Text. Bei unbekanntem Kontext → default.
+    """
+    return CONTEXT_PROMPTS.get(context, CONTEXT_PROMPTS["default"])
+
+
 # =============================================================================
 # App-zu-Kontext Mapping
 # =============================================================================

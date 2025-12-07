@@ -28,7 +28,7 @@ from contextlib import contextmanager  # noqa: E402
 from logging.handlers import RotatingFileHandler  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-from prompts import CONTEXT_PROMPTS, DEFAULT_APP_CONTEXTS  # noqa: E402
+from prompts import DEFAULT_APP_CONTEXTS, get_prompt_for_context  # noqa: E402
 
 # Import-Zeit messen (alle Standardlib-Imports abgeschlossen)
 _IMPORTS_DONE = _time_module.perf_counter()
@@ -589,14 +589,7 @@ def refine_transcript(
     # Auch leere Strings werden wie None behandelt (Fallback auf Kontext-Prompt)
     if not prompt:
         effective_context, app_name, source = detect_context(context)
-        # Validierung: Ungültiger Kontext → Warnung und Fallback
-        if effective_context not in CONTEXT_PROMPTS:
-            logger.warning(
-                f"[{_session_id}] Ungültiger Kontext '{effective_context}', verwende 'default'"
-            )
-            effective_context = "default"
-            source = "Fallback"
-        prompt = CONTEXT_PROMPTS[effective_context]
+        prompt = get_prompt_for_context(effective_context)
         # Detailliertes Logging mit Quelle
         if app_name:
             logger.info(
