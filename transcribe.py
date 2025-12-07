@@ -41,6 +41,9 @@ DEFAULT_LOCAL_MODEL = "turbo"
 DEFAULT_DEEPGRAM_MODEL = "nova-3"
 DEFAULT_REFINE_MODEL = "gpt-5-nano"  # Wird von WHISPER_GO_REFINE_MODEL überschrieben
 
+# OpenRouter API (Alternative zu OpenAI für Nachbearbeitung)
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
 DEFAULT_REFINE_PROMPT = """Korrigiere dieses Transkript:
 - Entferne Füllwörter (ähm, also, quasi, sozusagen)
 - Korrigiere Grammatik und Rechtschreibung
@@ -73,6 +76,20 @@ def _generate_session_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def _format_duration(milliseconds: float) -> str:
+    """Formatiert Dauer menschenlesbar: ms für kurze, s für längere Zeiten."""
+    if milliseconds >= 1000:
+        return f"{milliseconds / 1000:.2f}s"
+    return f"{milliseconds:.0f}ms"
+
+
+def _log_preview(text: str, max_length: int = 100) -> str:
+    """Kürzt Text für Log-Ausgabe mit Ellipsis wenn nötig."""
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length]}..."
+
+
 @contextmanager
 def timed_operation(name: str):
     """Kontextmanager für Zeitmessung mit automatischem Logging."""
@@ -82,10 +99,7 @@ def timed_operation(name: str):
         yield
     finally:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        if elapsed_ms >= 1000:
-            logger.info(f"[{_session_id}] {name}: {elapsed_ms / 1000:.2f}s")
-        else:
-            logger.info(f"[{_session_id}] {name}: {elapsed_ms:.0f}ms")
+        logger.info(f"[{_session_id}] {name}: {_format_duration(elapsed_ms)}")
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -127,21 +141,12 @@ def error(message: str) -> None:
 
 
 def load_environment() -> None:
-    """
-    Lädt .env-Datei falls python-dotenv installiert ist.
-    Sucht in: 1) Script-Verzeichnis (Symlinks aufgelöst), 2) Aktuelles Verzeichnis
-    """
+    """Lädt .env-Datei falls python-dotenv installiert ist."""
     try:
         from dotenv import load_dotenv
 
-        # .env im Script-Verzeichnis (resolve() folgt Symlinks)
-        script_dir = Path(__file__).resolve().parent
-        env_file = script_dir / ".env"
-        if env_file.exists():
-            load_dotenv(env_file)
-        else:
-            # Fallback: aktuelles Verzeichnis
-            load_dotenv()
+        env_file = SCRIPT_DIR / ".env"
+        load_dotenv(env_file if env_file.exists() else None)
     except ImportError:
         pass
 
@@ -157,6 +162,21 @@ def copy_to_clipboard(text: str) -> bool:
         return False
 
 
+def play_ready_sound() -> None:
+    """Spielt einen kurzen Ton ab wenn die Aufnahme bereit ist (macOS)."""
+    import subprocess
+
+    try:
+        subprocess.Popen(
+            ["afplay", "/System/Library/Sounds/Tink.aiff"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as e:
+        # Sound ist optional – Fehler nur loggen, nicht abbrechen
+        logger.debug(f"[{_session_id}] Ready-Sound fehlgeschlagen: {e}")
+
+
 def record_audio() -> Path:
     """
     Nimmt Audio vom Mikrofon auf (Enter startet, Enter stoppt).
@@ -168,12 +188,13 @@ def record_audio() -> Path:
 
     recorded_chunks: list = []
 
-    def on_audio_chunk(indata, frames, time, status):
+    def on_audio_chunk(indata, _frames, _time, _status):
         recorded_chunks.append(indata.copy())
 
     log("🎤 Drücke ENTER um die Aufnahme zu starten...")
     input()
 
+    play_ready_sound()
     log("🔴 Aufnahme läuft... Drücke ENTER zum Beenden.")
     with sd.InputStream(
         samplerate=WHISPER_SAMPLE_RATE,
@@ -202,7 +223,7 @@ def _cleanup_stale_pid_file() -> None:
 
     try:
         old_pid = int(PID_FILE.read_text().strip())
-        # Prüfen ob Prozess noch läuft (Signal 0 = nur prüfen, nicht senden)
+        # Signal 0 ist ein "Ping" – prüft Existenz ohne Seiteneffekte
         os.kill(old_pid, 0)
         # Prozess läuft noch - könnte legitim sein oder Zombie
         logger.warning(f"PID-File existiert, Prozess {old_pid} läuft noch")
@@ -231,13 +252,14 @@ def record_audio_daemon() -> Path:
     _cleanup_stale_pid_file()
 
     recorded_chunks: list = []
-    stop_flag = {"stop": False}  # Mutable Container statt global
+    # Dict statt bool, weil Python-Closures immutable Variablen nicht ändern können
+    stop_flag = {"stop": False}
     recording_start = time.perf_counter()
 
-    def on_audio_chunk(indata, frames, time_info, status):
+    def on_audio_chunk(indata, _frames, _time_info, _status):
         recorded_chunks.append(indata.copy())
 
-    def handle_stop_signal(signum: int, frame) -> None:
+    def handle_stop_signal(_signum: int, _frame) -> None:
         logger.debug(f"[{_session_id}] SIGUSR1 empfangen")
         stop_flag["stop"] = True
 
@@ -251,6 +273,7 @@ def record_audio_daemon() -> Path:
     # Signal-Handler registrieren
     signal.signal(signal.SIGUSR1, handle_stop_signal)
 
+    play_ready_sound()
     log("🎤 Daemon: Aufnahme gestartet (warte auf SIGUSR1)...")
     logger.info(f"[{_session_id}] Aufnahme gestartet")
 
@@ -318,9 +341,7 @@ def transcribe_with_api(
     else:
         result = response.text if hasattr(response, "text") else str(response)
 
-    logger.debug(
-        f"[{_session_id}] Ergebnis: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
+    logger.debug(f"[{_session_id}] Ergebnis: {_log_preview(result)}")
 
     return result
 
@@ -358,9 +379,7 @@ def transcribe_with_deepgram(
 
     result = response.results.channels[0].alternatives[0].transcript
 
-    logger.debug(
-        f"[{_session_id}] Ergebnis: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
+    logger.debug(f"[{_session_id}] Ergebnis: {_log_preview(result)}")
 
     return result
 
@@ -383,46 +402,77 @@ def transcribe_locally(
     return result["text"]
 
 
+def _get_refine_client(provider: str):
+    """Erstellt OpenAI-Client für Nachbearbeitung (OpenAI oder OpenRouter)."""
+    from openai import OpenAI
+
+    if provider == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY nicht gesetzt")
+        return OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
+
+    # Default: OpenAI (nutzt OPENAI_API_KEY automatisch)
+    return OpenAI()
+
+
 def refine_transcript(
     transcript: str,
     model: str | None = None,
     prompt: str | None = None,
+    provider: str | None = None,
 ) -> str:
-    """Nachbearbeitung mit LLM (Flow-Style)."""
-    from openai import OpenAI
-
+    """Nachbearbeitung mit LLM (Flow-Style). Unterstützt OpenAI und OpenRouter."""
     # Leeres Transkript → nichts zu tun
     if not transcript or not transcript.strip():
         logger.debug(f"[{_session_id}] Leeres Transkript, überspringe Nachbearbeitung")
         return transcript
 
-    # ENV zur Laufzeit lesen (nach load_environment)
+    # Provider und Modell zur Laufzeit bestimmen (CLI > ENV > Default)
+    effective_provider = (
+        provider or os.getenv("WHISPER_GO_REFINE_PROVIDER", "openai")
+    ).lower()
     effective_model = model or os.getenv(
         "WHISPER_GO_REFINE_MODEL", DEFAULT_REFINE_MODEL
     )
-    logger.info(f"[{_session_id}] LLM-Nachbearbeitung: model={effective_model}")
+
+    logger.info(
+        f"[{_session_id}] LLM-Nachbearbeitung: provider={effective_provider}, model={effective_model}"
+    )
     logger.debug(f"[{_session_id}] Input: {len(transcript)} Zeichen")
 
-    client = OpenAI()
-
-    # API-Parameter je nach Modell anpassen
-    api_params = {
-        "model": effective_model,
-        "input": f"{prompt or DEFAULT_REFINE_PROMPT}\n\nTranskript:\n{transcript}",
-    }
-
-    # Reasoning nur für GPT-5 Modelle (minimal), andere nutzen low/medium/high
-    if effective_model.startswith("gpt-5"):
-        api_params["reasoning"] = {"effort": "minimal"}
+    client = _get_refine_client(effective_provider)
+    full_prompt = f"{prompt or DEFAULT_REFINE_PROMPT}\n\nTranskript:\n{transcript}"
 
     with timed_operation("LLM-Nachbearbeitung"):
-        response = client.responses.create(**api_params)
+        if effective_provider == "openrouter":
+            # OpenRouter nutzt Chat Completions API
+            response = client.chat.completions.create(
+                model=effective_model,
+                messages=[{"role": "user", "content": full_prompt}],
+            )
+            # content kann String, Liste von Parts oder None sein
+            content = response.choices[0].message.content
+            if content is None:
+                result = ""
+            elif isinstance(content, list):
+                # Liste von Content-Parts → Text-Parts extrahieren
+                result = "".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                ).strip()
+            else:
+                result = content.strip()
+        else:
+            # OpenAI responses API
+            api_params = {"model": effective_model, "input": full_prompt}
+            # GPT-5 nutzt "reasoning" API mit effort-Level
+            if effective_model.startswith("gpt-5"):
+                api_params["reasoning"] = {"effort": "minimal"}
+            response = client.responses.create(**api_params)
+            result = response.output_text.strip()
 
-    result = response.output_text.strip()
-    logger.debug(
-        f"[{_session_id}] Output: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
-
+    logger.debug(f"[{_session_id}] Output: {_log_preview(result)}")
     return result
 
 
@@ -434,10 +484,26 @@ def maybe_refine_transcript(transcript: str, args: argparse.Namespace) -> str:
         return transcript
 
     try:
-        return refine_transcript(transcript, model=args.refine_model)
+        return refine_transcript(
+            transcript,
+            model=args.refine_model,
+            provider=args.refine_provider,
+        )
+    except ValueError as e:
+        # Fehlende API-Keys (z.B. OPENROUTER_API_KEY)
+        logger.warning(f"LLM-Nachbearbeitung übersprungen: {e}")
+        return transcript
     except (APIError, APIConnectionError, RateLimitError) as e:
         logger.warning(f"LLM-Nachbearbeitung fehlgeschlagen: {e}")
         return transcript
+
+
+# Standard-Modelle pro Modus – zentrale Konfiguration statt verstreuter Defaults
+DEFAULT_MODELS = {
+    "api": DEFAULT_API_MODEL,
+    "deepgram": DEFAULT_DEEPGRAM_MODEL,
+    "local": DEFAULT_LOCAL_MODEL,
+}
 
 
 def transcribe(
@@ -453,27 +519,23 @@ def transcribe(
     Dies ist der einzige Einstiegspunkt für Transkription,
     unabhängig vom gewählten Modus.
     """
-    if model:
-        effective_model = model
-    elif mode == "api":
-        effective_model = DEFAULT_API_MODEL
-    elif mode == "deepgram":
-        effective_model = DEFAULT_DEEPGRAM_MODEL
-    else:
-        effective_model = DEFAULT_LOCAL_MODEL
+    default_model = DEFAULT_MODELS.get(mode)
+    if default_model is None:
+        supported = ", ".join(sorted(DEFAULT_MODELS.keys()))
+        raise ValueError(f"Ungültiger Modus '{mode}'. Unterstützt: {supported}")
+    effective_model = model or default_model
 
     if mode == "api":
         return transcribe_with_api(
             audio_path, effective_model, language, response_format
         )
 
-    if mode == "deepgram":
-        if response_format != "text":
-            log("Hinweis: --format wird im Deepgram-Modus ignoriert")
-        return transcribe_with_deepgram(audio_path, effective_model, language)
-
+    # Deepgram und lokal unterstützen kein response_format
     if response_format != "text":
-        log("Hinweis: --format wird im lokalen Modus ignoriert")
+        log(f"Hinweis: --format wird im {mode}-Modus ignoriert")
+
+    if mode == "deepgram":
+        return transcribe_with_deepgram(audio_path, effective_model, language)
 
     return transcribe_locally(audio_path, effective_model, language)
 
@@ -541,6 +603,12 @@ Beispiele:
         "--refine-model",
         default=None,
         help=f"Modell für LLM-Nachbearbeitung (default: {DEFAULT_REFINE_MODEL}, auch via WHISPER_GO_REFINE_MODEL env)",
+    )
+    parser.add_argument(
+        "--refine-provider",
+        choices=["openai", "openrouter"],
+        default=None,
+        help="LLM-Provider für Nachbearbeitung (auch via WHISPER_GO_REFINE_PROVIDER env)",
     )
 
     args = parser.parse_args()
