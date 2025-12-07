@@ -11,17 +11,27 @@ Usage:
     python transcribe.py --record --copy
 """
 
-import argparse
-import logging
-import os
-import signal
-import sys
-import tempfile
-import time
-import uuid
-from contextlib import contextmanager
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
+# Startup-Timing: Zeit erfassen BEVOR andere Imports laden
+import time as _time_module  # noqa: E402 - muss vor anderen Imports sein
+
+_PROCESS_START = _time_module.perf_counter()
+
+import argparse  # noqa: E402
+import logging  # noqa: E402
+import os  # noqa: E402
+import signal  # noqa: E402
+import sys  # noqa: E402
+import tempfile  # noqa: E402
+import uuid  # noqa: E402
+from contextlib import contextmanager  # noqa: E402
+from logging.handlers import RotatingFileHandler  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# Import-Zeit messen (alle Standardlib-Imports abgeschlossen)
+_IMPORTS_DONE = _time_module.perf_counter()
+
+# Alias für Konsistenz im restlichen Code
+time = _time_module
 
 # Whisper erwartet Audio mit 16kHz – andere Sampleraten führen zu schlechteren Ergebnissen
 WHISPER_SAMPLE_RATE = 16000
@@ -610,11 +620,31 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """CLI-Einstiegspunkt."""
+    # Startup-Phasen messen
+    t0 = time.perf_counter()
     load_environment()
-    args = parse_args()
-    setup_logging(debug=args.debug)
+    t_env = time.perf_counter()
 
-    logger.debug(f"Args: {args}")
+    args = parse_args()
+    t_args = time.perf_counter()
+
+    setup_logging(debug=args.debug)
+    t_logging = time.perf_counter()
+
+    # Startup-Timing loggen
+    import_ms = (_IMPORTS_DONE - _PROCESS_START) * 1000
+    env_ms = (t_env - t0) * 1000
+    args_ms = (t_args - t_env) * 1000
+    logging_ms = (t_logging - t_args) * 1000
+    total_startup_ms = (t_logging - _PROCESS_START) * 1000
+
+    logger.info(
+        f"[{_session_id}] Startup: {total_startup_ms:.0f}ms "
+        f"(imports={import_ms:.0f}ms, env={env_ms:.0f}ms, "
+        f"args={args_ms:.0f}ms, logging={logging_ms:.0f}ms)"
+    )
+
+    logger.debug(f"[{_session_id}] Args: {args}")
 
     # Daemon-Modus hat eigene Logik (für Raycast)
     if args.record_daemon:
