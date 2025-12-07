@@ -29,9 +29,7 @@ from pathlib import Path  # noqa: E402
 
 # Import-Zeit messen (alle Standardlib-Imports abgeschlossen)
 _IMPORTS_DONE = _time_module.perf_counter()
-
-# Alias für Konsistenz im restlichen Code
-time = _time_module
+time = _time_module  # Alias für restlichen Code
 
 # Whisper erwartet Audio mit 16kHz – andere Sampleraten führen zu schlechteren Ergebnissen
 WHISPER_SAMPLE_RATE = 16000
@@ -402,6 +400,19 @@ def transcribe_locally(
     return result["text"]
 
 
+def _extract_message_content(content) -> str:
+    """Extrahiert Text aus OpenAI/OpenRouter Message-Content (String, Liste oder None)."""
+    if content is None:
+        return ""
+    if isinstance(content, list):
+        # Liste von Content-Parts → Text-Parts extrahieren
+        return "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        ).strip()
+    return content.strip()
+
+
 def _get_refine_client(provider: str):
     """Erstellt OpenAI-Client für Nachbearbeitung (OpenAI oder OpenRouter)."""
     from openai import OpenAI
@@ -471,18 +482,7 @@ def refine_transcript(
                 )
 
             response = client.chat.completions.create(**create_kwargs)
-            # content kann String, Liste von Parts oder None sein
-            content = response.choices[0].message.content
-            if content is None:
-                result = ""
-            elif isinstance(content, list):
-                # Liste von Content-Parts → Text-Parts extrahieren
-                result = "".join(
-                    part.get("text", "") if isinstance(part, dict) else str(part)
-                    for part in content
-                ).strip()
-            else:
-                result = content.strip()
+            result = _extract_message_content(response.choices[0].message.content)
         else:
             # OpenAI responses API
             api_params = {"model": effective_model, "input": full_prompt}
@@ -518,7 +518,7 @@ def maybe_refine_transcript(transcript: str, args: argparse.Namespace) -> str:
         return transcript
 
 
-# Standard-Modelle pro Modus – zentrale Konfiguration statt verstreuter Defaults
+# Standard-Modelle pro Modus
 DEFAULT_MODELS = {
     "api": DEFAULT_API_MODEL,
     "deepgram": DEFAULT_DEEPGRAM_MODEL,
