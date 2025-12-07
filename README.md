@@ -51,9 +51,12 @@ export WHISPER_GO_REFINE="true"
 # Optional: OpenRouter statt OpenAI nutzen
 export WHISPER_GO_REFINE_PROVIDER="openrouter"
 export OPENROUTER_API_KEY="sk-or-..."
+
+# Optional: Backend-Provider für OpenRouter festlegen
+export OPENROUTER_PROVIDER_ORDER="Together,DeepInfra"
 ```
 
-> Entfernt Füllwörter (ähm, also), korrigiert Grammatik und formatiert in saubere Absätze. Unterstützt OpenAI (default) und [OpenRouter](https://openrouter.ai) für Zugang zu hunderten Modellen.
+> Entfernt Füllwörter (ähm, also), korrigiert Grammatik und formatiert in saubere Absätze. Unterstützt OpenAI (default) und [OpenRouter](https://openrouter.ai) für Zugang zu hunderten Modellen. Bei OpenRouter kann das Backend-Routing über `OPENROUTER_PROVIDER_ORDER` gesteuert werden.
 
 **Für lokalen Modus:**
 

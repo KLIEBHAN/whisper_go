@@ -446,10 +446,28 @@ def refine_transcript(
 
     with timed_operation("LLM-Nachbearbeitung"):
         if effective_provider == "openrouter":
+            # OpenRouter Provider-Routing konfigurieren (optional)
+            extra_body = None
+            provider_order = os.getenv("OPENROUTER_PROVIDER_ORDER")
+            if provider_order:
+                extra_body = {
+                    "provider": {
+                        "order": [p.strip() for p in provider_order.split(",")],
+                        "allow_fallbacks": os.getenv(
+                            "OPENROUTER_ALLOW_FALLBACKS", "true"
+                        ).lower()
+                        == "true",
+                    }
+                }
+                logger.debug(
+                    f"[{_session_id}] OpenRouter Provider-Order: {provider_order}"
+                )
+
             # OpenRouter nutzt Chat Completions API
             response = client.chat.completions.create(
                 model=effective_model,
                 messages=[{"role": "user", "content": full_prompt}],
+                extra_body=extra_body,
             )
             # content kann String, Liste von Parts oder None sein
             content = response.choices[0].message.content
