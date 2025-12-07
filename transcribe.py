@@ -434,8 +434,11 @@ def transcribe_with_deepgram(
     from deepgram import DeepgramClient
 
     audio_kb = audio_path.stat().st_size // 1024
+
+    # Deepgram Limits: 100 keywords (Nova-2), 500 tokens (Nova-3 keyterm)
+    MAX_DEEPGRAM_KEYWORDS = 100
     vocab = load_vocabulary()
-    keywords = vocab.get("keywords", [])
+    keywords = vocab.get("keywords", [])[:MAX_DEEPGRAM_KEYWORDS]
 
     logger.info(
         f"[{_session_id}] Deepgram: {model}, {audio_kb}KB, lang={language or 'auto'}, "
@@ -492,10 +495,11 @@ def transcribe_locally(
     options: dict = {"language": language} if language else {}
 
     # Custom Vocabulary als initial_prompt für bessere Erkennung
+    # Limit: Whisper initial_prompt sollte nicht zu lang werden
+    MAX_WHISPER_KEYWORDS = 50
     vocab = load_vocabulary()
-    keywords = vocab.get("keywords", [])
+    keywords = vocab.get("keywords", [])[:MAX_WHISPER_KEYWORDS]
     if keywords:
-        # Whisper nutzt initial_prompt als Kontext für Transkription
         options["initial_prompt"] = f"Fachbegriffe: {', '.join(keywords)}"
         logger.debug(f"[{_session_id}] Lokales Whisper mit {len(keywords)} Keywords")
 
