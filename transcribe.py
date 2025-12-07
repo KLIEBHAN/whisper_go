@@ -326,10 +326,7 @@ def record_audio_daemon() -> Path:
 
     recorded_chunks: list = []
     recording_start = time.perf_counter()
-
-    # Dict statt bool: Python-Closures können eingeschlossene Variablen
-    # nicht ändern, aber Dict-Inhalte schon (Workaround für nonlocal)
-    should_stop = {"value": False}
+    should_stop = False
 
     def on_audio_chunk(indata, _frames, _time_info, _status):
         """Callback: Sammelt Audio-Chunks während der Aufnahme."""
@@ -337,8 +334,9 @@ def record_audio_daemon() -> Path:
 
     def handle_stop_signal(_signum: int, _frame) -> None:
         """Signal-Handler: Setzt Stop-Flag bei SIGUSR1."""
+        nonlocal should_stop
         logger.debug(f"[{_session_id}] SIGUSR1 empfangen")
-        should_stop["value"] = True
+        should_stop = True
 
     pid = os.getpid()
     logger.info(f"[{_session_id}] Daemon gestartet (PID: {pid})")
@@ -360,7 +358,7 @@ def record_audio_daemon() -> Path:
             dtype="float32",
             callback=on_audio_chunk,
         ):
-            while not should_stop["value"]:
+            while not should_stop:
                 sd.sleep(100)  # 100ms warten, dann Signal prüfen
     finally:
         # PID-File aufräumen
