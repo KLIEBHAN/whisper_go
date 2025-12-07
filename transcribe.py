@@ -25,7 +25,7 @@ WHISPER_SAMPLE_RATE = 16000
 DEFAULT_API_MODEL = "gpt-4o-transcribe"
 DEFAULT_LOCAL_MODEL = "turbo"
 DEFAULT_DEEPGRAM_MODEL = "nova-3"
-DEFAULT_REFINE_MODEL = os.getenv("WHISPER_GO_REFINE_MODEL", "gpt-5-mini")
+DEFAULT_REFINE_MODEL = "gpt-5-mini"  # Wird von WHISPER_GO_REFINE_MODEL überschrieben
 
 DEFAULT_REFINE_PROMPT = """Korrigiere dieses Transkript:
 - Entferne Füllwörter (ähm, also, quasi, sozusagen)
@@ -321,7 +321,10 @@ def refine_transcript(
         logger.debug("Leeres Transkript, überspringe Nachbearbeitung")
         return transcript
 
-    effective_model = model or DEFAULT_REFINE_MODEL
+    # ENV zur Laufzeit lesen (nach load_environment)
+    effective_model = model or os.getenv(
+        "WHISPER_GO_REFINE_MODEL", DEFAULT_REFINE_MODEL
+    )
     logger.info(f"LLM-Nachbearbeitung mit {effective_model}")
     logger.debug(f"Input: {len(transcript)} Zeichen")
 
