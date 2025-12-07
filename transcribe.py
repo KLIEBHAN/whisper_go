@@ -492,7 +492,13 @@ def main() -> int:
             response_format=args.response_format,
         )
     except ImportError as e:
-        package = "openai" if "openai" in str(e) else "openai-whisper"
+        err_str = str(e).lower()
+        if "openai" in err_str:
+            package = "openai"
+        elif "deepgram" in err_str:
+            package = "deepgram-sdk"
+        else:
+            package = "openai-whisper"
         error(f"Modul nicht installiert: pip install {package}")
         return 1
     except Exception as e:
