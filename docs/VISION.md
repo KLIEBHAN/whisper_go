@@ -48,15 +48,18 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 - [x] Mikrofon-Aufnahme mit Enter-Toggle
 - [x] Zwischenablage-Integration (`--copy`)
 
-### Phase 2: System-Integration ← aktuell
+### Phase 2: System-Integration ✅
 
-- [ ] Raycast Extension für Hotkey-Aktivierung
-- [ ] Auto-Paste nach Transkription
+- [x] Raycast Extension für Hotkey-Aktivierung
+- [x] Auto-Paste nach Transkription
+- [x] Akustisches Feedback bei Aufnahmestart (`play_ready_sound`)
 - [ ] Menübar-Feedback (optional)
 
-### Phase 3: Smart Features
+### Phase 3: Smart Features ← aktuell
 
-- [ ] LLM-Nachbearbeitung (Füllwörter entfernen, Formatierung)
+- [x] LLM-Nachbearbeitung (Füllwörter entfernen, Formatierung)
+- [x] Multi-Provider Support (OpenAI, OpenRouter)
+- [x] Deepgram Nova-3 Integration (schneller als Whisper API)
 - [ ] Kontext-Awareness (Email formal, Chat casual)
 - [ ] Custom Vocabulary (Namen, Fachbegriffe)
 
@@ -77,19 +80,19 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 ## Architektur
 
 ```
-┌──────────────────────────────────────────────┐
-│                 whisper_go                    │
-├──────────────┬───────────────────────────────┤
-│ Trigger      │ Raycast / Hotkey / CLI        │
-├──────────────┼───────────────────────────────┤
-│ Audio        │ sounddevice → WAV             │
-├──────────────┼───────────────────────────────┤
-│ Transkription│ Whisper (lokal) / OpenAI API  │
-├──────────────┼───────────────────────────────┤
-│ Nachbearbeit.│ LLM cleanup (optional)        │
-├──────────────┼───────────────────────────────┤
-│ Output       │ Clipboard → Auto-Paste        │
-└──────────────┴───────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                      whisper_go                           │
+├──────────────┬────────────────────────────────────────────┤
+│ Trigger      │ Raycast / Hotkey / CLI                     │
+├──────────────┼────────────────────────────────────────────┤
+│ Audio        │ sounddevice → WAV (+ Ready-Sound)          │
+├──────────────┼────────────────────────────────────────────┤
+│ Transkription│ Deepgram Nova-3 / OpenAI API / Whisper     │
+├──────────────┼────────────────────────────────────────────┤
+│ Nachbearbeit.│ GPT-5 / OpenRouter (Claude, Llama, etc.)   │
+├──────────────┼────────────────────────────────────────────┤
+│ Output       │ Clipboard → Auto-Paste                     │
+└──────────────┴────────────────────────────────────────────┘
 ```
 
 ---
@@ -108,13 +111,14 @@ Bewusst ausgeschlossen, um Fokus zu halten:
 
 ## Tech-Stack
 
-| Layer  | Technologie          | Warum                        |
-| ------ | -------------------- | ---------------------------- |
-| Core   | Python 3.10+         | Whisper-Integration, einfach |
-| Audio  | sounddevice          | Cross-platform, low-level    |
-| STT    | Whisper / OpenAI API | State of the art             |
-| Hotkey | Raycast → pynput     | Iterativ komplexer           |
-| GUI    | rumps                | Native macOS Menübar         |
+| Layer  | Technologie                 | Warum                        |
+| ------ | --------------------------- | ---------------------------- |
+| Core   | Python 3.10+                | Whisper-Integration, einfach |
+| Audio  | sounddevice                 | Cross-platform, low-level    |
+| STT    | Deepgram / OpenAI / Whisper | Flexibel, best-of-breed      |
+| LLM    | OpenAI / OpenRouter         | Multi-Provider für Refine    |
+| Hotkey | Raycast Extension           | Native macOS Integration     |
+| GUI    | rumps (geplant)             | Native macOS Menübar         |
 
 ---
 
