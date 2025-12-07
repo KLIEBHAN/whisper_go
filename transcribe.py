@@ -92,7 +92,6 @@ def _log_preview(text: str, max_length: int = 100) -> str:
 def timed_operation(name: str):
     """Kontextmanager für Zeitmessung mit automatischem Logging."""
     start = time.perf_counter()
-    logger.debug(f"[{_session_id}] {name} gestartet")
     try:
         yield
     finally:
@@ -266,7 +265,6 @@ def record_audio_daemon() -> Path:
 
     # PID-File schreiben für Raycast
     PID_FILE.write_text(str(pid))
-    logger.debug(f"[{_session_id}] PID-File geschrieben: {PID_FILE}")
 
     # Signal-Handler registrieren
     signal.signal(signal.SIGUSR1, handle_stop_signal)
@@ -288,7 +286,6 @@ def record_audio_daemon() -> Path:
         # PID-File aufräumen
         if PID_FILE.exists():
             PID_FILE.unlink()
-            logger.debug(f"[{_session_id}] PID-File gelöscht")
 
     recording_duration = time.perf_counter() - recording_start
     logger.info(f"[{_session_id}] Aufnahme: {recording_duration:.1f}s")
@@ -301,8 +298,6 @@ def record_audio_daemon() -> Path:
     audio_data = np.concatenate(recorded_chunks)
     output_path = Path(tempfile.gettempdir()) / TEMP_RECORDING_FILENAME
     sf.write(output_path, audio_data, WHISPER_SAMPLE_RATE)
-    logger.debug(f"[{_session_id}] Audio gespeichert: {output_path}")
-
     return output_path
 
 
@@ -315,10 +310,10 @@ def transcribe_with_api(
     """Transkribiert Audio über die OpenAI API."""
     from openai import OpenAI
 
+    audio_kb = audio_path.stat().st_size // 1024
     logger.info(
-        f"[{_session_id}] API-Transkription: model={model}, language={language or 'auto'}"
+        f"[{_session_id}] API: {model}, {audio_kb}KB, lang={language or 'auto'}"
     )
-    logger.debug(f"[{_session_id}] Audio: {audio_path.stat().st_size} bytes")
 
     client = OpenAI()
 
@@ -352,10 +347,10 @@ def transcribe_with_deepgram(
     """Transkribiert Audio über Deepgram API (smart_format aktiviert)."""
     from deepgram import DeepgramClient
 
+    audio_kb = audio_path.stat().st_size // 1024
     logger.info(
-        f"[{_session_id}] Deepgram-Transkription: model={model}, language={language or 'auto'}"
+        f"[{_session_id}] Deepgram: {model}, {audio_kb}KB, lang={language or 'auto'}"
     )
-    logger.debug(f"[{_session_id}] Audio: {audio_path.stat().st_size} bytes")
 
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
@@ -675,7 +670,6 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
         transcript = maybe_refine_transcript(transcript, args)
 
         TRANSCRIPT_FILE.write_text(transcript)
-        logger.debug(f"[{_session_id}] Transkript geschrieben: {TRANSCRIPT_FILE}")
         print(transcript)
 
         if args.copy:
@@ -703,7 +697,6 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
     finally:
         if temp_file and temp_file.exists():
             temp_file.unlink()
-            logger.debug(f"[{_session_id}] Temp-Datei gelöscht: {temp_file}")
 
 
 def main() -> int:
