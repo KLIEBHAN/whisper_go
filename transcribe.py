@@ -121,6 +121,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_FILE = LOG_DIR / "whisper_go.log"
 
+# Custom Vocabulary für bessere Erkennung von Namen und Fachbegriffen
+VOCABULARY_FILE = Path.home() / ".whisper_go" / "vocabulary.json"
+
 # Logger konfigurieren
 logger = logging.getLogger("whisper_go")
 
@@ -360,6 +363,30 @@ def record_audio_daemon() -> Path:
     return output_path
 
 
+def load_vocabulary() -> dict:
+    """Lädt Custom Vocabulary aus JSON-Datei (~/.whisper_go/vocabulary.json).
+
+    Format:
+        {
+            "keywords": ["Anthropic", "Claude", "Kubernetes"]
+        }
+
+    Returns:
+        Dict mit "keywords" (Liste). Bei Fehler leeres Dict.
+    """
+    if not VOCABULARY_FILE.exists():
+        return {"keywords": []}
+    try:
+        data = json.loads(VOCABULARY_FILE.read_text())
+        # Validierung: keywords muss Liste sein
+        if not isinstance(data.get("keywords"), list):
+            data["keywords"] = []
+        return data
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"[{_session_id}] Vocabulary-Datei fehlerhaft: {e}")
+        return {"keywords": []}
+
+
 def transcribe_with_api(
     audio_path: Path,
     model: str,
@@ -407,8 +434,15 @@ def transcribe_with_deepgram(
     from deepgram import DeepgramClient
 
     audio_kb = audio_path.stat().st_size // 1024
+
+    # Deepgram Limits: 100 keywords (Nova-2), 500 tokens (Nova-3 keyterm)
+    MAX_DEEPGRAM_KEYWORDS = 100
+    vocab = load_vocabulary()
+    keywords = vocab.get("keywords", [])[:MAX_DEEPGRAM_KEYWORDS]
+
     logger.info(
-        f"[{_session_id}] Deepgram: {model}, {audio_kb}KB, lang={language or 'auto'}"
+        f"[{_session_id}] Deepgram: {model}, {audio_kb}KB, lang={language or 'auto'}, "
+        f"vocab={len(keywords)}"
     )
 
     api_key = os.getenv("DEEPGRAM_API_KEY")
@@ -420,6 +454,15 @@ def transcribe_with_deepgram(
     with audio_path.open("rb") as f:
         audio_data = f.read()
 
+    # Nova-3 nutzt 'keyterm', ältere Modelle nutzen 'keywords'
+    is_nova3 = model.startswith("nova-3")
+    vocab_params = {}
+    if keywords:
+        if is_nova3:
+            vocab_params["keyterm"] = keywords
+        else:
+            vocab_params["keywords"] = keywords
+
     with timed_operation("Deepgram-Transkription"):
         response = client.listen.v1.media.transcribe_file(
             request=audio_data,
@@ -427,6 +470,7 @@ def transcribe_with_deepgram(
             language=language,
             smart_format=True,
             punctuate=True,
+            **vocab_params,
         )
 
     result = response.results.channels[0].alternatives[0].transcript
@@ -448,7 +492,17 @@ def transcribe_locally(
     whisper_model = whisper.load_model(model)
 
     log(f"Transkribiere {audio_path.name}...")
-    options = {"language": language} if language else {}
+    options: dict = {"language": language} if language else {}
+
+    # Custom Vocabulary als initial_prompt für bessere Erkennung
+    # Limit: Whisper initial_prompt sollte nicht zu lang werden
+    MAX_WHISPER_KEYWORDS = 50
+    vocab = load_vocabulary()
+    keywords = vocab.get("keywords", [])[:MAX_WHISPER_KEYWORDS]
+    if keywords:
+        options["initial_prompt"] = f"Fachbegriffe: {', '.join(keywords)}"
+        logger.debug(f"[{_session_id}] Lokales Whisper mit {len(keywords)} Keywords")
+
     result = whisper_model.transcribe(str(audio_path), **options)
 
     return result["text"]
