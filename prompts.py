@@ -73,6 +73,7 @@ DEFAULT_APP_CONTEXTS = {
     "WhatsApp": "chat",
     "Messages": "chat",
     "Signal": "chat",
+    "Nachrichten": "chat",
     # Code-Editoren
     "Code": "code",
     "VS Code": "code",
