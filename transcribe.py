@@ -17,7 +17,6 @@ import os
 import signal
 import sys
 import tempfile
-import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -206,67 +205,6 @@ def _cleanup_stale_pid_file() -> None:
         logger.warning(
             f"PID-File {PID_FILE} existiert, keine Berechtigung für Prozess-Check"
         )
-
-
-# Globaler State für SDK-Preload
-_sdk_preload_thread: threading.Thread | None = None
-_sdk_preload_start: float = 0
-
-
-def _preload_transcription_sdk(mode: str) -> None:
-    """
-    Lädt Transkriptions-SDK im Hintergrund vor.
-    Wird während der Aufnahme gestartet, damit das SDK bereit ist wenn die Aufnahme endet.
-    """
-    global _sdk_preload_start
-    _sdk_preload_start = time.perf_counter()
-
-    try:
-        if mode == "deepgram":
-            logger.debug(f"[{_session_id}] SDK-Preload: Deepgram wird geladen...")
-            from deepgram import DeepgramClient  # noqa: F401
-
-            elapsed = (time.perf_counter() - _sdk_preload_start) * 1000
-            logger.info(
-                f"[{_session_id}] SDK-Preload: Deepgram geladen ({elapsed:.0f}ms)"
-            )
-        elif mode == "api":
-            logger.debug(f"[{_session_id}] SDK-Preload: OpenAI wird geladen...")
-            from openai import OpenAI  # noqa: F401
-
-            elapsed = (time.perf_counter() - _sdk_preload_start) * 1000
-            logger.info(
-                f"[{_session_id}] SDK-Preload: OpenAI geladen ({elapsed:.0f}ms)"
-            )
-        else:
-            logger.debug(
-                f"[{_session_id}] SDK-Preload: Lokaler Modus, kein Preload nötig"
-            )
-    except Exception as e:
-        logger.warning(f"[{_session_id}] SDK-Preload fehlgeschlagen: {e}")
-
-
-def start_sdk_preload(mode: str) -> None:
-    """Startet SDK-Preload in Background-Thread."""
-    global _sdk_preload_thread
-    _sdk_preload_thread = threading.Thread(
-        target=_preload_transcription_sdk,
-        args=(mode,),
-        daemon=True,
-        name="sdk-preload",
-    )
-    _sdk_preload_thread.start()
-    logger.debug(f"[{_session_id}] SDK-Preload gestartet für mode={mode}")
-
-
-def wait_for_sdk_preload() -> None:
-    """Wartet auf SDK-Preload falls noch nicht fertig."""
-    global _sdk_preload_thread
-    if _sdk_preload_thread and _sdk_preload_thread.is_alive():
-        logger.debug(f"[{_session_id}] Warte auf SDK-Preload...")
-        _sdk_preload_thread.join(timeout=5.0)
-        if _sdk_preload_thread.is_alive():
-            logger.warning(f"[{_session_id}] SDK-Preload Timeout nach 5s")
 
 
 def record_audio_daemon() -> Path:
@@ -624,14 +562,8 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
         ERROR_FILE.unlink()
 
     try:
-        # SDK im Hintergrund vorladen während Aufnahme läuft
-        start_sdk_preload(args.mode)
-
         audio_path = record_audio_daemon()
         temp_file = audio_path
-
-        # Sicherstellen dass SDK geladen ist bevor Transkription startet
-        wait_for_sdk_preload()
 
         transcript = transcribe(
             audio_path,
@@ -693,11 +625,8 @@ def main() -> int:
 
     if args.record:
         try:
-            # SDK im Hintergrund vorladen während Aufnahme läuft
-            start_sdk_preload(args.mode)
             audio_path = record_audio()
             temp_file = audio_path
-            wait_for_sdk_preload()
         except ImportError:
             error("Für Aufnahme: pip install sounddevice soundfile")
             return 1
