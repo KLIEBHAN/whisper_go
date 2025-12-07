@@ -73,6 +73,20 @@ def _generate_session_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def _format_duration(milliseconds: float) -> str:
+    """Formatiert Dauer menschenlesbar: ms für kurze, s für längere Zeiten."""
+    if milliseconds >= 1000:
+        return f"{milliseconds / 1000:.2f}s"
+    return f"{milliseconds:.0f}ms"
+
+
+def _log_preview(text: str, max_length: int = 100) -> str:
+    """Kürzt Text für Log-Ausgabe mit Ellipsis wenn nötig."""
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length]}..."
+
+
 @contextmanager
 def timed_operation(name: str):
     """Kontextmanager für Zeitmessung mit automatischem Logging."""
@@ -82,10 +96,7 @@ def timed_operation(name: str):
         yield
     finally:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        if elapsed_ms >= 1000:
-            logger.info(f"[{_session_id}] {name}: {elapsed_ms / 1000:.2f}s")
-        else:
-            logger.info(f"[{_session_id}] {name}: {elapsed_ms:.0f}ms")
+        logger.info(f"[{_session_id}] {name}: {_format_duration(elapsed_ms)}")
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -127,21 +138,12 @@ def error(message: str) -> None:
 
 
 def load_environment() -> None:
-    """
-    Lädt .env-Datei falls python-dotenv installiert ist.
-    Sucht in: 1) Script-Verzeichnis (Symlinks aufgelöst), 2) Aktuelles Verzeichnis
-    """
+    """Lädt .env-Datei falls python-dotenv installiert ist."""
     try:
         from dotenv import load_dotenv
 
-        # .env im Script-Verzeichnis (resolve() folgt Symlinks)
-        script_dir = Path(__file__).resolve().parent
-        env_file = script_dir / ".env"
-        if env_file.exists():
-            load_dotenv(env_file)
-        else:
-            # Fallback: aktuelles Verzeichnis
-            load_dotenv()
+        env_file = SCRIPT_DIR / ".env"
+        load_dotenv(env_file if env_file.exists() else None)
     except ImportError:
         pass
 
@@ -183,7 +185,7 @@ def record_audio() -> Path:
 
     recorded_chunks: list = []
 
-    def on_audio_chunk(indata, frames, time, status):
+    def on_audio_chunk(indata, _frames, _time, _status):
         recorded_chunks.append(indata.copy())
 
     log("🎤 Drücke ENTER um die Aufnahme zu starten...")
@@ -218,7 +220,7 @@ def _cleanup_stale_pid_file() -> None:
 
     try:
         old_pid = int(PID_FILE.read_text().strip())
-        # Prüfen ob Prozess noch läuft (Signal 0 = nur prüfen, nicht senden)
+        # Signal 0 ist ein "Ping" – prüft Existenz ohne Seiteneffekte
         os.kill(old_pid, 0)
         # Prozess läuft noch - könnte legitim sein oder Zombie
         logger.warning(f"PID-File existiert, Prozess {old_pid} läuft noch")
@@ -247,13 +249,14 @@ def record_audio_daemon() -> Path:
     _cleanup_stale_pid_file()
 
     recorded_chunks: list = []
-    stop_flag = {"stop": False}  # Mutable Container statt global
+    # Dict statt bool, weil Python-Closures immutable Variablen nicht ändern können
+    stop_flag = {"stop": False}
     recording_start = time.perf_counter()
 
-    def on_audio_chunk(indata, frames, time_info, status):
+    def on_audio_chunk(indata, _frames, _time_info, _status):
         recorded_chunks.append(indata.copy())
 
-    def handle_stop_signal(signum: int, frame) -> None:
+    def handle_stop_signal(_signum: int, _frame) -> None:
         logger.debug(f"[{_session_id}] SIGUSR1 empfangen")
         stop_flag["stop"] = True
 
@@ -335,9 +338,7 @@ def transcribe_with_api(
     else:
         result = response.text if hasattr(response, "text") else str(response)
 
-    logger.debug(
-        f"[{_session_id}] Ergebnis: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
+    logger.debug(f"[{_session_id}] Ergebnis: {_log_preview(result)}")
 
     return result
 
@@ -375,9 +376,7 @@ def transcribe_with_deepgram(
 
     result = response.results.channels[0].alternatives[0].transcript
 
-    logger.debug(
-        f"[{_session_id}] Ergebnis: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
+    logger.debug(f"[{_session_id}] Ergebnis: {_log_preview(result)}")
 
     return result
 
@@ -422,13 +421,12 @@ def refine_transcript(
 
     client = OpenAI()
 
-    # API-Parameter je nach Modell anpassen
     api_params = {
         "model": effective_model,
         "input": f"{prompt or DEFAULT_REFINE_PROMPT}\n\nTranskript:\n{transcript}",
     }
 
-    # Reasoning nur für GPT-5 Modelle (minimal), andere nutzen low/medium/high
+    # GPT-5 nutzt "reasoning" API mit effort-Level, ältere Modelle ignorieren das
     if effective_model.startswith("gpt-5"):
         api_params["reasoning"] = {"effort": "minimal"}
 
@@ -436,9 +434,7 @@ def refine_transcript(
         response = client.responses.create(**api_params)
 
     result = response.output_text.strip()
-    logger.debug(
-        f"[{_session_id}] Output: {result[:100]}{'...' if len(result) > 100 else ''}"
-    )
+    logger.debug(f"[{_session_id}] Output: {_log_preview(result)}")
 
     return result
 
@@ -457,6 +453,14 @@ def maybe_refine_transcript(transcript: str, args: argparse.Namespace) -> str:
         return transcript
 
 
+# Standard-Modelle pro Modus – zentrale Konfiguration statt verstreuter Defaults
+DEFAULT_MODELS = {
+    "api": DEFAULT_API_MODEL,
+    "deepgram": DEFAULT_DEEPGRAM_MODEL,
+    "local": DEFAULT_LOCAL_MODEL,
+}
+
+
 def transcribe(
     audio_path: Path,
     mode: str,
@@ -470,27 +474,19 @@ def transcribe(
     Dies ist der einzige Einstiegspunkt für Transkription,
     unabhängig vom gewählten Modus.
     """
-    if model:
-        effective_model = model
-    elif mode == "api":
-        effective_model = DEFAULT_API_MODEL
-    elif mode == "deepgram":
-        effective_model = DEFAULT_DEEPGRAM_MODEL
-    else:
-        effective_model = DEFAULT_LOCAL_MODEL
+    effective_model = model or DEFAULT_MODELS[mode]
 
     if mode == "api":
         return transcribe_with_api(
             audio_path, effective_model, language, response_format
         )
 
-    if mode == "deepgram":
-        if response_format != "text":
-            log("Hinweis: --format wird im Deepgram-Modus ignoriert")
-        return transcribe_with_deepgram(audio_path, effective_model, language)
-
+    # Deepgram und lokal unterstützen kein response_format
     if response_format != "text":
-        log("Hinweis: --format wird im lokalen Modus ignoriert")
+        log(f"Hinweis: --format wird im {mode}-Modus ignoriert")
+
+    if mode == "deepgram":
+        return transcribe_with_deepgram(audio_path, effective_model, language)
 
     return transcribe_locally(audio_path, effective_model, language)
 
