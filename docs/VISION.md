@@ -82,8 +82,10 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 
 ### Phase 5: Multi-Platform ← aktuell
 
+- [ ] **Windows Support** – Priorisiert, siehe [WINDOWS_ANALYSIS.md](./WINDOWS_ANALYSIS.md)
+  - Aufwand: 120–150h (vollständige Feature-Parität)
+  - Kritische Komponenten: Daemon/IPC, Overlay UI, Hotkeys
 - [ ] Linux Support
-- [ ] Windows Support
 - [ ] iOS Keyboard (optional)
 
 ---
