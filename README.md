@@ -4,6 +4,8 @@ Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). 
 
 **Features:** Echtzeit-Streaming (Deepgram) · Mehrere Provider (OpenAI, Deepgram, Groq, lokal) · LLM-Nachbearbeitung · Kontext-Awareness · Custom Vocabulary · Raycast-Hotkeys · Menübar-Feedback
 
+> **Performance:** Ultra-Fast-Startup mit ~170ms bis Ready-Sound dank parallelem Mikrofon- und WebSocket-Init. Audio wird während der Aufnahme transkribiert – Ergebnis erscheint sofort nach dem Stoppen.
+
 ## Schnellstart
 
 In unter 2 Minuten einsatzbereit:
@@ -183,8 +185,8 @@ In Raycast:
 
 ### Nutzung
 
-- ⌥⌥ → Aufnahme startet
-- ⌥⌥ → Transkript wird eingefügt
+- ⌥⌥ → Aufnahme startet (Audio wird bereits live transkribiert!)
+- ⌥⌥ → Transkript wird sofort eingefügt (kein Warten auf API)
 
 ### Push-to-Talk (optional)
 
