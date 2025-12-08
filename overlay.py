@@ -73,15 +73,47 @@ WAVE_AREA_WIDTH = WAVE_BAR_COUNT * WAVE_BAR_WIDTH + (WAVE_BAR_COUNT - 1) * WAVE_
 
 OVERLAY_WINDOW_LEVEL = 25
 
+# Feedback Timing
+FEEDBACK_DISPLAY_DURATION = 2.0  # Sekunden für Done/Error
+FEEDBACK_FADE_START = 1.5  # Fade beginnt nach X Sekunden
+
+
 # Design Colors (P3 Display optimized)
 def get_custom_color(r, g, b, a=1.0):
-    return NSColor.colorWithSRGBRed_green_blue_alpha_(r/255.0, g/255.0, b/255.0, a)
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(
+        r / 255.0, g / 255.0, b / 255.0, a
+    )
+
 
 COLOR_IDLE = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
-COLOR_RECORDING = get_custom_color(255, 82, 82)    # Soft Red
-COLOR_TRANSCRIBING = get_custom_color(255, 177, 66) # Soft Orange
-COLOR_SUCCESS = get_custom_color(51, 217, 178)     # Soft Teal/Green
-COLOR_ERROR = get_custom_color(255, 71, 87)        # Bright Red
+COLOR_RECORDING = get_custom_color(255, 82, 82)  # Soft Red
+COLOR_TRANSCRIBING = get_custom_color(255, 177, 66)  # Soft Orange
+COLOR_SUCCESS = get_custom_color(51, 217, 178)  # Soft Teal/Green
+COLOR_ERROR = get_custom_color(255, 71, 87)  # Bright Red
+
+
+def create_height_animation(
+    bar, to_height, duration, delay=0, repeat=float("inf"), ease=True
+):
+    """Erstellt eine Höhen-Animation für einen CALayer-Balken."""
+    anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
+    anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
+    anim.setToValue_(to_height)
+    anim.setDuration_(duration)
+    anim.setAutoreverses_(True)
+    anim.setRepeatCount_(repeat)
+    if delay > 0:
+        anim.setBeginTime_(
+            bar.convertTime_fromLayer_(
+                CABasicAnimation.alloc().init().beginTime(), None
+            )
+            + delay
+        )
+    if ease:
+        anim.setTimingFunction_(
+            CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
+        )
+    return anim
 
 
 class SoundWaveView(NSView):
@@ -99,34 +131,25 @@ class SoundWaveView(NSView):
 
     def _setup_bars(self):
         """Erstellt die Balken für die Schallwellen."""
+        from Quartz import CALayer
+
         frame = self.frame()
         center_y = frame.size.height / 2
 
         for i in range(WAVE_BAR_COUNT):
             x = i * (WAVE_BAR_WIDTH + WAVE_BAR_GAP)
 
-            # Balken als CALayer
-            bar = (
-                self.layer().sublayers()[i]
-                if self.layer().sublayers() and i < len(self.layer().sublayers())
-                else None
-            )
-
-            if not bar:
-                from Quartz import CALayer
-
-                bar = CALayer.alloc().init()
-                self.layer().addSublayer_(bar)
-
+            bar = CALayer.alloc().init()
             bar.setBackgroundColor_(COLOR_IDLE.CGColor())
             bar.setCornerRadius_(WAVE_BAR_WIDTH / 2)
-
-            # Initiale Position (zentriert)
-            initial_height = WAVE_BAR_MIN_HEIGHT
             bar.setFrame_(
-                ((x, center_y - initial_height / 2), (WAVE_BAR_WIDTH, initial_height))
+                (
+                    (x, center_y - WAVE_BAR_MIN_HEIGHT / 2),
+                    (WAVE_BAR_WIDTH, WAVE_BAR_MIN_HEIGHT),
+                )
             )
 
+            self.layer().addSublayer_(bar)
             self.bars.append(bar)
 
     def setBarColor_(self, ns_color):
@@ -139,7 +162,7 @@ class SoundWaveView(NSView):
         """Startet die organische Schallwellen-Animation (Sprechen)."""
         if self.current_animation == "recording":
             return
-            
+
         self.stopAnimating()
         self.current_animation = "recording"
         self.animations_running = True
@@ -149,26 +172,10 @@ class SoundWaveView(NSView):
         delays = [0.0, 0.15, 0.3, 0.1, 0.25]
 
         for i, bar in enumerate(self.bars):
-            duration = durations[i % len(durations)]
-            delay = delays[i % len(delays)]
-
-            # Höhen-Animation
-            height_anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
-            height_anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
-            height_anim.setToValue_(WAVE_BAR_MAX_HEIGHT)
-            height_anim.setDuration_(duration)
-            height_anim.setBeginTime_(
-                bar.convertTime_fromLayer_(
-                    CABasicAnimation.alloc().init().beginTime(), None
-                ) + delay
+            anim = create_height_animation(
+                bar, WAVE_BAR_MAX_HEIGHT, durations[i], delays[i]
             )
-            height_anim.setRepeatCount_(float("inf"))
-            height_anim.setAutoreverses_(True)
-            height_anim.setTimingFunction_(
-                CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
-            )
-
-            bar.addAnimation_forKey_(height_anim, f"heightAnim{i}")
+            bar.addAnimation_forKey_(anim, f"heightAnim{i}")
 
     def startTranscribingAnimation(self):
         """Startet eine 'Loading'-Welle (Transkribieren)."""
@@ -179,49 +186,29 @@ class SoundWaveView(NSView):
         self.current_animation = "transcribing"
         self.animations_running = True
 
-        # Eine Welle, die durchläuft
-        total_duration = 1.0
-        
         for i, bar in enumerate(self.bars):
             # Sequentielles Delay für Welleneffekt
-            delay = (i / len(self.bars)) * (total_duration / 2)
-
-            height_anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
-            height_anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
-            height_anim.setToValue_(WAVE_BAR_MAX_HEIGHT * 0.7) # Etwas weniger Amplitude
-            height_anim.setDuration_(total_duration)
-            height_anim.setBeginTime_(
-                bar.convertTime_fromLayer_(
-                    CABasicAnimation.alloc().init().beginTime(), None
-                ) + delay
+            delay = (i / len(self.bars)) * 0.5
+            anim = create_height_animation(
+                bar, WAVE_BAR_MAX_HEIGHT * 0.7, duration=1.0, delay=delay
             )
-            height_anim.setRepeatCount_(float("inf"))
-            height_anim.setAutoreverses_(True)
-            height_anim.setTimingFunction_(
-                CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
-            )
-
-            bar.addAnimation_forKey_(height_anim, f"transcribeAnim{i}")
+            bar.addAnimation_forKey_(anim, f"transcribeAnim{i}")
 
     def startSuccessAnimation(self):
         """Einmaliges 'Hüpfen' in Grün für Erfolg."""
         self.stopAnimating()
         self.current_animation = "success"
         self.setBarColor_(COLOR_SUCCESS)
-        
-        # Kurze La-Ola Welle
+
         for i, bar in enumerate(self.bars):
-            duration = 0.3
-            delay = i * 0.05
-            
-            anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
-            anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
-            anim.setToValue_(WAVE_BAR_MAX_HEIGHT * 0.8)
-            anim.setDuration_(duration)
-            anim.setBeginTime_(bar.convertTime_fromLayer_(CABasicAnimation.alloc().init().beginTime(), None) + delay)
-            anim.setAutoreverses_(True)
-            anim.setRepeatCount_(1) 
-            
+            anim = create_height_animation(
+                bar,
+                WAVE_BAR_MAX_HEIGHT * 0.8,
+                duration=0.3,
+                delay=i * 0.05,
+                repeat=1,
+                ease=False,
+            )
             bar.addAnimation_forKey_(anim, f"successAnim{i}")
 
     def startErrorAnimation(self):
@@ -229,15 +216,11 @@ class SoundWaveView(NSView):
         self.stopAnimating()
         self.current_animation = "error"
         self.setBarColor_(COLOR_ERROR)
-        
-        # Alle Balken kurz hoch
+
         for i, bar in enumerate(self.bars):
-            anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
-            anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
-            anim.setToValue_(WAVE_BAR_MAX_HEIGHT)
-            anim.setDuration_(0.15)
-            anim.setAutoreverses_(True)
-            anim.setRepeatCount_(2) # 2x blinken
+            anim = create_height_animation(
+                bar, WAVE_BAR_MAX_HEIGHT, duration=0.15, repeat=2, ease=False
+            )
             bar.addAnimation_forKey_(anim, f"errorAnim{i}")
 
     def stopAnimating(self):
@@ -289,11 +272,12 @@ class WhisperOverlay(NSObject):
             self.last_text = None
             self.last_interim = None
             self.target_alpha = 0.0
-            
+
             # State Tracking für Feedback
             self.current_state_file_value = None
             self.state_timestamp = 0.0
-            
+            self.breathing_active = False
+
             self._setup_window()
             self._setup_timer()
         return self
@@ -322,7 +306,7 @@ class WhisperOverlay(NSObject):
         self.window.setIgnoresMouseEvents_(True)
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(NSColor.clearColor())
-        self.window.setAlphaValue_(0.0) # Start unsichtbar für Fade-In
+        self.window.setAlphaValue_(0.0)  # Start unsichtbar für Fade-In
         self.window.setHasShadow_(True)
 
         self.visual_effect_view = NSVisualEffectView.alloc().initWithFrame_(
@@ -379,6 +363,7 @@ class WhisperOverlay(NSObject):
 
         # Text Shadow (Subtil für Lesbarkeit)
         from AppKit import NSShadow
+
         text_shadow = NSShadow.alloc().init()
         text_shadow.setShadowOffset_((0, -1))
         text_shadow.setShadowBlurRadius_(2.0)
@@ -475,6 +460,39 @@ class WhisperOverlay(NSObject):
             )
         )
 
+    def _startBreathingEffect(self):
+        """Subtiler Puls-Effekt auf dem Shadow während Recording."""
+        if self.breathing_active:
+            return
+        self.breathing_active = True
+
+        layer = self.visual_effect_view.layer()
+        # Shadow-Opacity pulsieren
+        anim = CABasicAnimation.animationWithKeyPath_("shadowOpacity")
+        anim.setFromValue_(0.2)
+        anim.setToValue_(0.5)
+        anim.setDuration_(1.2)
+        anim.setAutoreverses_(True)
+        anim.setRepeatCount_(float("inf"))
+        anim.setTimingFunction_(
+            CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
+        )
+        layer.setShadowOpacity_(0.3)
+        layer.setShadowRadius_(12.0)
+        layer.setShadowOffset_((0, -2))
+        layer.setShadowColor_(COLOR_RECORDING.CGColor())
+        layer.addAnimation_forKey_(anim, "breathingShadow")
+
+    def _stopBreathingEffect(self):
+        """Stoppt den Breathing-Effekt."""
+        if not self.breathing_active:
+            return
+        self.breathing_active = False
+
+        layer = self.visual_effect_view.layer()
+        layer.removeAnimationForKey_("breathingShadow")
+        layer.setShadowOpacity_(0.0)
+
     def _popIn(self):
         """Subtiler Scale-Effekt beim Erscheinen."""
         # Scale Animation für den Content View
@@ -482,8 +500,10 @@ class WhisperOverlay(NSObject):
         anim.setFromValue_(0.95)
         anim.setToValue_(1.0)
         anim.setDuration_(0.25)
-        anim.setTimingFunction_(CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut))
-        
+        anim.setTimingFunction_(
+            CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
+        )
+
         self.visual_effect_view.layer().addAnimation_forKey_(anim, "popIn")
 
     def _fadeIn(self):
@@ -491,10 +511,10 @@ class WhisperOverlay(NSObject):
         if self.target_alpha != OVERLAY_ALPHA:
             was_hidden = self.target_alpha == 0.0
             self.target_alpha = OVERLAY_ALPHA
-            
+
             self.window.orderFront_(None)
             self.window.animator().setAlphaValue_(OVERLAY_ALPHA)
-            
+
             if was_hidden:
                 self._popIn()
 
@@ -515,33 +535,46 @@ class WhisperOverlay(NSObject):
         if state != self.current_state_file_value:
             self.current_state_file_value = state
             self.state_timestamp = current_time
-            
+
         # 1. Feedback-Zustände (Done/Error)
         if state in ["done", "error"]:
-            # Nach 2 Sekunden ausblenden
-            if current_time - self.state_timestamp > 2.0:
+            self._stopBreathingEffect()  # Recording-Effekt beenden
+            elapsed = current_time - self.state_timestamp
+
+            # Gradueller Fade-Out ab FEEDBACK_FADE_START
+            if elapsed > FEEDBACK_DISPLAY_DURATION:
                 self._fadeOut()
                 return
+            elif elapsed > FEEDBACK_FADE_START:
+                # Sanfter Übergang: Linear von OVERLAY_ALPHA zu 0
+                fade_progress = (elapsed - FEEDBACK_FADE_START) / (
+                    FEEDBACK_DISPLAY_DURATION - FEEDBACK_FADE_START
+                )
+                new_alpha = OVERLAY_ALPHA * (1.0 - fade_progress)
+                self.window.setAlphaValue_(new_alpha)
+                return
 
-            # Visualisierung anzeigen
-            if state == "done":
-                if self.wave_view.current_animation != "success":
+            # Visualisierung anzeigen (done/error haben gleiches Pattern)
+            config = {
+                "done": ("success", "Done", COLOR_SUCCESS),
+                "error": ("error", "Error", COLOR_ERROR),
+            }
+            anim_name, text, color = config[state]
+
+            if self.wave_view.current_animation != anim_name:
+                if state == "done":
                     self.wave_view.startSuccessAnimation()
-                    self.text_field.setStringValue_("Done")
-                    self.text_field.setTextColor_(COLOR_SUCCESS)
-                    self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
-                    self._resize_window_for_text("Done")
-                    self._fadeIn()
-            elif state == "error":
-                if self.wave_view.current_animation != "error":
+                else:
                     self.wave_view.startErrorAnimation()
-                    self.text_field.setStringValue_("Error")
-                    self.text_field.setTextColor_(COLOR_ERROR)
-                    self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
-                    self._resize_window_for_text("Error")
-                    self._fadeIn()
-            
-            return # Wichtig: Hier abbrechen, damit unten nichts überschrieben wird
+                self.text_field.setStringValue_(text)
+                self.text_field.setTextColor_(color)
+                self.text_field.setFont_(
+                    NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold)
+                )
+                self._resize_window_for_text(text)
+                self._fadeIn()
+
+            return  # Wichtig: Hier abbrechen, damit unten nichts überschrieben wird
 
         # 2. Aktive Zustände (Recording/Transcribing)
         is_status_msg = False
@@ -551,7 +584,7 @@ class WhisperOverlay(NSObject):
         if state == "recording":
             animation_mode = "recording"
             self.wave_view.setBarColor_(COLOR_RECORDING)
-            
+
             if interim_text:
                 self.last_interim = interim_text
                 # Kein truncate_text mehr, natives Verhalten
@@ -563,15 +596,15 @@ class WhisperOverlay(NSObject):
             else:
                 new_text = "Listening ..."
                 is_status_msg = True
-                
+
         elif state == "transcribing":
             animation_mode = "transcribing"
             self.wave_view.setBarColor_(COLOR_TRANSCRIBING)
             new_text = "Transcribing ..."
             self.last_interim = None
             is_status_msg = True
-            
-        else: # idle
+
+        else:  # idle
             self.wave_view.setBarColor_(COLOR_IDLE)
             new_text = None
             self.last_interim = None
@@ -581,13 +614,18 @@ class WhisperOverlay(NSObject):
         # Animation Update
         if animation_mode == "recording":
             self.wave_view.startRecordingAnimation()
+            self._startBreathingEffect()
         elif animation_mode == "transcribing":
             self.wave_view.startTranscribingAnimation()
+            self._stopBreathingEffect()
         else:
             self.wave_view.stopAnimating()
+            self._stopBreathingEffect()
 
         # Text & Visibility Update
-        if new_text != self.last_text or self.target_alpha == 0.0: # Auch updaten wenn wir gerade eingeblendet werden
+        if (
+            new_text != self.last_text or self.target_alpha == 0.0
+        ):  # Auch updaten wenn wir gerade eingeblendet werden
             self.last_text = new_text
             if new_text is not None:
                 self._update_text_style(is_status_msg)
