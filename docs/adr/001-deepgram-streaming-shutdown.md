@@ -42,6 +42,25 @@ Das Deepgram Protokoll unterstützt zwei relevante Control Messages:
 | `Finalize`    | Server verarbeitet gepuffertes Audio, sendet finale Transkripte mit `from_finalize=True` |
 | `CloseStream` | Server schließt Verbindung sofort                                                        |
 
+## Offizieller Weg vs. Unsere Optimierung
+
+### Was die Deepgram Docs empfehlen
+
+Laut [offizieller Dokumentation](https://developers.deepgram.com/docs/close-stream) reicht **CloseStream alleine**:
+
+> "Use the CloseStream message to close the WebSocket stream. This forces the server to
+> immediately process any unprocessed audio data and return the final transcription results."
+
+### Warum wir trotzdem Finalize + CloseStream nutzen
+
+Unsere Tests zeigten: CloseStream alleine ist **langsamer** (~3s vs. ~1s), weil:
+
+1. CloseStream triggert Verarbeitung UND wartet auf Server-Close
+2. Finalize triggert Verarbeitung und gibt uns ein **Signal** (`from_finalize=True`)
+3. Mit diesem Signal können wir sofort CloseStream senden, ohne auf Verarbeitung zu warten
+
+**Beide Ansätze sind API-konform** - wir nutzen nur ein zusätzliches Feature für bessere Performance.
+
 ## Entscheidung
 
 Wir senden **explizit Finalize + CloseStream** bevor der Context Manager endet:
@@ -94,7 +113,8 @@ asyncio.create_task(connection._websocket.close())
 
 ## Referenzen
 
-- [Deepgram CloseStream Docs](https://developers.deepgram.com/docs/close-stream)
+- [Deepgram Finalize Docs](https://developers.deepgram.com/docs/finalize) - Flush stream, Verbindung bleibt offen
+- [Deepgram CloseStream Docs](https://developers.deepgram.com/docs/close-stream) - Offizieller Shutdown-Weg
 - [Deepgram Python SDK v5.3.0](https://github.com/deepgram/deepgram-python-sdk)
 - [websockets Library](https://websockets.readthedocs.io/)
 - PR #20: `perf/deepgram-closestream`
