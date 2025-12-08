@@ -135,6 +135,20 @@ Die LLM-Nachbearbeitung passt den Prompt automatisch an den Nutzungskontext an:
 
 **Performance:** NSWorkspace-API (~0.2ms) statt AppleScript (~207ms)
 
+## Sprach-Commands
+
+Voice-Commands werden vom LLM in der Refine-Pipeline interpretiert (nur mit `--refine`):
+
+| Befehl (DE/EN)                   | Ergebnis |
+| -------------------------------- | -------- |
+| "neuer Absatz" / "new paragraph" | `\n\n`   |
+| "neue Zeile" / "new line"        | `\n`     |
+| "Punkt" / "period"               | `.`      |
+| "Komma" / "comma"                | `,`      |
+| "Fragezeichen" / "question mark" | `?`      |
+
+**Implementierung:** `prompts.py` → `VOICE_COMMANDS_INSTRUCTION` wird automatisch in alle Prompts eingefügt via `get_prompt_for_context(context, voice_commands=True)`
+
 ## Entwicklungs-Konventionen
 
 - Python 3.10+ (Type Hints mit `|` statt `Union`)
