@@ -84,18 +84,19 @@ python transcribe.py --record --copy --language de
 
 ## Konfiguration (ENV-Variablen)
 
-| Variable                     | Beschreibung                                      |
-| ---------------------------- | ------------------------------------------------- |
-| `WHISPER_GO_MODE`            | Default-Modus: `api`, `local`, `deepgram`, `groq` |
-| `WHISPER_GO_REFINE`          | LLM-Nachbearbeitung: `true`/`false`               |
-| `WHISPER_GO_REFINE_MODEL`    | Modell für Refine (default: `gpt-5-nano`)         |
-| `WHISPER_GO_REFINE_PROVIDER` | Provider: `openai`, `openrouter` oder `groq`      |
-| `WHISPER_GO_CONTEXT`         | Kontext-Override: `email`/`chat`/`code`           |
-| `WHISPER_GO_APP_CONTEXTS`    | Custom App-Mappings (JSON)                        |
-| `OPENAI_API_KEY`             | Für API-Modus und OpenAI-Refine                   |
-| `DEEPGRAM_API_KEY`           | Für Deepgram-Modus                                |
-| `GROQ_API_KEY`               | Für Groq-Modus und Groq-Refine                    |
-| `OPENROUTER_API_KEY`         | Für OpenRouter-Refine                             |
+| Variable                     | Beschreibung                                          |
+| ---------------------------- | ----------------------------------------------------- |
+| `WHISPER_GO_MODE`            | Default-Modus: `api`, `local`, `deepgram`, `groq`     |
+| `WHISPER_GO_MODEL`           | Transkriptions-Modell (überschreibt Provider-Default) |
+| `WHISPER_GO_REFINE`          | LLM-Nachbearbeitung: `true`/`false`                   |
+| `WHISPER_GO_REFINE_MODEL`    | Modell für Refine (default: `gpt-5-nano`)             |
+| `WHISPER_GO_REFINE_PROVIDER` | Provider: `openai`, `openrouter` oder `groq`          |
+| `WHISPER_GO_CONTEXT`         | Kontext-Override: `email`/`chat`/`code`               |
+| `WHISPER_GO_APP_CONTEXTS`    | Custom App-Mappings (JSON)                            |
+| `OPENAI_API_KEY`             | Für API-Modus und OpenAI-Refine                       |
+| `DEEPGRAM_API_KEY`           | Für Deepgram-Modus                                    |
+| `GROQ_API_KEY`               | Für Groq-Modus und Groq-Refine                        |
+| `OPENROUTER_API_KEY`         | Für OpenRouter-Refine                                 |
 
 ## Kontext-Awareness
 

@@ -43,11 +43,12 @@ export GROQ_API_KEY="gsk_..."
 
 > **Tipp:** Groq bietet extrem schnelle Whisper-Inferenz (~300x Echtzeit) mit kostenlosen API-Credits. [console.groq.com](https://console.groq.com)
 
-**Standard-Modus festlegen (optional):**
+**Standard-Modus und Modell festlegen (optional):**
 
 ```bash
 # In .env oder Shell-Config
 export WHISPER_GO_MODE="deepgram"  # api, local, deepgram, oder groq
+export WHISPER_GO_MODEL="nova-3"   # optional: überschreibt Provider-Default
 ```
 
 **LLM-Nachbearbeitung (Flow-Style):**
@@ -220,19 +221,19 @@ python transcribe.py --record --copy   # direkt in Zwischenablage
 
 ### Optionen
 
-| Option                              | Beschreibung                                                                                                 |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `--mode api\|local\|deepgram\|groq` | API (default), lokales Whisper, Deepgram oder Groq                                                           |
-| `--record`, `-r`                    | Mikrofon-Aufnahme statt Datei                                                                                |
-| `--copy`, `-c`                      | Ergebnis in Zwischenablage kopieren                                                                          |
-| `--model NAME`                      | Modellname (API: `gpt-4o-transcribe`; Deepgram: `nova-3`; Groq: `whisper-large-v3`; Lokal: `tiny`...`turbo`) |
-| `--language CODE`                   | Sprachcode z.B. `de`, `en`                                                                                   |
-| `--format FORMAT`                   | Output-Format: `text`, `json`, `srt`, `vtt` (nur API)                                                        |
-| `--refine`                          | LLM-Nachbearbeitung aktivieren (auch via `WHISPER_GO_REFINE` env)                                            |
-| `--no-refine`                       | LLM-Nachbearbeitung deaktivieren (überschreibt env)                                                          |
-| `--refine-model MODEL`              | Modell für Nachbearbeitung (default: `gpt-5-nano`, auch via `WHISPER_GO_REFINE_MODEL` env)                   |
-| `--refine-provider`                 | LLM-Provider: `openai`, `openrouter` oder `groq` (auch via `WHISPER_GO_REFINE_PROVIDER` env)                 |
-| `--context`                         | Kontext für Nachbearbeitung: `email`, `chat`, `code`, `default` (auto-detect wenn nicht gesetzt)             |
+| Option                              | Beschreibung                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `--mode api\|local\|deepgram\|groq` | API (default), lokales Whisper, Deepgram oder Groq                                               |
+| `--record`, `-r`                    | Mikrofon-Aufnahme statt Datei                                                                    |
+| `--copy`, `-c`                      | Ergebnis in Zwischenablage kopieren                                                              |
+| `--model NAME`                      | Modellname (auch via `WHISPER_GO_MODEL` env). Defaults je Provider                               |
+| `--language CODE`                   | Sprachcode z.B. `de`, `en`                                                                       |
+| `--format FORMAT`                   | Output-Format: `text`, `json`, `srt`, `vtt` (nur API)                                            |
+| `--refine`                          | LLM-Nachbearbeitung aktivieren (auch via `WHISPER_GO_REFINE` env)                                |
+| `--no-refine`                       | LLM-Nachbearbeitung deaktivieren (überschreibt env)                                              |
+| `--refine-model MODEL`              | Modell für Nachbearbeitung (default: `gpt-5-nano`, auch via `WHISPER_GO_REFINE_MODEL` env)       |
+| `--refine-provider`                 | LLM-Provider: `openai`, `openrouter` oder `groq` (auch via `WHISPER_GO_REFINE_PROVIDER` env)     |
+| `--context`                         | Kontext für Nachbearbeitung: `email`, `chat`, `code`, `default` (auto-detect wenn nicht gesetzt) |
 
 ### Beispiele
 
