@@ -49,6 +49,7 @@ whisper_go/
 | `_get_refine_client()`              | Client-Factory für Refine-Provider             |
 | `run_daemon_mode()`                 | Raycast-Modus: Aufnahme → Transkript-Datei     |
 | `run_daemon_mode_streaming()`       | Raycast-Modus mit Deepgram Streaming           |
+| `_daemonize()`                      | Double-Fork für echte Daemons (Zombie-Prev.)   |
 | `_cleanup_stale_pid_file()`         | Zombie-Prozess Cleanup mit PID-Validierung     |
 | `parse_args()`                      | CLI-Argument-Handling                          |
 
@@ -58,6 +59,7 @@ whisper_go/
 - Stderr für Status, Stdout nur für Output → saubere Pipe-Nutzung
 - Eine Datei statt mehrere → KISS-Prinzip
 - Flache Struktur mit Early Returns
+- Double-Fork Daemon: Verhindert Zombies bei Raycast spawn+unref
 
 ## CLI-Interface
 
@@ -82,6 +84,8 @@ python transcribe.py --record --copy --language de
 | `soundfile`      | WAV-Export                          |
 | `pyperclip`      | Zwischenablage                      |
 | `python-dotenv`  | .env Konfiguration                  |
+| `pyobjc`         | Overlay-UI (NSWindow, Animation)    |
+| `rumps`          | Menübar-App                         |
 
 **Externe:**
 

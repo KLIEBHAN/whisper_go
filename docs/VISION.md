@@ -64,19 +64,21 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 - [x] Kontext-Awareness (Email formal, Chat casual, Code technisch)
 - [x] Custom Vocabulary (Namen, Fachbegriffe)
 
-### Phase 4: Native App ✅ (größtenteils)
+### Phase 4: Native App ✅
 
 - [x] macOS Menübar-App (`menubar.py` mit rumps)
 - [x] Konfigurierbare Hotkeys (via Raycast System-Hotkey)
+- [x] Live-Preview Overlay (`overlay.py` mit PyObjC)
+- [x] Animierte Schallwellen-Visualisierung
 - [ ] Sprach-Commands ("neuer Absatz", "Punkt")
-- [ ] Live-Preview (Interim-Results in Menübar anzeigen)
 
 ### Phase 4.5: Quality & Testing ✅
 
-- [x] Unit-Tests mit pytest (124 Tests, ~0.4s)
+- [x] Unit-Tests mit pytest (145 Tests, ~0.5s)
 - [x] CI/CD Pipeline (GitHub Actions auf macOS)
 - [x] Code Coverage mit Codecov
 - [x] Parametrisierte Tests für Wartbarkeit
+- [x] Zombie-Prozess Prevention (Double-Fork Daemon)
 
 ### Phase 5: Multi-Platform ← aktuell
 
@@ -97,6 +99,8 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 │ Audio        │ sounddevice → WAV (+ Ready-Sound)          │
 ├──────────────┼────────────────────────────────────────────┤
 │ Transkription│ Deepgram Nova-3 / OpenAI API / Whisper     │
+├──────────────┼────────────────────────────────────────────┤
+│ Feedback     │ Overlay (PyObjC) / Menübar (rumps)         │
 ├──────────────┼────────────────────────────────────────────┤
 │ Nachbearbeit.│ GPT-5 / OpenRouter (Claude, Llama, etc.)   │
 ├──────────────┼────────────────────────────────────────────┤
@@ -121,15 +125,16 @@ Bewusst ausgeschlossen, um Fokus zu halten:
 
 ## Tech-Stack
 
-| Layer  | Technologie                 | Warum                        |
-| ------ | --------------------------- | ---------------------------- |
-| Core   | Python 3.10+                | Whisper-Integration, einfach |
-| Audio  | sounddevice                 | Cross-platform, low-level    |
-| STT    | Deepgram / OpenAI / Whisper | Flexibel, best-of-breed      |
-| LLM    | OpenAI / OpenRouter / Groq  | Multi-Provider für Refine    |
-| Hotkey | Raycast Extension           | Native macOS Integration     |
-| GUI    | rumps                       | Native macOS Menübar         |
-| Test   | pytest + GitHub Actions     | CI/CD mit Coverage           |
+| Layer   | Technologie                 | Warum                        |
+| ------- | --------------------------- | ---------------------------- |
+| Core    | Python 3.10+                | Whisper-Integration, einfach |
+| Audio   | sounddevice                 | Cross-platform, low-level    |
+| STT     | Deepgram / OpenAI / Whisper | Flexibel, best-of-breed      |
+| LLM     | OpenAI / OpenRouter / Groq  | Multi-Provider für Refine    |
+| Hotkey  | Raycast Extension           | Native macOS Integration     |
+| Menübar | rumps                       | Native macOS Menübar         |
+| Overlay | PyObjC                      | Native macOS UI, 60fps       |
+| Test    | pytest + GitHub Actions     | CI/CD mit Coverage           |
 
 ---
 
@@ -141,7 +146,7 @@ Bewusst ausgeschlossen, um Fokus zu halten:
 | Genauigkeit   | > 95% (DE/EN)        | ✅ Erreicht mit Nova-3         |
 | RAM (Idle)    | < 100 MB             | ✅ Kein Daemon im Idle         |
 | Onboarding    | < 1 Minute           | ✅ Schnellstart in README      |
-| Test-Coverage | > 60% (Core)         | ✅ 124 Tests, CI/CD aktiv      |
+| Test-Coverage | > 60% (Core)         | ✅ 145 Tests, CI/CD aktiv      |
 
 ---
 

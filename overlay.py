@@ -91,6 +91,7 @@ class SoundWaveView(NSView):
             self.setWantsLayer_(True)
             self.bars = []
             self.animations_running = False
+            self.current_animation = None
             self._setup_bars()
         return self
 
@@ -134,16 +135,18 @@ class SoundWaveView(NSView):
         for bar in self.bars:
             bar.setBackgroundColor_(cg_color)
 
-    def startAnimating(self):
-        """Startet die Schallwellen-Animation."""
-        if self.animations_running:
+    def startRecordingAnimation(self):
+        """Startet die organische Schallwellen-Animation (Sprechen)."""
+        if self.current_animation == "recording":
             return
-
+            
+        self.stopAnimating()
+        self.current_animation = "recording"
         self.animations_running = True
-        frame = self.frame()
-        center_y = frame.size.height / 2
 
-        # Organischere Animation
+        center_y = self.frame().size.height / 2
+        
+        # Organischere Animation mit leicht unterschiedlichen Timings
         durations = [0.42, 0.38, 0.45, 0.39, 0.41]
         delays = [0.0, 0.15, 0.3, 0.1, 0.25]
 
@@ -159,42 +162,61 @@ class SoundWaveView(NSView):
             height_anim.setBeginTime_(
                 bar.convertTime_fromLayer_(
                     CABasicAnimation.alloc().init().beginTime(), None
-                )
-                + delay
+                ) + delay
             )
             height_anim.setRepeatCount_(float("inf"))
             height_anim.setAutoreverses_(True)
             height_anim.setTimingFunction_(
-                CAMediaTimingFunction.functionWithName_(
-                    kCAMediaTimingFunctionEaseInEaseOut
-                )
+                CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
             )
-
-            # Y-Position Animation
-            y_anim = CABasicAnimation.animationWithKeyPath_("position.y")
-            y_anim.setFromValue_(center_y)
-            y_anim.setToValue_(center_y)
-            y_anim.setDuration_(duration)
-            y_anim.setBeginTime_(
-                bar.convertTime_fromLayer_(
-                    CABasicAnimation.alloc().init().beginTime(), None
-                )
-                + delay
-            )
-            y_anim.setRepeatCount_(float("inf"))
-            y_anim.setAutoreverses_(True)
 
             bar.addAnimation_forKey_(height_anim, f"heightAnim{i}")
-            bar.addAnimation_forKey_(y_anim, f"yAnim{i}")
+
+    def startTranscribingAnimation(self):
+        """Startet eine 'Loading'-Welle (Transkribieren)."""
+        if self.current_animation == "transcribing":
+            return
+
+        self.stopAnimating()
+        self.current_animation = "transcribing"
+        self.animations_running = True
+
+        # Eine Welle, die durchläuft
+        total_duration = 1.0
+        
+        for i, bar in enumerate(self.bars):
+            # Sequentielles Delay für Welleneffekt
+            delay = (i / len(self.bars)) * (total_duration / 2)
+
+            height_anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
+            height_anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
+            height_anim.setToValue_(WAVE_BAR_MAX_HEIGHT * 0.7) # Etwas weniger Amplitude
+            height_anim.setDuration_(total_duration)
+            height_anim.setBeginTime_(
+                bar.convertTime_fromLayer_(
+                    CABasicAnimation.alloc().init().beginTime(), None
+                ) + delay
+            )
+            height_anim.setRepeatCount_(float("inf"))
+            height_anim.setAutoreverses_(True)
+            height_anim.setTimingFunction_(
+                CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
+            )
+
+            bar.addAnimation_forKey_(height_anim, f"transcribeAnim{i}")
 
     def stopAnimating(self):
-        """Stoppt die Animation."""
+        """Stoppt alle Animationen."""
         if not self.animations_running:
             return
 
         self.animations_running = False
+        self.current_animation = None
         for bar in self.bars:
             bar.removeAllAnimations()
+            # Reset auf Ruheposition
+            # Hinweis: Ohne explizites Setzen bleiben Layer manchmal im letzten State
+            bar.setBounds_(NSMakeRect(0, 0, WAVE_BAR_WIDTH, WAVE_BAR_MIN_HEIGHT))
 
     def drawRect_(self, rect):
         """Zeichnet die Balken manuell (Fallback ohne Animation)."""
@@ -231,7 +253,7 @@ class WhisperOverlay(NSObject):
             self.wave_view = None
             self.last_text = None
             self.last_interim = None
-            self.is_visible = False
+            self.target_alpha = 0.0
             self._setup_window()
             self._setup_timer()
         return self
@@ -260,7 +282,7 @@ class WhisperOverlay(NSObject):
         self.window.setIgnoresMouseEvents_(True)
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(NSColor.clearColor())
-        self.window.setAlphaValue_(OVERLAY_ALPHA)
+        self.window.setAlphaValue_(0.0) # Start unsichtbar für Fade-In
         self.window.setHasShadow_(True)
 
         self.visual_effect_view = NSVisualEffectView.alloc().initWithFrame_(
@@ -402,17 +424,20 @@ class WhisperOverlay(NSObject):
             )
         )
 
-    def _show(self):
-        if not self.is_visible:
-            self.is_visible = True
-            self.wave_view.startAnimating()
+    def _fadeIn(self):
+        """Sanftes Einblenden."""
+        if self.target_alpha != OVERLAY_ALPHA:
+            self.target_alpha = OVERLAY_ALPHA
             self.window.orderFront_(None)
+            self.window.animator().setAlphaValue_(OVERLAY_ALPHA)
 
-    def _hide(self):
-        if self.is_visible:
-            self.is_visible = False
-            self.wave_view.stopAnimating()
-            self.window.orderOut_(None)
+    def _fadeOut(self):
+        """Sanftes Ausblenden."""
+        if self.target_alpha != 0.0:
+            self.target_alpha = 0.0
+            self.window.animator().setAlphaValue_(0.0)
+            # Hinweis: Wir rufen orderOut_ nicht sofort auf, damit der Fade sichtbar ist.
+            # Bei Alpha 0 ist es effektiv unsichtbar und Klicks gehen durch (ignoresMouseEvents=True)
 
     def pollState_(self, timer):
         state = self._read_state()
@@ -420,9 +445,12 @@ class WhisperOverlay(NSObject):
 
         is_status_msg = False
         new_text = None
+        animation_mode = None # "recording", "transcribing" oder None
 
         if state == "recording":
+            animation_mode = "recording"
             self.wave_view.setBarColor_(NSColor.systemRedColor())
+            
             if interim_text:
                 self.last_interim = interim_text
                 new_text = f"{truncate_text(interim_text)} ..."
@@ -434,30 +462,43 @@ class WhisperOverlay(NSObject):
             else:
                 new_text = "Listening ..."
                 is_status_msg = True
+                
         elif state == "transcribing":
+            animation_mode = "transcribing"
             self.wave_view.setBarColor_(NSColor.systemOrangeColor())
             new_text = "Transcribing ..."
             self.last_interim = None
             is_status_msg = True
-        else:
+            
+        else: # idle
             self.wave_view.setBarColor_(
                 NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
             )
             new_text = None
             self.last_interim = None
             is_status_msg = True
+            animation_mode = None
 
+        # Animation State Update
+        if animation_mode == "recording":
+            self.wave_view.startRecordingAnimation()
+        elif animation_mode == "transcribing":
+            self.wave_view.startTranscribingAnimation()
+        else:
+            self.wave_view.stopAnimating()
+
+        # Text & Visibility Update
         if new_text != self.last_text:
             self.last_text = new_text
             if new_text is not None:
                 # Erst Style setzen (beeinflusst Messung)
                 self._update_text_style(is_status_msg)
                 # Dann Größe berechnen und Text setzen
-                self._resize_window_for_text(new_text if new_text else "Recording")
+                self._resize_window_for_text(new_text)
                 self.text_field.setStringValue_(new_text)
-                self._show()
+                self._fadeIn()
             else:
-                self._hide()
+                self._fadeOut()
 
     def _read_state(self) -> str:
         try:
