@@ -1,0 +1,100 @@
+# ADR-001: Deepgram Streaming Shutdown Optimierung
+
+**Status:** Accepted
+**Datum:** 2024-12-08
+**Kontext:** Performance-Optimierung der Streaming-Pipeline
+
+## Problem
+
+Nach dem Beenden einer Aufnahme dauerte es 5-10 Sekunden, bis das Transkript verfügbar war. Die Analyse der Logs zeigte:
+
+```
+18:29:22 Finale Transkripte empfangen
+18:29:32 Streaming abgeschlossen  ← 10 Sekunden Verzögerung!
+```
+
+## Ursachenanalyse
+
+### 1. Der Deepgram SDK Context Manager
+
+Das Deepgram Python SDK (v5.3.0) verwendet intern einen `async with` Context Manager:
+
+```python
+# deepgram/listen/v1/client.py, Zeile 423
+async with websockets_client_connect(ws_url, extra_headers=headers) as protocol:
+    yield AsyncV1SocketClient(websocket=protocol)
+```
+
+### 2. Das websockets-Library Verhalten
+
+Der `__aexit__` von `websockets.connect()` wartet auf einen sauberen WebSocket Close-Handshake:
+
+- Client sendet Close-Frame
+- Server bestätigt mit Close-Frame
+- Wenn Server nicht antwortet: Timeout (bis zu 10s)
+
+### 3. Deepgram Control Messages
+
+Das Deepgram Protokoll unterstützt zwei relevante Control Messages:
+
+| Message       | Zweck                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| `Finalize`    | Server verarbeitet gepuffertes Audio, sendet finale Transkripte mit `from_finalize=True` |
+| `CloseStream` | Server schließt Verbindung sofort                                                        |
+
+## Entscheidung
+
+Wir senden **explizit Finalize + CloseStream** bevor der Context Manager endet:
+
+```python
+# 1. Finalize: Letzte Transkripte holen
+await connection.send_control(ListenV1ControlMessage(type="Finalize"))
+await asyncio.wait_for(finalize_done.wait(), timeout=2.0)
+
+# 2. CloseStream: Verbindung sofort beenden
+await connection.send_control(ListenV1ControlMessage(type="CloseStream"))
+```
+
+### Warum beide Messages?
+
+- **Nur Finalize:** Verbindung bleibt offen, `__aexit__` wartet auf Timeout
+- **Nur CloseStream:** Funktioniert, aber ~3s langsamer (Server verarbeitet erst, dann Close)
+- **Finalize + CloseStream:** Schnellste Option (~2s statt ~10s)
+
+## Ergebnis
+
+| Metrik                   | Vorher | Nachher | Verbesserung   |
+| ------------------------ | ------ | ------- | -------------- |
+| Stop → Transkript fertig | 5-10s  | ~2s     | ~70% schneller |
+| Gesamt-Pipeline          | 15-22s | 7-8s    | ~60% schneller |
+
+## Verbleibende Latenz (~2s)
+
+Der `async with __aexit__` blockiert noch ~2s. Das ist internes websockets-Library-Verhalten.
+
+### Mögliche weitere Optimierung (nicht implementiert)
+
+```python
+# Fire-and-forget: WebSocket im Hintergrund schließen
+asyncio.create_task(connection._websocket.close())
+```
+
+**Abgelehnt weil:**
+
+- Verwendet private API (`_websocket`)
+- Kein sauberer Close-Handshake
+- Risiko bei SDK-Updates
+- 2s Ersparnis rechtfertigt nicht den Hack
+
+## Lessons Learned
+
+1. **Logging ist essentiell:** Ohne detaillierte Timestamps hätten wir den Flaschenhals nicht gefunden
+2. **SDK-Internals verstehen:** Das "SDK-Problem" war eigentlich websockets-Library-Verhalten
+3. **Protokoll-Features nutzen:** Finalize + CloseStream sind dokumentiert, aber nicht offensichtlich
+
+## Referenzen
+
+- [Deepgram CloseStream Docs](https://developers.deepgram.com/docs/close-stream)
+- [Deepgram Python SDK v5.3.0](https://github.com/deepgram/deepgram-python-sdk)
+- [websockets Library](https://websockets.readthedocs.io/)
+- PR #20: `perf/deepgram-closestream`

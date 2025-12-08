@@ -942,19 +942,31 @@ async def _deepgram_stream_core(
             # Interim-Datei sofort löschen (Menübar zeigt nur während Recording)
             INTERIM_FILE.unlink(missing_ok=True)
 
-            # --- Graceful Shutdown ---
-            # 1. Sender beenden: Sentinel in Queue, warten bis gesendet
-            await audio_queue.put(None)
+            # ═══════════════════════════════════════════════════════════════════
+            # GRACEFUL SHUTDOWN - Optimiert für minimale Latenz
+            #
+            # Hintergrund: Der Deepgram SDK Context Manager (async with) verwendet
+            # intern websockets.connect(), dessen __aexit__ auf einen sauberen
+            # WebSocket Close-Handshake wartet (bis zu 10s Timeout).
+            #
+            # Lösung: Wir senden explizit Finalize + CloseStream BEVOR der
+            # Context Manager endet. Das reduziert die Shutdown-Zeit von
+            # ~10s auf ~2s. Siehe docs/adr/001-deepgram-streaming-shutdown.md
+            # ═══════════════════════════════════════════════════════════════════
+
+            # 1. Audio-Sender beenden
+            await audio_queue.put(None)  # Sentinel signalisiert Ende
             await send_task
 
-            # 2. Finalize: Server verarbeitet Rest-Audio und sendet finale Transkripte
+            # 2. Finalize: Deepgram verarbeitet gepuffertes Audio
+            #    Server antwortet mit from_finalize=True wenn fertig
             logger.info(f"[{_session_id}] Sende Finalize...")
             try:
                 await connection.send_control(ListenV1ControlMessage(type="Finalize"))
             except Exception as e:
                 logger.warning(f"[{_session_id}] Finalize fehlgeschlagen: {e}")
 
-            # 3. Warten bis Server fertig (from_finalize=True)
+            # 3. Warten auf finale Transkripte (from_finalize=True Event)
             try:
                 await asyncio.wait_for(finalize_done.wait(), timeout=FINALIZE_TIMEOUT)
                 logger.info(f"[{_session_id}] Finalize abgeschlossen")
@@ -963,7 +975,8 @@ async def _deepgram_stream_core(
                     f"[{_session_id}] Finalize-Timeout ({FINALIZE_TIMEOUT}s)"
                 )
 
-            # 4. CloseStream: Verbindung sofort schließen (ohne auf Server-Timeout zu warten)
+            # 4. CloseStream: Erzwingt sofortiges Verbindungs-Ende
+            #    Ohne CloseStream wartet der async-with Exit ~10s auf Server-Close
             logger.info(f"[{_session_id}] Sende CloseStream...")
             try:
                 await connection.send_control(
@@ -978,6 +991,9 @@ async def _deepgram_stream_core(
             listen_task.cancel()
             await asyncio.gather(listen_task, return_exceptions=True)
             logger.info(f"[{_session_id}] Listener beendet, verlasse async-with...")
+
+            # Hinweis: Der async-with Exit blockiert noch ~2s im SDK.
+            # Das ist websockets-Library-Verhalten und ohne Hacks nicht vermeidbar.
 
     finally:
         # Cleanup: Mikrofon und Signal-Handler freigeben
