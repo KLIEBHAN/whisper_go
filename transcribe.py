@@ -752,7 +752,7 @@ async def _deepgram_stream_core(
     # --- Shared State für Callbacks ---
     final_transcripts: list[str] = []
     stop_event = asyncio.Event()  # Signalisiert Ende der Aufnahme
-    finalize_received = asyncio.Event()  # Deepgram hat finale Transkripte gesendet
+    finalize_done = asyncio.Event()  # Server hat Rest-Audio verarbeitet
     stream_error: Exception | None = None
 
     # --- Deepgram Event-Handler ---
@@ -762,10 +762,9 @@ async def _deepgram_stream_core(
         """Sammelt Transkripte aus Deepgram-Responses."""
         nonlocal last_interim_write
 
-        # Finalize-Response markiert Ende des Streams
+        # from_finalize=True signalisiert: Server hat Rest-Audio verarbeitet
         if getattr(result, "from_finalize", False):
-            logger.info(f"[{_session_id}] Finalize-Antwort empfangen")
-            finalize_received.set()
+            finalize_done.set()
 
         transcript = _extract_transcript(result)
         if not transcript:
@@ -947,23 +946,35 @@ async def _deepgram_stream_core(
             await audio_queue.put(None)
             await send_task
 
-            # 2. Deepgram bitten, verbleibende Audio zu transkribieren
+            # 2. Finalize: Server verarbeitet Rest-Audio und sendet finale Transkripte
             logger.info(f"[{_session_id}] Sende Finalize...")
             try:
                 await connection.send_control(ListenV1ControlMessage(type="Finalize"))
             except Exception as e:
                 logger.warning(f"[{_session_id}] Finalize fehlgeschlagen: {e}")
 
-            # 3. Auf finale Transkripte warten (max 2s, dann weitermachen)
+            # 3. Warten bis Server fertig (from_finalize=True), max 2s
             try:
-                await asyncio.wait_for(finalize_received.wait(), timeout=2.0)
-                logger.info(f"[{_session_id}] Finale Transkripte empfangen")
+                await asyncio.wait_for(finalize_done.wait(), timeout=2.0)
+                logger.info(f"[{_session_id}] Finalize abgeschlossen")
             except asyncio.TimeoutError:
-                logger.warning(f"[{_session_id}] Timeout beim Warten auf Finalize")
+                logger.warning(f"[{_session_id}] Finalize-Timeout (2s)")
 
-            # 4. Listener Task beenden
+            # 4. CloseStream: Verbindung sofort schließen (ohne auf Server-Timeout zu warten)
+            logger.info(f"[{_session_id}] Sende CloseStream...")
+            try:
+                await connection.send_control(
+                    ListenV1ControlMessage(type="CloseStream")
+                )
+                logger.info(f"[{_session_id}] CloseStream gesendet")
+            except Exception as e:
+                logger.warning(f"[{_session_id}] CloseStream fehlgeschlagen: {e}")
+
+            # 5. Listener Task beenden
+            logger.info(f"[{_session_id}] Beende Listener...")
             listen_task.cancel()
             await asyncio.gather(listen_task, return_exceptions=True)
+            logger.info(f"[{_session_id}] Listener beendet, verlasse async-with...")
 
     finally:
         # Cleanup: Mikrofon und Signal-Handler freigeben
