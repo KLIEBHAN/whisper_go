@@ -400,20 +400,24 @@ def record_audio() -> Path:
 def _is_whisper_go_process(pid: int) -> bool:
     """Prüft ob die PID zu einem whisper_go Prozess gehört (Sicherheit!).
 
-    Nutzt libproc auf macOS (~0.1ms) statt subprocess.run(["ps"]) (~50-100ms).
+    Strategie:
+    1. os.kill(pid, 0) für schnellen Existenz-Check (~0.1ms)
+    2. libproc auf macOS als Vorfilter – wenn nicht Python, sofort False (~0.1ms)
+    3. subprocess als sicherer Fallback für finale Validierung (~50ms)
+
+    Die Kombination ist schnell im Happy-Path (kein Prozess oder kein Python)
+    und sicher im Edge-Case (verifiziert transcribe.py + --record-daemon).
     """
     import ctypes
+    import subprocess
 
     try:
         # Erst prüfen ob Prozess existiert (schnell)
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Prozess existiert, aber wir haben keine Berechtigung
+    except (ProcessLookupError, PermissionError):
         return False
 
-    # macOS: libproc für schnellen Pfad-Lookup
+    # macOS: libproc als schneller Vorfilter
     if sys.platform == "darwin":
         try:
             PROC_PIDPATHINFO_MAXSIZE = 4096
@@ -421,15 +425,27 @@ def _is_whisper_go_process(pid: int) -> bool:
             buf = ctypes.create_string_buffer(PROC_PIDPATHINFO_MAXSIZE)
             ret = libc.proc_pidpath(pid, buf, PROC_PIDPATHINFO_MAXSIZE)
             if ret > 0:
-                path = buf.value.decode("utf-8", errors="ignore")
-                # Prüfen ob es ein Python-Prozess ist (könnte unser Script sein)
-                return "python" in path.lower() or "Python" in path
+                path = buf.value.decode("utf-8", errors="ignore").lower()
+                # Kein Python-Prozess → definitiv nicht unser Daemon
+                if "python" not in path:
+                    return False
         except (OSError, AttributeError):
             pass
 
-    # Fallback: Wir akzeptieren das minimale Risiko
-    # (PID existiert, aber wir können nicht sicher prüfen ob es unser Prozess ist)
-    return True
+    # Sicherer Fallback: subprocess für exakte Validierung
+    # Nur ~50ms, aber garantiert korrekt
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        command = result.stdout.strip()
+        return "transcribe.py" in command and "--record-daemon" in command
+    except Exception:
+        # Bei Fehler: Sicherheit > Performance → nicht killen
+        return False
 
 
 def _daemonize() -> None:
