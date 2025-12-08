@@ -217,33 +217,98 @@ def parse_hotkey(hotkey_str: str) -> tuple[int, int]:
 # =============================================================================
 
 
-def paste_transcript(text: str) -> None:
+def paste_transcript(text: str) -> bool:
     """
     Kopiert Text in Clipboard und fügt via Cmd+V ein.
 
+    Verwendet CGEventPost (Quartz) für Cmd+V – keine Accessibility nötig!
+
     Args:
         text: Text zum Einfügen
+
+    Returns:
+        True wenn erfolgreich, False bei Fehler
     """
     import pyperclip
 
+    logger.info(f"Auto-Paste: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+
     # 1. In Clipboard kopieren
-    pyperclip.copy(text)
-    logger.debug(f"Text in Clipboard: {len(text)} Zeichen")
+    try:
+        pyperclip.copy(text)
+        logger.debug(f"Clipboard: {len(text)} Zeichen kopiert")
+    except Exception as e:
+        logger.error(f"Clipboard-Fehler: {e}")
+        return False
 
-    # 2. Kurze Pause für Clipboard-Sync
-    time.sleep(0.05)
+    # 2. Clipboard verifizieren
+    try:
+        clipboard_content = pyperclip.paste()
+        if clipboard_content != text:
+            logger.warning(
+                f"Clipboard-Mismatch: erwartet {len(text)} Zeichen, "
+                f"bekommen {len(clipboard_content)} Zeichen"
+            )
+    except Exception as e:
+        logger.warning(f"Clipboard-Verify fehlgeschlagen: {e}")
 
-    # 3. Cmd+V via AppleScript (zuverlässiger als pynput)
-    subprocess.run(
+    # 3. Kurze Pause für Clipboard-Sync
+    time.sleep(0.1)
+
+    # 4. Cmd+V via CGEventPost (keine Accessibility nötig!)
+    try:
+        from Quartz import (
+            CGEventCreateKeyboardEvent,
+            CGEventPost,
+            CGEventSetFlags,
+            kCGEventFlagMaskCommand,
+            kCGHIDEventTap,
+        )
+
+        # Virtual Key Code für 'V' ist 9
+        kVK_ANSI_V = 9
+
+        # Key Down Event mit Command-Modifier
+        event_down = CGEventCreateKeyboardEvent(None, kVK_ANSI_V, True)
+        CGEventSetFlags(event_down, kCGEventFlagMaskCommand)
+
+        # Key Up Event mit Command-Modifier
+        event_up = CGEventCreateKeyboardEvent(None, kVK_ANSI_V, False)
+        CGEventSetFlags(event_up, kCGEventFlagMaskCommand)
+
+        # Events posten
+        CGEventPost(kCGHIDEventTap, event_down)
+        CGEventPost(kCGHIDEventTap, event_up)
+
+        logger.info("Auto-Paste: Cmd+V gesendet via CGEventPost")
+        return True
+
+    except ImportError as e:
+        logger.error(f"Quartz nicht verfügbar: {e}")
+        # Fallback auf osascript (braucht Accessibility)
+        return _paste_via_osascript()
+    except Exception as e:
+        logger.error(f"CGEventPost fehlgeschlagen: {e}")
+        return _paste_via_osascript()
+
+
+def _paste_via_osascript() -> bool:
+    """Fallback: Paste via osascript (braucht Accessibility!)."""
+    logger.warning("Fallback auf osascript (braucht Accessibility-Berechtigung)")
+    result = subprocess.run(
         [
             "osascript",
             "-e",
             'tell application "System Events" to keystroke "v" using command down',
         ],
         capture_output=True,
+        text=True,
     )
-
-    logger.info("Auto-Paste ausgeführt")
+    if result.returncode != 0:
+        logger.error(f"osascript fehlgeschlagen: {result.stderr}")
+        return False
+    logger.info("Auto-Paste: osascript erfolgreich")
+    return True
 
 
 # =============================================================================
@@ -254,16 +319,25 @@ def paste_transcript(text: str) -> None:
 def is_recording() -> bool:
     """Prüft ob eine Aufnahme läuft."""
     if not PID_FILE.exists():
+        logger.debug("is_recording: PID-Datei existiert nicht")
         return False
 
     try:
         pid = int(PID_FILE.read_text().strip())
         # Signal 0 = Existenz-Check
         os.kill(pid, 0)
+        logger.debug(f"is_recording: Prozess {pid} läuft")
         return True
-    except (ValueError, ProcessLookupError, PermissionError):
-        # PID ungültig oder Prozess existiert nicht
+    except ValueError:
+        logger.debug("is_recording: PID-Datei enthält ungültigen Wert")
         PID_FILE.unlink(missing_ok=True)
+        return False
+    except ProcessLookupError:
+        logger.debug("is_recording: Prozess existiert nicht mehr, entferne PID-Datei")
+        PID_FILE.unlink(missing_ok=True)
+        return False
+    except PermissionError as e:
+        logger.warning(f"is_recording: Permission-Fehler: {e}")
         return False
 
 
@@ -315,45 +389,63 @@ def stop_recording() -> str | None:
     Returns:
         Transkript-Text oder None bei Fehler
     """
+    logger.debug(f"stop_recording: PID_FILE={PID_FILE}, exists={PID_FILE.exists()}")
+
     if not PID_FILE.exists():
-        logger.warning("Keine aktive Aufnahme")
+        logger.warning("stop_recording: Keine PID-Datei gefunden")
         return None
 
     try:
         pid = int(PID_FILE.read_text().strip())
-    except (ValueError, FileNotFoundError):
-        logger.warning("PID-Datei ungültig")
+        logger.debug(f"stop_recording: PID aus Datei gelesen: {pid}")
+    except (ValueError, FileNotFoundError) as e:
+        logger.warning(f"stop_recording: PID-Datei ungültig: {e}")
         return None
 
     # SIGUSR1 senden (stoppt Aufnahme in transcribe.py)
     try:
         os.kill(pid, signal.SIGUSR1)
-        logger.info(f"SIGUSR1 an PID {pid} gesendet")
+        logger.info(f"stop_recording: SIGUSR1 an PID {pid} gesendet")
     except ProcessLookupError:
-        logger.warning(f"Prozess {pid} existiert nicht mehr")
+        logger.warning(f"stop_recording: Prozess {pid} existiert nicht mehr")
         PID_FILE.unlink(missing_ok=True)
+        return None
+    except PermissionError as e:
+        logger.error(f"stop_recording: Keine Berechtigung für Signal: {e}")
         return None
 
     # Auf Transkript warten
-    deadline = time.time() + TRANSCRIPT_TIMEOUT
+    logger.debug(f"stop_recording: Warte auf Transkript (max {TRANSCRIPT_TIMEOUT}s)...")
+    start_time = time.time()
+    deadline = start_time + TRANSCRIPT_TIMEOUT
+
     while time.time() < deadline:
+        elapsed = time.time() - start_time
+
         # Fehler prüfen
         if ERROR_FILE.exists():
             error_text = ERROR_FILE.read_text().strip()
             ERROR_FILE.unlink(missing_ok=True)
-            logger.error(f"Transkription fehlgeschlagen: {error_text}")
+            logger.error(
+                f"stop_recording: Transkription fehlgeschlagen nach {elapsed:.1f}s: {error_text}"
+            )
             return None
 
         # Transkript prüfen
         if TRANSCRIPT_FILE.exists():
             transcript = TRANSCRIPT_FILE.read_text().strip()
             TRANSCRIPT_FILE.unlink(missing_ok=True)
-            logger.info(f"Transkript erhalten: {len(transcript)} Zeichen")
+            logger.info(
+                f"stop_recording: Transkript nach {elapsed:.1f}s erhalten ({len(transcript)} Zeichen)"
+            )
             return transcript
 
         time.sleep(POLL_INTERVAL)
 
-    logger.error("Timeout beim Warten auf Transkript")
+    logger.error(f"stop_recording: Timeout nach {TRANSCRIPT_TIMEOUT}s")
+    logger.debug(
+        f"stop_recording: ERROR_FILE exists={ERROR_FILE.exists()}, TRANSCRIPT_FILE exists={TRANSCRIPT_FILE.exists()}"
+    )
     return None
 
 
@@ -380,6 +472,9 @@ class HotkeyDaemon:
         """
         self.hotkey = hotkey
         self.mode = mode
+
+        # Stale IPC-Dateien beim Start aufräumen
+        self._cleanup_stale_state()
         self._recording = False
 
         if mode == "ptt":
@@ -389,22 +484,58 @@ class HotkeyDaemon:
             )
             self.mode = "toggle"
 
+    def _cleanup_stale_state(self) -> None:
+        """Räumt stale IPC-Dateien von vorherigen Sessions auf."""
+        # Prüfe ob eine alte Aufnahme noch läuft
+        if PID_FILE.exists():
+            try:
+                pid = int(PID_FILE.read_text().strip())
+                os.kill(pid, 0)  # Prüfe ob Prozess existiert
+                logger.warning(
+                    f"Alte Aufnahme läuft noch (PID {pid}). "
+                    "Sende SIGTERM zum Beenden..."
+                )
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.5)
+            except (ValueError, ProcessLookupError):
+                logger.info("Stale PID-Datei gefunden, räume auf...")
+            except PermissionError:
+                logger.warning(f"Keine Berechtigung für PID {pid}")
+
+            # Aufräumen
+            PID_FILE.unlink(missing_ok=True)
+            TRANSCRIPT_FILE.unlink(missing_ok=True)
+            ERROR_FILE.unlink(missing_ok=True)
+            logger.debug("IPC-Dateien aufgeräumt")
+
     def _on_hotkey(self) -> None:
         """Callback bei Hotkey-Aktivierung."""
+        logger.debug(f"Hotkey gedrückt! Recording-State: {self._recording}")
         self._toggle_recording()
 
     def _toggle_recording(self) -> None:
         """Toggle-Mode: Start/Stop bei jedem Tastendruck."""
         if self._recording:
-            logger.info("Toggle: Stop")
+            logger.info("Toggle: Stop - Beende Aufnahme...")
             transcript = stop_recording()
             self._recording = False
+
             if transcript:
-                paste_transcript(transcript)
+                logger.info(f"Transkript: '{transcript}'")
+                success = paste_transcript(transcript)
+                if success:
+                    logger.info("✓ Text erfolgreich eingefügt")
+                else:
+                    logger.error("✗ Auto-Paste fehlgeschlagen")
+            else:
+                logger.warning("Kein Transkript erhalten")
         else:
-            logger.info("Toggle: Start")
+            logger.info("Toggle: Start - Starte Aufnahme...")
             if start_recording():
                 self._recording = True
+                logger.info("✓ Aufnahme gestartet")
+            else:
+                logger.error("✗ Aufnahme konnte nicht gestartet werden")
 
     def run(self) -> None:
         """Startet Daemon (blockiert)."""
