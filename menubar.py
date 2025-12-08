@@ -78,23 +78,27 @@ class WhisperGoStatus(rumps.App):
 
     def _read_state(self) -> str:
         """Ermittelt aktuellen State aus IPC-Dateien."""
-        # Primär: STATE_FILE
-        if STATE_FILE.exists():
-            try:
-                return STATE_FILE.read_text().strip()
-            except (OSError, IOError):
-                pass
+        # Primär: STATE_FILE (direkt lesen, keine Race Condition)
+        try:
+            state = STATE_FILE.read_text().strip()
+            if state:
+                return state
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
         # Fallback: PID_FILE (für Abwärtskompatibilität)
-        # Prüfe ob Prozess tatsächlich noch läuft
-        if PID_FILE.exists():
-            if self._is_process_alive():
-                return "recording"
-            # PID-Datei existiert aber Prozess ist tot → aufräumen
-            try:
-                PID_FILE.unlink()
-            except (OSError, IOError):
-                pass
+        if self._is_process_alive():
+            return "recording"
+
+        # Prozess tot oder PID-Datei fehlt → versuche aufzuräumen
+        try:
+            PID_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
         return "idle"
 
