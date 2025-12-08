@@ -64,14 +64,21 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 - [x] Kontext-Awareness (Email formal, Chat casual, Code technisch)
 - [x] Custom Vocabulary (Namen, Fachbegriffe)
 
-### Phase 4: Native App ← aktuell
+### Phase 4: Native App ✅ (größtenteils)
 
-- [ ] macOS Menübar-App (rumps oder Swift)
-- [ ] Konfigurierbare Hotkeys
+- [x] macOS Menübar-App (`menubar.py` mit rumps)
+- [x] Konfigurierbare Hotkeys (via Raycast System-Hotkey)
 - [ ] Sprach-Commands ("neuer Absatz", "Punkt")
-- [ ] Live-Preview (Interim-Results während der Aufnahme anzeigen)
+- [ ] Live-Preview (Interim-Results in Menübar anzeigen)
 
-### Phase 5: Multi-Platform
+### Phase 4.5: Quality & Testing ✅
+
+- [x] Unit-Tests mit pytest (124 Tests, ~0.4s)
+- [x] CI/CD Pipeline (GitHub Actions auf macOS)
+- [x] Code Coverage mit Codecov
+- [x] Parametrisierte Tests für Wartbarkeit
+
+### Phase 5: Multi-Platform ← aktuell
 
 - [ ] Linux Support
 - [ ] Windows Support
@@ -119,20 +126,22 @@ Bewusst ausgeschlossen, um Fokus zu halten:
 | Core   | Python 3.10+                | Whisper-Integration, einfach |
 | Audio  | sounddevice                 | Cross-platform, low-level    |
 | STT    | Deepgram / OpenAI / Whisper | Flexibel, best-of-breed      |
-| LLM    | OpenAI / OpenRouter         | Multi-Provider für Refine    |
+| LLM    | OpenAI / OpenRouter / Groq  | Multi-Provider für Refine    |
 | Hotkey | Raycast Extension           | Native macOS Integration     |
 | GUI    | rumps                       | Native macOS Menübar         |
+| Test   | pytest + GitHub Actions     | CI/CD mit Coverage           |
 
 ---
 
 ## Erfolgs-Metriken
 
-| Metrik      | Ziel                 | Status                         |
-| ----------- | -------------------- | ------------------------------ |
-| Latenz      | < 2s (Hotkey → Text) | ✅ ~300ms (Deepgram Streaming) |
-| Genauigkeit | > 95% (DE/EN)        | ✅ Erreicht mit Nova-3         |
-| RAM (Idle)  | < 100 MB             | ✅ Kein Daemon im Idle         |
-| Onboarding  | < 1 Minute           | ✅ Schnellstart in README      |
+| Metrik        | Ziel                 | Status                         |
+| ------------- | -------------------- | ------------------------------ |
+| Latenz        | < 2s (Hotkey → Text) | ✅ ~300ms (Deepgram Streaming) |
+| Genauigkeit   | > 95% (DE/EN)        | ✅ Erreicht mit Nova-3         |
+| RAM (Idle)    | < 100 MB             | ✅ Kein Daemon im Idle         |
+| Onboarding    | < 1 Minute           | ✅ Schnellstart in README      |
+| Test-Coverage | > 60% (Core)         | ✅ 124 Tests, CI/CD aktiv      |
 
 ---
 
