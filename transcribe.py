@@ -247,6 +247,10 @@ class _CoreAudioPlayer:
                 ctypes.c_void_p,
                 ctypes.POINTER(ctypes.c_uint32),
             ]
+
+            # CFRelease für Memory Management
+            self._core_foundation.CFRelease.restype = None
+            self._core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
         except (OSError, AttributeError) as e:
             logger.debug(f"CoreAudio nicht verfügbar, nutze Fallback: {e}")
             self._use_fallback = True
@@ -256,6 +260,8 @@ class _CoreAudioPlayer:
         if self._use_fallback or self._core_foundation is None:
             return None
 
+        cf_string = None
+        cf_url = None
         try:
             # CFString aus Pfad erstellen (kCFStringEncodingUTF8 = 0x08000100)
             cf_string = self._core_foundation.CFStringCreateWithCString(
@@ -282,6 +288,12 @@ class _CoreAudioPlayer:
             return None
         except Exception:
             return None
+        finally:
+            # WICHTIG: CF-Objekte freigeben um Memory Leaks zu vermeiden
+            if cf_url:
+                self._core_foundation.CFRelease(cf_url)
+            if cf_string:
+                self._core_foundation.CFRelease(cf_string)
 
     def play(self, sound_name: str, sound_path: str) -> None:
         """Spielt Sound ab (lädt bei Bedarf)."""

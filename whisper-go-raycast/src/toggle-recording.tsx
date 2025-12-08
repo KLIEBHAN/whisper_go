@@ -62,10 +62,10 @@ interface Preferences {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Timing-Helper für Performance-Analyse
-const startTime = Date.now();
+// Timing-Helper für Performance-Analyse (wird pro Command() neu gesetzt)
+let commandStartTime = 0;
 function logTiming(label: string): void {
-  const elapsed = Date.now() - startTime;
+  const elapsed = Date.now() - commandStartTime;
   console.log(`[whisper_go] +${elapsed}ms: ${label}`);
 }
 
@@ -270,6 +270,7 @@ async function stopRecording(): Promise<void> {
 
 export default async function Command(): Promise<void> {
   const commandStart = Date.now();
+  commandStartTime = commandStart; // Timing-Baseline für logTiming() setzen
   console.log(`[whisper_go] === Command() START ===`);
 
   const prefs = resolvePreferences(getPreferenceValues<Preferences>());
