@@ -16,6 +16,19 @@ DEFAULT_REFINE_PROMPT = """Korrigiere dieses Transkript:
 
 Gib NUR den korrigierten Text zurück, keine Erklärungen."""
 
+# Voice-Commands für Diktat (werden in alle Prompts eingefügt)
+VOICE_COMMANDS_INSTRUCTION = """
+Interpretiere gesprochene Befehle und entferne sie aus dem Text:
+- "neuer Absatz" / "new paragraph" → Absatz (doppelter Zeilenumbruch)
+- "neue Zeile" / "new line" → Zeilenumbruch
+- "Punkt" / "period" → Satz mit Punkt beenden
+- "Komma" / "comma" → Komma einfügen
+- "Fragezeichen" / "question mark" → Fragezeichen
+- "Ausrufezeichen" / "exclamation mark" → Ausrufezeichen
+- "Doppelpunkt" / "colon" → Doppelpunkt
+- "Semikolon" / "semicolon" → Semikolon
+Wende die Befehle an der gesprochenen Stelle an und entferne den Befehlstext."""
+
 # Kontext-spezifische Prompts für LLM-Nachbearbeitung
 CONTEXT_PROMPTS = {
     "email": """Korrigiere dieses Transkript für eine E-Mail:
@@ -43,16 +56,21 @@ Gib NUR den korrigierten Text zurück.""",
 }
 
 
-def get_prompt_for_context(context: str) -> str:
+def get_prompt_for_context(context: str, voice_commands: bool = True) -> str:
     """Gibt den Prompt für einen Kontext zurück, mit Fallback auf 'default'.
 
     Args:
         context: Kontext-Typ (email, chat, code, default)
+        voice_commands: Voice-Commands Instruktionen einfügen (default: True)
 
     Returns:
         Der passende Prompt-Text. Bei unbekanntem Kontext → default.
     """
-    return CONTEXT_PROMPTS.get(context, CONTEXT_PROMPTS["default"])
+    prompt = CONTEXT_PROMPTS.get(context, CONTEXT_PROMPTS["default"])
+    if voice_commands:
+        # Füge Voice-Commands vor "Gib NUR" ein
+        prompt = prompt.replace("Gib NUR", VOICE_COMMANDS_INSTRUCTION + "\nGib NUR")
+    return prompt
 
 
 # =============================================================================

@@ -158,6 +158,30 @@ python transcribe.py --record --refine --context email
 export WHISPER_GO_APP_CONTEXTS='{"MyApp": "chat"}'
 ```
 
+### Sprach-Commands
+
+Steuere Formatierung durch gesprochene Befehle (automatisch aktiv mit `--refine`):
+
+| Deutsch          | Englisch           | Ergebnis |
+| ---------------- | ------------------ | -------- |
+| "neuer Absatz"   | "new paragraph"    | Absatz   |
+| "neue Zeile"     | "new line"         | Umbruch  |
+| "Punkt"          | "period"           | `.`      |
+| "Komma"          | "comma"            | `,`      |
+| "Fragezeichen"   | "question mark"    | `?`      |
+| "Ausrufezeichen" | "exclamation mark" | `!`      |
+| "Doppelpunkt"    | "colon"            | `:`      |
+| "Semikolon"      | "semicolon"        | `;`      |
+
+```bash
+# Beispiel
+python transcribe.py --record --refine
+# Spreche: "Hallo Punkt wie geht es dir Fragezeichen"
+# Ergebnis: "Hallo. Wie geht es dir?"
+```
+
+> **Hinweis:** Sprach-Commands werden vom LLM interpretiert – sie funktionieren nur mit `--refine`.
+
 ### Custom Vocabulary
 
 Eigene Begriffe für bessere Erkennung in `~/.whisper_go/vocabulary.json`:

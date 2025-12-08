@@ -6,6 +6,7 @@ from prompts import (
     CONTEXT_PROMPTS,
     DEFAULT_APP_CONTEXTS,
     DEFAULT_REFINE_PROMPT,
+    VOICE_COMMANDS_INSTRUCTION,
     get_prompt_for_context,
 )
 
@@ -14,18 +15,61 @@ class TestGetPromptForContext:
     """Tests für get_prompt_for_context() - Prompt-Lookup mit Fallback."""
 
     @pytest.mark.parametrize("context", ["email", "chat", "code"])
-    def test_known_contexts(self, context):
-        """Bekannte Kontexte liefern ihre spezifischen Prompts."""
-        assert get_prompt_for_context(context) == CONTEXT_PROMPTS[context]
+    def test_known_contexts_without_voice_commands(self, context):
+        """Bekannte Kontexte liefern ihre spezifischen Prompts (ohne Voice-Commands)."""
+        result = get_prompt_for_context(context, voice_commands=False)
+        assert result == CONTEXT_PROMPTS[context]
 
-    def test_default_context(self):
-        """'default' Kontext liefert DEFAULT_REFINE_PROMPT."""
-        assert get_prompt_for_context("default") == DEFAULT_REFINE_PROMPT
+    def test_default_context_without_voice_commands(self):
+        """'default' Kontext liefert DEFAULT_REFINE_PROMPT (ohne Voice-Commands)."""
+        result = get_prompt_for_context("default", voice_commands=False)
+        assert result == DEFAULT_REFINE_PROMPT
 
     @pytest.mark.parametrize("context", ["unknown", "xyz", ""])
     def test_unknown_context_fallback(self, context):
         """Unbekannte Kontexte fallen auf 'default' zurück."""
-        assert get_prompt_for_context(context) == DEFAULT_REFINE_PROMPT
+        result = get_prompt_for_context(context, voice_commands=False)
+        assert result == DEFAULT_REFINE_PROMPT
+
+
+class TestVoiceCommands:
+    """Tests für Voice-Commands Integration in Prompts."""
+
+    @pytest.mark.parametrize("context", ["email", "chat", "code", "default"])
+    def test_voice_commands_included_by_default(self, context):
+        """Voice-Commands werden standardmäßig eingefügt."""
+        result = get_prompt_for_context(context)
+        assert VOICE_COMMANDS_INSTRUCTION in result
+
+    @pytest.mark.parametrize("context", ["email", "chat", "code", "default"])
+    def test_voice_commands_excluded_when_disabled(self, context):
+        """Voice-Commands werden nicht eingefügt wenn deaktiviert."""
+        result = get_prompt_for_context(context, voice_commands=False)
+        assert VOICE_COMMANDS_INSTRUCTION not in result
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "neuer Absatz",
+            "new paragraph",
+            "Punkt",
+            "period",
+            "Komma",
+            "comma",
+            "Fragezeichen",
+            "neue Zeile",
+        ],
+    )
+    def test_voice_commands_instruction_contains_command(self, command):
+        """VOICE_COMMANDS_INSTRUCTION enthält alle erwarteten Befehle."""
+        assert command in VOICE_COMMANDS_INSTRUCTION
+
+    def test_voice_commands_before_final_instruction(self):
+        """Voice-Commands werden vor 'Gib NUR' eingefügt."""
+        result = get_prompt_for_context("default")
+        voice_pos = result.find(VOICE_COMMANDS_INSTRUCTION)
+        gib_nur_pos = result.find("Gib NUR")
+        assert voice_pos < gib_nur_pos
 
 
 class TestPromptConstants:

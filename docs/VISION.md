@@ -70,7 +70,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 - [x] Konfigurierbare Hotkeys (via Raycast System-Hotkey)
 - [x] Live-Preview Overlay (`overlay.py` mit PyObjC)
 - [x] Animierte Schallwellen-Visualisierung
-- [ ] Sprach-Commands ("neuer Absatz", "Punkt")
+- [x] Sprach-Commands ("neuer Absatz", "Punkt") via LLM-Refine
 
 ### Phase 4.5: Quality & Testing ✅
 
