@@ -13,6 +13,7 @@ Voraussetzung:
 """
 
 from pathlib import Path
+import time
 
 from AppKit import (
     NSApplication,
@@ -54,9 +55,9 @@ INTERIM_FILE = Path("/tmp/whisper_go.interim")
 POLL_INTERVAL = 0.2
 OVERLAY_MIN_WIDTH = 260  # Etwas breiter als Startbasis
 OVERLAY_MAX_WIDTH_RATIO = 0.75
-OVERLAY_HEIGHT = 92  # Etwas höher für mehr Luft
+OVERLAY_HEIGHT = 100  # Mehr Luft (war 92)
 OVERLAY_MARGIN_BOTTOM = 110  # Etwas höher positioniert
-OVERLAY_CORNER_RADIUS = 20  # Sanfterer Radius (angepasst für Glass-Look)
+OVERLAY_CORNER_RADIUS = 22  # Etwas runder für die Höhe
 OVERLAY_PADDING_H = 24  # Mehr seitlicher Abstand
 OVERLAY_ALPHA = 0.95
 FONT_SIZE = 15  # Größere Schrift
@@ -205,6 +206,43 @@ class SoundWaveView(NSView):
 
             bar.addAnimation_forKey_(height_anim, f"transcribeAnim{i}")
 
+    def startSuccessAnimation(self):
+        """Einmaliges 'Hüpfen' in Grün für Erfolg."""
+        self.stopAnimating()
+        self.current_animation = "success"
+        self.setBarColor_(NSColor.systemGreenColor())
+        
+        # Kurze La-Ola Welle
+        for i, bar in enumerate(self.bars):
+            duration = 0.3
+            delay = i * 0.05
+            
+            anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
+            anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
+            anim.setToValue_(WAVE_BAR_MAX_HEIGHT * 0.8)
+            anim.setDuration_(duration)
+            anim.setBeginTime_(bar.convertTime_fromLayer_(CABasicAnimation.alloc().init().beginTime(), None) + delay)
+            anim.setAutoreverses_(True)
+            anim.setRepeatCount_(1) 
+            
+            bar.addAnimation_forKey_(anim, f"successAnim{i}")
+
+    def startErrorAnimation(self):
+        """Kurzes rotes Aufblinken."""
+        self.stopAnimating()
+        self.current_animation = "error"
+        self.setBarColor_(NSColor.systemRedColor())
+        
+        # Alle Balken kurz hoch
+        for i, bar in enumerate(self.bars):
+            anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
+            anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
+            anim.setToValue_(WAVE_BAR_MAX_HEIGHT)
+            anim.setDuration_(0.15)
+            anim.setAutoreverses_(True)
+            anim.setRepeatCount_(2) # 2x blinken
+            bar.addAnimation_forKey_(anim, f"errorAnim{i}")
+
     def stopAnimating(self):
         """Stoppt alle Animationen."""
         if not self.animations_running:
@@ -254,6 +292,11 @@ class WhisperOverlay(NSObject):
             self.last_text = None
             self.last_interim = None
             self.target_alpha = 0.0
+            
+            # State Tracking für Feedback
+            self.current_state_file_value = None
+            self.state_timestamp = 0.0
+            
             self._setup_window()
             self._setup_timer()
         return self
@@ -308,7 +351,7 @@ class WhisperOverlay(NSObject):
 
         # 1. Schallwelle (Oben)
         # Position: Vertikal etwas nach oben verschoben für gute Balance
-        wave_y = height - (WAVE_BAR_MAX_HEIGHT + 18)
+        wave_y = height - (WAVE_BAR_MAX_HEIGHT + 20)
         wave_x = (width - WAVE_AREA_WIDTH) / 2
 
         self.wave_view = SoundWaveView.alloc().initWithFrame_(
@@ -334,6 +377,14 @@ class WhisperOverlay(NSObject):
         self.text_field.setEditable_(False)
         self.text_field.setSelectable_(False)
         self.text_field.setAlignment_(NSTextAlignmentCenter)
+
+        # Text Shadow (Subtil für Lesbarkeit)
+        from AppKit import NSShadow
+        text_shadow = NSShadow.alloc().init()
+        text_shadow.setShadowOffset_((0, -1))
+        text_shadow.setShadowBlurRadius_(2.0)
+        text_shadow.setShadowColor_(NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.3))
+        self.text_field.setShadow_(text_shadow)
 
         # Helles Weiß für starken Kontrast
         self.text_field.setTextColor_(
@@ -409,7 +460,7 @@ class WhisperOverlay(NSObject):
 
         # Wave zentrieren
         wave_x = (width - WAVE_AREA_WIDTH) / 2
-        wave_y = height - (WAVE_BAR_MAX_HEIGHT + 18)
+        wave_y = height - (WAVE_BAR_MAX_HEIGHT + 20)
         self.wave_view.setFrame_(
             NSMakeRect(wave_x, wave_y, WAVE_AREA_WIDTH, WAVE_BAR_MAX_HEIGHT)
         )
@@ -424,12 +475,28 @@ class WhisperOverlay(NSObject):
             )
         )
 
+    def _popIn(self):
+        """Subtiler Scale-Effekt beim Erscheinen."""
+        # Scale Animation für den Content View
+        anim = CABasicAnimation.animationWithKeyPath_("transform.scale")
+        anim.setFromValue_(0.95)
+        anim.setToValue_(1.0)
+        anim.setDuration_(0.25)
+        anim.setTimingFunction_(CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut))
+        
+        self.visual_effect_view.layer().addAnimation_forKey_(anim, "popIn")
+
     def _fadeIn(self):
         """Sanftes Einblenden."""
         if self.target_alpha != OVERLAY_ALPHA:
+            was_hidden = self.target_alpha == 0.0
             self.target_alpha = OVERLAY_ALPHA
+            
             self.window.orderFront_(None)
             self.window.animator().setAlphaValue_(OVERLAY_ALPHA)
+            
+            if was_hidden:
+                self._popIn()
 
     def _fadeOut(self):
         """Sanftes Ausblenden."""
@@ -442,10 +509,44 @@ class WhisperOverlay(NSObject):
     def pollState_(self, timer):
         state = self._read_state()
         interim_text = self._read_interim()
+        current_time = time.time()
 
+        # State Change Detection für Feedback-Timer
+        if state != self.current_state_file_value:
+            self.current_state_file_value = state
+            self.state_timestamp = current_time
+            
+        # 1. Feedback-Zustände (Done/Error)
+        if state in ["done", "error"]:
+            # Nach 2 Sekunden ausblenden
+            if current_time - self.state_timestamp > 2.0:
+                self._fadeOut()
+                return
+
+            # Visualisierung anzeigen
+            if state == "done":
+                if self.wave_view.current_animation != "success":
+                    self.wave_view.startSuccessAnimation()
+                    self.text_field.setStringValue_("Done")
+                    self.text_field.setTextColor_(NSColor.systemGreenColor())
+                    self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
+                    self._resize_window_for_text("Done")
+                    self._fadeIn()
+            elif state == "error":
+                if self.wave_view.current_animation != "error":
+                    self.wave_view.startErrorAnimation()
+                    self.text_field.setStringValue_("Error")
+                    self.text_field.setTextColor_(NSColor.systemRedColor())
+                    self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
+                    self._resize_window_for_text("Error")
+                    self._fadeIn()
+            
+            return # Wichtig: Hier abbrechen, damit unten nichts überschrieben wird
+
+        # 2. Aktive Zustände (Recording/Transcribing)
         is_status_msg = False
         new_text = None
-        animation_mode = None # "recording", "transcribing" oder None
+        animation_mode = None
 
         if state == "recording":
             animation_mode = "recording"
@@ -456,7 +557,6 @@ class WhisperOverlay(NSObject):
                 new_text = f"{truncate_text(interim_text)} ..."
                 is_status_msg = False
             elif self.last_interim:
-                # Sprechpause: Statt altem Text nun "Loading ..."
                 new_text = "Loading ..."
                 is_status_msg = True
             else:
@@ -479,7 +579,7 @@ class WhisperOverlay(NSObject):
             is_status_msg = True
             animation_mode = None
 
-        # Animation State Update
+        # Animation Update
         if animation_mode == "recording":
             self.wave_view.startRecordingAnimation()
         elif animation_mode == "transcribing":
@@ -488,12 +588,10 @@ class WhisperOverlay(NSObject):
             self.wave_view.stopAnimating()
 
         # Text & Visibility Update
-        if new_text != self.last_text:
+        if new_text != self.last_text or self.target_alpha == 0.0: # Auch updaten wenn wir gerade eingeblendet werden
             self.last_text = new_text
             if new_text is not None:
-                # Erst Style setzen (beeinflusst Messung)
                 self._update_text_style(is_status_msg)
-                # Dann Größe berechnen und Text setzen
                 self._resize_window_for_text(new_text)
                 self.text_field.setStringValue_(new_text)
                 self._fadeIn()
