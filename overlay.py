@@ -53,34 +53,35 @@ INTERIM_FILE = Path("/tmp/whisper_go.interim")
 
 # Konfiguration - MODERN VERTICAL LAYOUT
 POLL_INTERVAL = 0.2
-OVERLAY_MIN_WIDTH = 260  # Etwas breiter als Startbasis
+OVERLAY_MIN_WIDTH = 260
 OVERLAY_MAX_WIDTH_RATIO = 0.75
-OVERLAY_HEIGHT = 100  # Mehr Luft (war 92)
-OVERLAY_MARGIN_BOTTOM = 110  # Etwas höher positioniert
-OVERLAY_CORNER_RADIUS = 22  # Etwas runder für die Höhe
-OVERLAY_PADDING_H = 24  # Mehr seitlicher Abstand
+OVERLAY_HEIGHT = 100
+OVERLAY_MARGIN_BOTTOM = 110
+OVERLAY_CORNER_RADIUS = 22
+OVERLAY_PADDING_H = 24
 OVERLAY_ALPHA = 0.95
-FONT_SIZE = 15  # Größere Schrift
-MAX_TEXT_LENGTH = 120
-TEXT_FIELD_HEIGHT = 24  # Höheres Textfeld
+FONT_SIZE = 15
+TEXT_FIELD_HEIGHT = 24
 
 # Schallwellen-Konfiguration
 WAVE_BAR_COUNT = 5
 WAVE_BAR_WIDTH = 4
-WAVE_BAR_GAP = 5  # Etwas mehr Abstand zwischen Balken
-WAVE_BAR_MIN_HEIGHT = 8  # Etwas größere "Ruhe"-Höhe
-WAVE_BAR_MAX_HEIGHT = 32  # Höhere Amplitude
+WAVE_BAR_GAP = 5
+WAVE_BAR_MIN_HEIGHT = 8
+WAVE_BAR_MAX_HEIGHT = 32
 WAVE_AREA_WIDTH = WAVE_BAR_COUNT * WAVE_BAR_WIDTH + (WAVE_BAR_COUNT - 1) * WAVE_BAR_GAP
 
 OVERLAY_WINDOW_LEVEL = 25
 
+# Design Colors (P3 Display optimized)
+def get_custom_color(r, g, b, a=1.0):
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(r/255.0, g/255.0, b/255.0, a)
 
-def truncate_text(text: str, max_length: int = MAX_TEXT_LENGTH) -> str:
-    """Kürzt Text für Overlay-Anzeige."""
-    text = text.strip()
-    if len(text) <= max_length:
-        return text
-    return text[:max_length].rstrip() + "…"
+COLOR_IDLE = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
+COLOR_RECORDING = get_custom_color(255, 82, 82)    # Soft Red
+COLOR_TRANSCRIBING = get_custom_color(255, 177, 66) # Soft Orange
+COLOR_SUCCESS = get_custom_color(51, 217, 178)     # Soft Teal/Green
+COLOR_ERROR = get_custom_color(255, 71, 87)        # Bright Red
 
 
 class SoundWaveView(NSView):
@@ -117,9 +118,7 @@ class SoundWaveView(NSView):
                 bar = CALayer.alloc().init()
                 self.layer().addSublayer_(bar)
 
-            bar.setBackgroundColor_(
-                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9).CGColor()
-            )
+            bar.setBackgroundColor_(COLOR_IDLE.CGColor())
             bar.setCornerRadius_(WAVE_BAR_WIDTH / 2)
 
             # Initiale Position (zentriert)
@@ -145,8 +144,6 @@ class SoundWaveView(NSView):
         self.current_animation = "recording"
         self.animations_running = True
 
-        center_y = self.frame().size.height / 2
-        
         # Organischere Animation mit leicht unterschiedlichen Timings
         durations = [0.42, 0.38, 0.45, 0.39, 0.41]
         delays = [0.0, 0.15, 0.3, 0.1, 0.25]
@@ -210,7 +207,7 @@ class SoundWaveView(NSView):
         """Einmaliges 'Hüpfen' in Grün für Erfolg."""
         self.stopAnimating()
         self.current_animation = "success"
-        self.setBarColor_(NSColor.systemGreenColor())
+        self.setBarColor_(COLOR_SUCCESS)
         
         # Kurze La-Ola Welle
         for i, bar in enumerate(self.bars):
@@ -231,7 +228,7 @@ class SoundWaveView(NSView):
         """Kurzes rotes Aufblinken."""
         self.stopAnimating()
         self.current_animation = "error"
-        self.setBarColor_(NSColor.systemRedColor())
+        self.setBarColor_(COLOR_ERROR)
         
         # Alle Balken kurz hoch
         for i, bar in enumerate(self.bars):
@@ -264,7 +261,7 @@ class SoundWaveView(NSView):
         frame = self.frame()
         center_y = frame.size.height / 2
 
-        NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9).setFill()
+        COLOR_IDLE.setFill()
 
         for i in range(WAVE_BAR_COUNT):
             x = i * (WAVE_BAR_WIDTH + WAVE_BAR_GAP)
@@ -377,6 +374,8 @@ class WhisperOverlay(NSObject):
         self.text_field.setEditable_(False)
         self.text_field.setSelectable_(False)
         self.text_field.setAlignment_(NSTextAlignmentCenter)
+        # Native Truncation: NSLineBreakByTruncatingTail = 4
+        self.text_field.cell().setLineBreakMode_(4)
 
         # Text Shadow (Subtil für Lesbarkeit)
         from AppKit import NSShadow
@@ -441,6 +440,7 @@ class WhisperOverlay(NSObject):
         text_size = ns_text.sizeWithAttributes_(attributes)
         text_width = text_size.width
 
+        # Extra Padding addieren
         content_width = text_width + 2 * OVERLAY_PADDING_H
         min_for_wave = WAVE_AREA_WIDTH + 2 * OVERLAY_PADDING_H + 60
 
@@ -528,7 +528,7 @@ class WhisperOverlay(NSObject):
                 if self.wave_view.current_animation != "success":
                     self.wave_view.startSuccessAnimation()
                     self.text_field.setStringValue_("Done")
-                    self.text_field.setTextColor_(NSColor.systemGreenColor())
+                    self.text_field.setTextColor_(COLOR_SUCCESS)
                     self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
                     self._resize_window_for_text("Done")
                     self._fadeIn()
@@ -536,7 +536,7 @@ class WhisperOverlay(NSObject):
                 if self.wave_view.current_animation != "error":
                     self.wave_view.startErrorAnimation()
                     self.text_field.setStringValue_("Error")
-                    self.text_field.setTextColor_(NSColor.systemRedColor())
+                    self.text_field.setTextColor_(COLOR_ERROR)
                     self.text_field.setFont_(NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold))
                     self._resize_window_for_text("Error")
                     self._fadeIn()
@@ -550,11 +550,12 @@ class WhisperOverlay(NSObject):
 
         if state == "recording":
             animation_mode = "recording"
-            self.wave_view.setBarColor_(NSColor.systemRedColor())
+            self.wave_view.setBarColor_(COLOR_RECORDING)
             
             if interim_text:
                 self.last_interim = interim_text
-                new_text = f"{truncate_text(interim_text)} ..."
+                # Kein truncate_text mehr, natives Verhalten
+                new_text = f"{interim_text} ..."
                 is_status_msg = False
             elif self.last_interim:
                 new_text = "Loading ..."
@@ -565,15 +566,13 @@ class WhisperOverlay(NSObject):
                 
         elif state == "transcribing":
             animation_mode = "transcribing"
-            self.wave_view.setBarColor_(NSColor.systemOrangeColor())
+            self.wave_view.setBarColor_(COLOR_TRANSCRIBING)
             new_text = "Transcribing ..."
             self.last_interim = None
             is_status_msg = True
             
         else: # idle
-            self.wave_view.setBarColor_(
-                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
-            )
+            self.wave_view.setBarColor_(COLOR_IDLE)
             new_text = None
             self.last_interim = None
             is_status_msg = True
