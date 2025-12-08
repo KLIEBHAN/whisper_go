@@ -84,9 +84,9 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 
 - [ ] **Native Hotkeys (pynput)** – Raycast-Unabhängigkeit
   - Eigene Hotkey-Registrierung via [pynput](https://pynput.readthedocs.io/)
-  - Konfigurierbare Tastenkombinationen (z.B. Double-Tap Option)
+  - Konfigurierbare Tastenkombinationen (z. B. Double-Tap-Option)
   - Cross-Platform: Gleiche Lösung für macOS, Windows, Linux
-  - Raycast wird optional (für Nutzer die es bevorzugen)
+  - Raycast wird optional (für Nutzer, die es bevorzugen)
 - [ ] **Windows Support** – Priorisiert, siehe [WINDOWS_ANALYSIS.md](./WINDOWS_ANALYSIS.md)
   - Aufwand: 120–150h (vollständige Feature-Parität)
   - Kritische Komponenten: Daemon/IPC, Overlay UI, Hotkeys

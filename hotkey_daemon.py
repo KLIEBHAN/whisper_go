@@ -616,7 +616,26 @@ class HotkeyDaemon:
                     "Sende SIGTERM zum Beenden..."
                 )
                 os.kill(pid, signal.SIGTERM)
-                time.sleep(0.5)
+
+                # Warte bis Prozess wirklich beendet ist (max 2s)
+                for _ in range(20):
+                    time.sleep(0.1)
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        logger.debug(f"Prozess {pid} erfolgreich beendet")
+                        break
+                else:
+                    # Prozess läuft noch nach Timeout - SIGKILL
+                    logger.warning(
+                        f"Prozess {pid} reagiert nicht auf SIGTERM, sende SIGKILL"
+                    )
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                        time.sleep(0.1)
+                    except ProcessLookupError:
+                        pass
+
             except (ValueError, ProcessLookupError):
                 logger.info("Stale PID-Datei gefunden, räume auf...")
             except PermissionError:
@@ -667,7 +686,7 @@ class HotkeyDaemon:
             transcript = stop_recording()
             self._recording = False
 
-            if transcript:
+            if transcript is not None:
                 logger.info(f"Transkript: '{transcript}'")
                 success = paste_transcript(transcript)
                 if success:
