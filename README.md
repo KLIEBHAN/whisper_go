@@ -57,6 +57,7 @@ python transcribe.py --record --refine                # Mit LLM-Nachbearbeitung
 | `--copy`, `-c`                      | Ergebnis in Zwischenablage                                                    |
 | `--language CODE`                   | Sprachcode z.B. `de`, `en`                                                    |
 | `--format FORMAT`                   | Output: `text`, `json`, `srt`, `vtt` (nur API-Modus)                          |
+| `--no-streaming`                    | WebSocket-Streaming deaktivieren (nur deepgram)                               |
 | `--refine`                          | LLM-Nachbearbeitung aktivieren                                                |
 | `--no-refine`                       | LLM-Nachbearbeitung deaktivieren (überschreibt env)                           |
 | `--refine-model`                    | Modell für Nachbearbeitung (default: `gpt-5-nano`)                            |
@@ -93,6 +94,9 @@ export WHISPER_GO_MODE="deepgram"
 
 # Transkriptions-Modell (überschreibt Provider-Default)
 export WHISPER_GO_MODEL="nova-3"
+
+# WebSocket-Streaming für Deepgram (default: true)
+export WHISPER_GO_STREAMING="true"
 
 # LLM-Nachbearbeitung
 export WHISPER_GO_REFINE="true"

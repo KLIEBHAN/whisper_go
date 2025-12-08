@@ -454,6 +454,134 @@ def transcribe_with_deepgram(
     return result
 
 
+def transcribe_with_deepgram_stream(
+    model: str = DEFAULT_DEEPGRAM_MODEL,
+    language: str | None = None,
+) -> str:
+    """
+    Live-Streaming-Transkription mit Deepgram WebSocket (SDK v5.3).
+
+    Kombiniert Mikrofon-Aufnahme mit Echtzeit-Transkription.
+    Audio wird parallel zur Transkription gesendet - minimale Latenz.
+    Wartet auf SIGUSR1 zum Beenden (für Raycast-Integration).
+    """
+    import threading
+
+    import numpy as np
+    import sounddevice as sd
+    from deepgram import DeepgramClient
+    from deepgram.core.events import EventType
+
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
+
+    logger.info(f"[{_session_id}] Deepgram-Stream: {model}, lang={language or 'auto'}")
+
+    # Audio-Konfiguration (Linear16 PCM für Deepgram)
+    SAMPLE_RATE = 16000
+    CHANNELS = 1
+    BLOCKSIZE = 1024
+
+    client = DeepgramClient(api_key=api_key)
+
+    final_transcripts: list[str] = []
+    should_stop = False
+    connection_error: Exception | None = None
+
+    # SDK v5.3 API: Parameter direkt in connect() als Strings
+    with client.listen.v1.connect(
+        model=model,
+        language=language,
+        smart_format="true",
+        punctuate="true",
+        interim_results="false",
+        encoding="linear16",
+        sample_rate=str(SAMPLE_RATE),
+        channels=str(CHANNELS),
+    ) as connection:
+        # Event-Handler definieren
+        def on_message(message):
+            nonlocal final_transcripts
+            # message ist ein dict-like Objekt
+            if hasattr(message, "channel"):
+                transcript = message.channel.alternatives[0].transcript
+                if transcript:
+                    final_transcripts.append(transcript)
+                    logger.debug(
+                        f"[{_session_id}] Transcript: {_log_preview(transcript)}"
+                    )
+
+        def on_error(error):
+            nonlocal connection_error
+            logger.error(f"[{_session_id}] Deepgram Error: {error}")
+            connection_error = Exception(f"Deepgram Error: {error}")
+
+        def on_close(_):
+            nonlocal should_stop
+            should_stop = True
+            logger.debug(f"[{_session_id}] Deepgram Connection closed")
+
+        # Handler registrieren (SDK v5.3 EventType)
+        connection.on(EventType.MESSAGE, on_message)
+        connection.on(EventType.ERROR, on_error)
+        connection.on(EventType.CLOSE, on_close)
+
+        # WICHTIG: start_listening() ist blocking - muss in separatem Thread laufen!
+        def run_listener():
+            try:
+                connection.start_listening()
+            except Exception as e:
+                nonlocal connection_error
+                connection_error = e
+
+        listener_thread = threading.Thread(target=run_listener, daemon=True)
+        listener_thread.start()
+
+        # Signal-Handler für SIGUSR1
+        def handle_stop_signal(_signum, _frame):
+            nonlocal should_stop
+            logger.debug(f"[{_session_id}] SIGUSR1 empfangen (Streaming)")
+            should_stop = True
+
+        signal.signal(signal.SIGUSR1, handle_stop_signal)
+
+        logger.info(f"[{_session_id}] WebSocket verbunden, starte Mikrofon")
+
+        # Audio-Callback: Sendet Chunks an Deepgram
+        def audio_callback(indata, _frames, _time_info, status):
+            nonlocal connection_error
+            if status:
+                logger.warning(f"[{_session_id}] Audio-Status: {status}")
+            if not should_stop and not connection_error:
+                try:
+                    # Linear16 PCM: int16 als bytes senden
+                    audio_bytes = (indata * 32767).astype(np.int16).tobytes()
+                    connection.send_media(audio_bytes)
+                except Exception as e:
+                    logger.error(f"[{_session_id}] Audio-Send Fehler: {e}")
+                    connection_error = e
+
+        # Mikrofon-Stream starten
+        with sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            blocksize=BLOCKSIZE,
+            dtype=np.float32,
+            callback=audio_callback,
+        ):
+            # Warte auf Stop-Signal
+            while not should_stop:
+                if connection_error:
+                    raise connection_error
+                time.sleep(0.1)
+
+    result = " ".join(final_transcripts)
+    logger.info(f"[{_session_id}] Streaming abgeschlossen: {len(result)} Zeichen")
+
+    return result
+
+
 def _get_groq_client():
     """Erstellt Groq-Client mit API-Key aus Umgebungsvariable.
 
@@ -898,6 +1026,11 @@ Beispiele:
         default=None,
         help="Kontext für LLM-Nachbearbeitung (auto-detect wenn nicht gesetzt)",
     )
+    parser.add_argument(
+        "--no-streaming",
+        action="store_true",
+        help="WebSocket-Streaming deaktivieren (nur für deepgram, auch via WHISPER_GO_STREAMING=false)",
+    )
 
     args = parser.parse_args()
 
@@ -932,12 +1065,99 @@ def _schedule_state_cleanup(delay: float = 2.0) -> None:
     thread.start()
 
 
+def _should_use_streaming(args: argparse.Namespace) -> bool:
+    """Prüft ob Streaming für den aktuellen Modus aktiviert ist."""
+    if args.mode != "deepgram":
+        return False
+    if getattr(args, "no_streaming", False):
+        return False
+    return os.getenv("WHISPER_GO_STREAMING", "true").lower() != "false"
+
+
+def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
+    """
+    Daemon-Modus mit Deepgram Streaming (SDK v5.3).
+
+    Audio wird parallel zur Transkription gesendet - minimale Latenz.
+    Transkription läuft während der Aufnahme, nicht erst danach.
+    """
+    pipeline_start = time.perf_counter()
+
+    # Alte Error-Datei aufräumen
+    ERROR_FILE.unlink(missing_ok=True)
+
+    try:
+        # State: Recording (Transkription läuft parallel!)
+        STATE_FILE.write_text("recording")
+        PID_FILE.write_text(str(os.getpid()))
+
+        play_ready_sound()
+        log("🎤 Streaming-Aufnahme gestartet (warte auf SIGUSR1)...")
+        logger.info(f"[{_session_id}] Streaming-Daemon gestartet (PID: {os.getpid()})")
+
+        transcript = transcribe_with_deepgram_stream(
+            model=args.model or DEFAULT_DEEPGRAM_MODEL,
+            language=args.language,
+        )
+
+        play_stop_sound()
+        log("✅ Streaming-Aufnahme beendet.")
+
+        # State: Transcribing (für Refine-Phase)
+        STATE_FILE.write_text("transcribing")
+
+        # LLM-Nachbearbeitung (optional)
+        transcript = maybe_refine_transcript(transcript, args)
+
+        TRANSCRIPT_FILE.write_text(transcript)
+        print(transcript)
+
+        if args.copy:
+            copy_to_clipboard(transcript)
+
+        # State: Done
+        STATE_FILE.write_text("done")
+
+        # Pipeline-Summary
+        total_ms = (time.perf_counter() - pipeline_start) * 1000
+        logger.info(
+            f"[{_session_id}] ✓ Streaming-Pipeline: {_format_duration(total_ms)}, "
+            f"{len(transcript)} Zeichen"
+        )
+        return 0
+
+    except ImportError as e:
+        msg = f"Deepgram-Streaming nicht verfügbar: {e}"
+        logger.error(f"[{_session_id}] {msg}")
+        error(msg)
+        ERROR_FILE.write_text(msg)
+        STATE_FILE.write_text("error")
+        return 1
+    except Exception as e:
+        logger.exception(f"[{_session_id}] Streaming-Fehler: {e}")
+        error(str(e))
+        ERROR_FILE.write_text(str(e))
+        STATE_FILE.write_text("error")
+        return 1
+    finally:
+        PID_FILE.unlink(missing_ok=True)
+        _schedule_state_cleanup()
+
+
 def run_daemon_mode(args: argparse.Namespace) -> int:
     """
     Daemon-Modus für Raycast: Aufnahme → Transkription → Datei.
     Schreibt Fehler in ERROR_FILE für besseres Feedback.
     Aktualisiert STATE_FILE für Menübar-Feedback.
+
+    Bei deepgram-Modus wird Streaming verwendet (Standard),
+    außer --no-streaming oder WHISPER_GO_STREAMING=false.
     """
+    # Streaming ist Default für Deepgram
+    if _should_use_streaming(args):
+        return run_daemon_mode_streaming(args)
+
+    # Klassischer Modus: Erst aufnehmen, dann transkribieren
     temp_file: Path | None = None
     pipeline_start = time.perf_counter()
 
