@@ -840,7 +840,7 @@ Beispiele:
     parser.add_argument(
         "--model",
         default=os.getenv("WHISPER_GO_MODEL"),
-        help="Modellname (auch via WHISPER_GO_MODEL env). Defaults: API=gpt-4o-transcribe, Deepgram=nova-3, Groq=whisper-large-v3, Lokal=turbo",
+        help="Modellname (CLI > WHISPER_GO_MODEL env > Provider-Default). Defaults: API=gpt-4o-transcribe, Deepgram=nova-3, Groq=whisper-large-v3, Lokal=turbo",
     )
     parser.add_argument("--language", help="Sprachcode z.B. 'de', 'en'")
     parser.add_argument(
