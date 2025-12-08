@@ -410,6 +410,35 @@ def _is_whisper_go_process(pid: int) -> bool:
         return False
 
 
+def _daemonize() -> None:
+    """
+    Double-Fork für echte Daemon-Prozesse (verhindert Zombies).
+
+    Wenn Raycast spawn(detached) + unref() nutzt, wird wait() nie aufgerufen.
+    Der beendete Python-Prozess bleibt als Zombie. Lösung: Double-Fork.
+
+    Nach dem Double-Fork ist launchd (PID 1) der Parent, der automatisch
+    beendete Prozesse aufräumt.
+    """
+    # Erster Fork: Parent kann sofort exit() machen
+    pid = os.fork()
+    if pid > 0:
+        # Parent: Warte auf Child und exit (Raycast kann jetzt wait() aufrufen)
+        os.waitpid(pid, 0)
+        sys.exit(0)
+
+    # Child: Neue Session starten (löst von Terminal/Raycast)
+    os.setsid()
+
+    # Zweiter Fork: Verhindert Terminal-Übernahme
+    pid = os.fork()
+    if pid > 0:
+        # Erstes Child: Exit sofort (wird von launchd adoptiert)
+        os._exit(0)
+
+    # Grandchild: Wir sind jetzt der echte Daemon mit launchd als Parent
+
+
 def _cleanup_stale_pid_file() -> None:
     """
     Entfernt PID-File und killt alten Prozess falls nötig (Crash-Recovery).
@@ -1647,6 +1676,9 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
     Bei deepgram-Modus wird Streaming verwendet (Standard),
     außer --no-streaming oder WHISPER_GO_STREAMING=false.
     """
+    # Double-Fork für echten Daemon (verhindert Zombies bei Raycast spawn+unref)
+    _daemonize()
+
     # Streaming ist Default für Deepgram
     if _should_use_streaming(args):
         return run_daemon_mode_streaming(args)

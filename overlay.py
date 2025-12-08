@@ -56,7 +56,7 @@ OVERLAY_MIN_WIDTH = 260       # Etwas breiter als Startbasis
 OVERLAY_MAX_WIDTH_RATIO = 0.75
 OVERLAY_HEIGHT = 92           # Etwas höher für mehr Luft
 OVERLAY_MARGIN_BOTTOM = 110   # Etwas höher positioniert
-OVERLAY_CORNER_RADIUS = 18    # Sanfterer Radius
+OVERLAY_CORNER_RADIUS = 20    # Sanfterer Radius (angepasst für Glass-Look)
 OVERLAY_PADDING_H = 24        # Mehr seitlicher Abstand
 OVERLAY_ALPHA = 0.95
 FONT_SIZE = 15                # Größere Schrift
@@ -274,9 +274,14 @@ class WhisperOverlay(NSObject):
         self.visual_effect_view.setWantsLayer_(True)
         self.visual_effect_view.layer().setCornerRadius_(OVERLAY_CORNER_RADIUS)
         self.visual_effect_view.layer().setMasksToBounds_(True)
+        
+        # Premium "Glass" Border
+        self.visual_effect_view.layer().setBorderWidth_(1.0)
+        self.visual_effect_view.layer().setBorderColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15).CGColor()
+        )
 
         self.window.setContentView_(self.visual_effect_view)
-
         # VERTIKALES LAYOUT (REFINED)
         
         # 1. Schallwelle (Oben)
@@ -372,8 +377,8 @@ class WhisperOverlay(NSObject):
         x = (screen_frame.size.width - width) / 2
         y = OVERLAY_MARGIN_BOTTOM
 
-        # Fenster Update
-        self.window.setFrame_display_(NSMakeRect(x, y, width, height), True)
+        # Fenster Update (Animiert für flüssige Größenänderung)
+        self.window.animator().setFrame_display_(NSMakeRect(x, y, width, height), True)
         self.visual_effect_view.setFrame_(NSMakeRect(0, 0, width, height))
 
         # Wave zentrieren
