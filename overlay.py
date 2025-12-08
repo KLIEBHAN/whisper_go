@@ -554,24 +554,24 @@ class WhisperOverlay(NSObject):
                 self.window.setAlphaValue_(new_alpha)
                 return
 
-            # Visualisierung anzeigen (done/error haben gleiches Pattern)
-            config = {
-                "done": ("success", "Done", COLOR_SUCCESS),
-                "error": ("error", "Error", COLOR_ERROR),
-            }
-            anim_name, text, color = config[state]
-
-            if self.wave_view.current_animation != anim_name:
-                if state == "done":
-                    self.wave_view.startSuccessAnimation()
-                else:
-                    self.wave_view.startErrorAnimation()
-                self.text_field.setStringValue_(text)
-                self.text_field.setTextColor_(color)
+            # Visualisierung anzeigen
+            if state == "done" and self.wave_view.current_animation != "success":
+                self.wave_view.startSuccessAnimation()
+                self.text_field.setStringValue_("Done")
+                self.text_field.setTextColor_(COLOR_SUCCESS)
                 self.text_field.setFont_(
                     NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold)
                 )
-                self._resize_window_for_text(text)
+                self._resize_window_for_text("Done")
+                self._fadeIn()
+            elif state == "error" and self.wave_view.current_animation != "error":
+                self.wave_view.startErrorAnimation()
+                self.text_field.setStringValue_("Error")
+                self.text_field.setTextColor_(COLOR_ERROR)
+                self.text_field.setFont_(
+                    NSFont.systemFontOfSize_weight_(FONT_SIZE, NSFontWeightSemibold)
+                )
+                self._resize_window_for_text("Error")
                 self._fadeIn()
 
             return  # Wichtig: Hier abbrechen, damit unten nichts überschrieben wird
