@@ -398,42 +398,14 @@ def record_audio() -> Path:
 
 
 def _is_whisper_go_process(pid: int) -> bool:
-    """Prüft ob die PID zu einem whisper_go Prozess gehört (Sicherheit!).
+    """Prüft ob die PID zu einem whisper_go Prozess gehört.
 
-    Strategie:
-    1. os.kill(pid, 0) für schnellen Existenz-Check (~0.1ms)
-    2. libproc auf macOS als Vorfilter – wenn nicht Python, sofort False (~0.1ms)
-    3. subprocess als sicherer Fallback für finale Validierung (~50ms)
-
-    Die Kombination ist schnell im Happy-Path (kein Prozess oder kein Python)
-    und sicher im Edge-Case (verifiziert transcribe.py + --record-daemon).
+    Einfache, sichere Implementierung. Die ~50ms sind akzeptabel,
+    da diese Funktion nur im seltenen Edge-Case aufgerufen wird
+    (Cleanup nach Crash oder bei schnellem Doppelklick).
     """
-    import ctypes
     import subprocess
 
-    try:
-        # Erst prüfen ob Prozess existiert (schnell)
-        os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-
-    # macOS: libproc als schneller Vorfilter
-    if sys.platform == "darwin":
-        try:
-            PROC_PIDPATHINFO_MAXSIZE = 4096
-            libc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-            buf = ctypes.create_string_buffer(PROC_PIDPATHINFO_MAXSIZE)
-            ret = libc.proc_pidpath(pid, buf, PROC_PIDPATHINFO_MAXSIZE)
-            if ret > 0:
-                path = buf.value.decode("utf-8", errors="ignore").lower()
-                # Kein Python-Prozess → definitiv nicht unser Daemon
-                if "python" not in path:
-                    return False
-        except (OSError, AttributeError):
-            pass
-
-    # Sicherer Fallback: subprocess für exakte Validierung
-    # Nur ~50ms, aber garantiert korrekt
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
@@ -444,7 +416,6 @@ def _is_whisper_go_process(pid: int) -> bool:
         command = result.stdout.strip()
         return "transcribe.py" in command and "--record-daemon" in command
     except Exception:
-        # Bei Fehler: Sicherheit > Performance → nicht killen
         return False
 
 
