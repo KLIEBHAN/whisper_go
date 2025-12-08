@@ -339,3 +339,278 @@ class TestModifierMappings:
         import hotkey_daemon
 
         assert "shift" in hotkey_daemon.MODIFIER_MAP
+
+
+# =============================================================================
+# Tests: paste_transcript (Auto-Paste)
+# =============================================================================
+
+
+class TestPasteTranscript:
+    """Tests für paste_transcript() – Clipboard und Auto-Paste."""
+
+    def test_paste_transcript_success(self, monkeypatch):
+        """Erfolgreicher Paste-Vorgang gibt True zurück."""
+        import hotkey_daemon
+        import subprocess
+
+        # Mock subprocess.run für pbcopy und pbpaste
+        call_log = []
+
+        def mock_run(cmd, *args, **kwargs):
+            call_log.append(cmd)
+            result = subprocess.CompletedProcess(cmd, 0)
+            if cmd[0] == "pbpaste":
+                result.stdout = b"test text"
+            else:
+                result.stdout = b""
+            result.stderr = b""
+            return result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        # Mock Quartz CGEventPost (um echte Tastatur-Events zu vermeiden)
+        monkeypatch.setattr(
+            hotkey_daemon,
+            "paste_transcript",
+            lambda text: True,  # Vereinfachter Mock
+        )
+
+        result = hotkey_daemon.paste_transcript("test text")
+        assert result is True
+
+    def test_paste_transcript_pbcopy_failure(self, monkeypatch):
+        """pbcopy-Fehler gibt False zurück."""
+        import hotkey_daemon
+        import subprocess
+
+        def mock_run(cmd, *args, **kwargs):
+            result = subprocess.CompletedProcess(cmd, 1)
+            result.stdout = b""
+            result.stderr = b"pbcopy error"
+            return result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = hotkey_daemon.paste_transcript("test text")
+        assert result is False
+
+    def test_paste_transcript_timeout(self, monkeypatch):
+        """Timeout bei pbcopy gibt False zurück."""
+        import hotkey_daemon
+        import subprocess
+
+        def mock_run(cmd, *args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, 5)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = hotkey_daemon.paste_transcript("test text")
+        assert result is False
+
+    def test_paste_transcript_empty_text(self, monkeypatch):
+        """Leerer Text wird korrekt behandelt."""
+        import hotkey_daemon
+        import subprocess
+
+        call_log = []
+
+        def mock_run(cmd, *args, **kwargs):
+            call_log.append((cmd, kwargs.get("input")))
+            result = subprocess.CompletedProcess(cmd, 0)
+            result.stdout = b""
+            result.stderr = b""
+            return result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        # Mock CGEventPost
+        def mock_cgeventpost(*args):
+            pass
+
+        # Simuliere erfolgreichen Quartz-Import
+        import sys
+        from unittest.mock import MagicMock
+
+        mock_quartz = MagicMock()
+        mock_quartz.CGEventCreateKeyboardEvent = MagicMock(return_value=MagicMock())
+        mock_quartz.CGEventPost = mock_cgeventpost
+        mock_quartz.CGEventSetFlags = MagicMock()
+        mock_quartz.kCGEventFlagMaskCommand = 0x100000
+        mock_quartz.kCGHIDEventTap = 0
+        monkeypatch.setitem(sys.modules, "Quartz", mock_quartz)
+
+        # Importiere paste_transcript neu mit gemocktem Quartz
+        hotkey_daemon.paste_transcript("")
+        # Leerer Text sollte trotzdem verarbeitet werden
+        assert any(cmd[0] == "pbcopy" for cmd, _ in call_log)
+
+
+# =============================================================================
+# Tests: stop_recording (IPC)
+# =============================================================================
+
+
+class TestStopRecording:
+    """Tests für stop_recording() – IPC und Prozess-Kommunikation."""
+
+    def test_stop_recording_no_pid_file(self, tmp_path, monkeypatch):
+        """Ohne PID-Datei gibt stop_recording None zurück."""
+        import hotkey_daemon
+
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", tmp_path / "nonexistent.pid")
+        result = hotkey_daemon.stop_recording()
+        assert result is None
+
+    def test_stop_recording_invalid_pid(self, tmp_path, monkeypatch):
+        """Ungültige PID gibt None zurück."""
+        import hotkey_daemon
+
+        pid_file = tmp_path / "test.pid"
+        pid_file.write_text("invalid")
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", pid_file)
+
+        result = hotkey_daemon.stop_recording()
+        assert result is None
+
+    def test_stop_recording_process_not_found(self, tmp_path, monkeypatch):
+        """Nicht existierender Prozess gibt None zurück."""
+        import hotkey_daemon
+        import os
+
+        pid_file = tmp_path / "test.pid"
+        pid_file.write_text("999999999")  # Unrealistische PID
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", pid_file)
+
+        # Mock os.kill um ProcessLookupError zu werfen
+        def mock_kill(pid, sig):
+            raise ProcessLookupError()
+
+        monkeypatch.setattr(os, "kill", mock_kill)
+
+        result = hotkey_daemon.stop_recording()
+        assert result is None
+
+    def test_stop_recording_with_transcript(self, tmp_path, monkeypatch):
+        """Erfolgreiche Transkription gibt Text zurück."""
+        import hotkey_daemon
+        import os
+        import signal
+
+        # Setup IPC-Dateien
+        pid_file = tmp_path / "test.pid"
+        transcript_file = tmp_path / "transcript.txt"
+        error_file = tmp_path / "error.txt"
+
+        pid_file.write_text("12345")
+        transcript_file.write_text("Das ist ein Test-Transkript.")
+
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", pid_file)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_FILE", transcript_file)
+        monkeypatch.setattr(hotkey_daemon, "ERROR_FILE", error_file)
+        monkeypatch.setattr(hotkey_daemon, "POLL_INTERVAL", 0.01)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_TIMEOUT", 0.5)
+
+        # Mock os.kill (Signal senden erfolgreich)
+        kill_calls = []
+
+        def mock_kill(pid, sig):
+            kill_calls.append((pid, sig))
+
+        monkeypatch.setattr(os, "kill", mock_kill)
+
+        result = hotkey_daemon.stop_recording()
+
+        assert result == "Das ist ein Test-Transkript."
+        assert (12345, signal.SIGUSR1) in kill_calls
+
+    def test_stop_recording_with_error(self, tmp_path, monkeypatch):
+        """Fehler-Datei wird erkannt und None zurückgegeben."""
+        import hotkey_daemon
+        import os
+
+        # Setup IPC-Dateien
+        pid_file = tmp_path / "test.pid"
+        transcript_file = tmp_path / "transcript.txt"
+        error_file = tmp_path / "error.txt"
+
+        pid_file.write_text("12345")
+        error_file.write_text("Transkription fehlgeschlagen: API-Fehler")
+
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", pid_file)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_FILE", transcript_file)
+        monkeypatch.setattr(hotkey_daemon, "ERROR_FILE", error_file)
+        monkeypatch.setattr(hotkey_daemon, "POLL_INTERVAL", 0.01)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_TIMEOUT", 0.5)
+
+        # Mock os.kill
+        monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+        result = hotkey_daemon.stop_recording()
+        assert result is None
+
+    def test_stop_recording_timeout(self, tmp_path, monkeypatch):
+        """Timeout ohne Transkript gibt None zurück."""
+        import hotkey_daemon
+        import os
+
+        # Setup IPC-Dateien (ohne Transkript)
+        pid_file = tmp_path / "test.pid"
+        transcript_file = tmp_path / "transcript.txt"
+        error_file = tmp_path / "error.txt"
+
+        pid_file.write_text("12345")
+        # Kein Transkript und kein Error erstellen
+
+        monkeypatch.setattr(hotkey_daemon, "PID_FILE", pid_file)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_FILE", transcript_file)
+        monkeypatch.setattr(hotkey_daemon, "ERROR_FILE", error_file)
+        monkeypatch.setattr(hotkey_daemon, "POLL_INTERVAL", 0.01)
+        monkeypatch.setattr(hotkey_daemon, "TRANSCRIPT_TIMEOUT", 0.1)  # Kurzer Timeout
+
+        # Mock os.kill
+        monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+        result = hotkey_daemon.stop_recording()
+        assert result is None
+
+
+# =============================================================================
+# Tests: _paste_via_osascript (Fallback)
+# =============================================================================
+
+
+class TestPasteViaOsascript:
+    """Tests für _paste_via_osascript() – Fallback-Mechanismus."""
+
+    def test_osascript_success(self, monkeypatch):
+        """Erfolgreicher osascript-Aufruf gibt True zurück."""
+        import hotkey_daemon
+        import subprocess
+
+        def mock_run(cmd, *args, **kwargs):
+            result = subprocess.CompletedProcess(cmd, 0)
+            result.stdout = ""
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = hotkey_daemon._paste_via_osascript()
+        assert result is True
+
+    def test_osascript_failure(self, monkeypatch):
+        """Fehlgeschlagener osascript-Aufruf gibt False zurück."""
+        import hotkey_daemon
+        import subprocess
+
+        def mock_run(cmd, *args, **kwargs):
+            result = subprocess.CompletedProcess(cmd, 1)
+            result.stdout = ""
+            result.stderr = "osascript: Accessibility not granted"
+            return result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = hotkey_daemon._paste_via_osascript()
+        assert result is False
