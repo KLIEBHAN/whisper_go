@@ -349,19 +349,18 @@ def _get_sound_player() -> _CoreAudioPlayer:
     return _sound_player
 
 
-def play_ready_sound() -> None:
-    """Spielt Ready-Ton ab (macOS, ~0.2ms Latenz)."""
-    _get_sound_player().play("ready", "/System/Library/Sounds/Tink.aiff")
+# Sound-Registry: Name → System-Sound-Pfad
+SYSTEM_SOUNDS = {
+    "ready": "/System/Library/Sounds/Tink.aiff",
+    "stop": "/System/Library/Sounds/Pop.aiff",
+    "error": "/System/Library/Sounds/Basso.aiff",
+}
 
 
-def play_stop_sound() -> None:
-    """Spielt Stop-Ton ab (macOS, ~0.2ms Latenz)."""
-    _get_sound_player().play("stop", "/System/Library/Sounds/Pop.aiff")
-
-
-def play_error_sound() -> None:
-    """Spielt Fehler-Ton ab (macOS, ~0.2ms Latenz)."""
-    _get_sound_player().play("error", "/System/Library/Sounds/Basso.aiff")
+def play_sound(name: str) -> None:
+    """Spielt System-Sound ab (macOS, ~0.2ms Latenz)."""
+    if path := SYSTEM_SOUNDS.get(name):
+        _get_sound_player().play(name, path)
 
 
 def record_audio() -> Path:
@@ -381,7 +380,7 @@ def record_audio() -> Path:
     log("🎤 Drücke ENTER um die Aufnahme zu starten...")
     input()
 
-    play_ready_sound()
+    play_sound("ready")
     log("🔴 Aufnahme läuft... Drücke ENTER zum Beenden.")
     with sd.InputStream(
         samplerate=WHISPER_SAMPLE_RATE,
@@ -392,7 +391,7 @@ def record_audio() -> Path:
         input()
 
     log("✅ Aufnahme beendet.")
-    play_stop_sound()
+    play_sound("stop")
 
     if not recorded_chunks:
         raise ValueError("Keine Audiodaten aufgenommen. Bitte länger aufnehmen.")
@@ -553,7 +552,7 @@ def record_audio_daemon() -> Path:
     # Signal-Handler registrieren
     signal.signal(signal.SIGUSR1, handle_stop_signal)
 
-    play_ready_sound()
+    play_sound("ready")
     log("🎤 Daemon: Aufnahme gestartet (warte auf SIGUSR1)...")
     logger.info(f"[{_session_id}] Aufnahme gestartet")
 
@@ -574,7 +573,7 @@ def record_audio_daemon() -> Path:
     recording_duration = time.perf_counter() - recording_start
     logger.info(f"[{_session_id}] Aufnahme: {recording_duration:.1f}s")
     log("✅ Daemon: Aufnahme beendet.")
-    play_stop_sound()
+    play_sound("stop")
 
     if not recorded_chunks:
         logger.error(f"[{_session_id}] Keine Audiodaten aufgenommen")
@@ -964,7 +963,7 @@ async def _deepgram_stream_core(
     logger.info(f"[{_session_id}] Mikrofon bereit nach {mic_init_ms:.0f}ms")
 
     if play_ready:
-        play_ready_sound()
+        play_sound("ready")
 
     try:
         async with _create_deepgram_connection(
@@ -1730,7 +1729,7 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
         f"[{_session_id}] Mikrofon bereit nach {mic_ready_ms:.0f}ms "
         f"(seit Prozessstart: {since_process:.0f}ms) → READY SOUND!"
     )
-    play_ready_sound()
+    play_sound("ready")
 
     # State + PID für Raycast
     STATE_FILE.write_text("recording")
@@ -1763,7 +1762,7 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
             early_buffer=early_chunks,
         )
 
-        play_stop_sound()
+        play_sound("stop")
         log("✅ Streaming-Aufnahme beendet.")
 
         # State: Transcribing (für Refine-Phase)
@@ -1798,7 +1797,7 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
         error(msg)
         ERROR_FILE.write_text(msg)
         STATE_FILE.write_text("error")
-        play_error_sound()
+        play_sound("error")
         return 1
     except Exception as e:
         early_stop_event.set()
@@ -1811,7 +1810,7 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
         error(str(e))
         ERROR_FILE.write_text(str(e))
         STATE_FILE.write_text("error")
-        play_error_sound()
+        play_sound("error")
         return 1
     finally:
         PID_FILE.unlink(missing_ok=True)
