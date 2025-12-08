@@ -790,12 +790,11 @@ async def _create_deepgram_connection(
     params = params.add("model", model)
     if language:
         params = params.add("language", language)
-    if smart_format:
-        params = params.add("smart_format", "true")
-    if punctuate:
-        params = params.add("punctuate", "true")
-    if interim_results:
-        params = params.add("interim_results", "true")
+    # Booleans explizit senden (True="true", False="false")
+    # damit Caller diese Features gezielt deaktivieren können
+    params = params.add("smart_format", "true" if smart_format else "false")
+    params = params.add("punctuate", "true" if punctuate else "false")
+    params = params.add("interim_results", "true" if interim_results else "false")
     params = params.add("encoding", encoding)
     params = params.add("sample_rate", str(sample_rate))
     params = params.add("channels", str(channels))

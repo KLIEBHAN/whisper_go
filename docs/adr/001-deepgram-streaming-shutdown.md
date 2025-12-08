@@ -114,7 +114,7 @@ if hasattr(connection, "_websocket"):
 **Probleme:**
 
 - `_websocket` ist private API (kann sich ändern)
-- Keine Warnung wenn Patch nicht mehr greift
+- Keine Warnung, wenn Patch nicht mehr greift
 - Code-Smell
 
 ### Finale Lösung: Eigener Context Manager
