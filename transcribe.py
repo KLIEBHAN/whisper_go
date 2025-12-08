@@ -41,6 +41,8 @@ time = _time_module  # Alias für restlichen Code
 
 # Whisper erwartet Audio mit 16kHz – andere Sampleraten führen zu schlechteren Ergebnissen
 WHISPER_SAMPLE_RATE = 16000
+WHISPER_CHANNELS = 1
+WHISPER_BLOCKSIZE = 1024
 
 # =============================================================================
 # Standard-Modelle pro Provider
@@ -654,16 +656,25 @@ def transcribe_with_deepgram(
     return result
 
 
-async def _transcribe_with_deepgram_stream_async(
-    model: str = DEFAULT_DEEPGRAM_MODEL,
-    language: str | None = None,
+async def _deepgram_stream_core(
+    model: str,
+    language: str | None,
+    *,
+    early_buffer: list[bytes] | None = None,
+    play_ready: bool = True,
 ) -> str:
     """
-    Async Deepgram Streaming mit offizieller Event-API (SDK v5.3).
+    Gemeinsamer Streaming-Core für Deepgram (SDK v5.3).
 
-    Verwendet AsyncDeepgramClient und client.listen.v1.connect() als
-    async context manager. Signal-Handling über asyncio.Event für
-    sauberes Shutdown bei SIGUSR1 (Raycast-Stop).
+    Args:
+        model: Deepgram-Modell (z.B. "nova-3")
+        language: Sprachcode oder None für Auto-Detection
+        early_buffer: Vorab gepuffertes Audio (für Daemon-Mode)
+        play_ready: Ready-Sound nach Mikrofon-Init spielen (für CLI)
+
+    Zwei Modi:
+    - CLI (early_buffer=None): Buffering während WebSocket-Connect
+    - Daemon (early_buffer=[...]): Buffer direkt in Queue, kein Buffering
     """
     import asyncio
 
@@ -677,29 +688,23 @@ async def _transcribe_with_deepgram_stream_async(
     if not api_key:
         raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
 
-    # Timing für Startup-Analyse
     stream_start = time.perf_counter()
-
+    mode_str = "mit Buffer" if early_buffer else "Buffering"
+    buffer_info = f", {len(early_buffer)} early chunks" if early_buffer else ""
     logger.info(
-        f"[{_session_id}] Deepgram-Stream (async): {model}, lang={language or 'auto'}"
+        f"[{_session_id}] Deepgram-Stream ({mode_str}): {model}, "
+        f"lang={language or 'auto'}{buffer_info}"
     )
-
-    # Audio-Konfiguration
-    SAMPLE_RATE = 16000
-    CHANNELS = 1
-    BLOCKSIZE = 1024
 
     final_transcripts: list[str] = []
     stop_event = asyncio.Event()
-    finalize_received = asyncio.Event()  # Signalisiert Empfang der Finalize-Antwort
+    finalize_received = asyncio.Event()
     stream_error: Exception | None = None
 
-    # Event-Handler für Deepgram Messages (SDK v5.3 Signatur: nur data)
     def on_message(result):
         """Callback für eingehende Transkriptions-Messages."""
-        # Prüfen ob dies die Finalize-Antwort ist
         if getattr(result, "from_finalize", False):
-            logger.info(f"[{_session_id}] Finalize-Antwort von Deepgram empfangen")
+            logger.info(f"[{_session_id}] Finalize-Antwort empfangen")
             finalize_received.set()
 
         channel = getattr(result, "channel", None)
@@ -714,75 +719,77 @@ async def _transcribe_with_deepgram_stream_async(
                     )
 
     def on_error(error):
-        """Callback für Fehler."""
         nonlocal stream_error
         logger.error(f"[{_session_id}] Deepgram Error: {error}")
         stream_error = error if isinstance(error, Exception) else Exception(str(error))
 
     def on_close(_data):
-        """Callback wenn Verbindung geschlossen wird."""
-        logger.debug(f"[{_session_id}] Deepgram Connection closed")
+        logger.debug(f"[{_session_id}] Connection closed")
         stop_event.set()
 
     # Signal-Handler für SIGUSR1 (nur im Main Thread möglich)
     loop = asyncio.get_running_loop()
     if threading.current_thread() is threading.main_thread():
         loop.add_signal_handler(signal.SIGUSR1, stop_event.set)
-        logger.debug(f"[{_session_id}] SIGUSR1 Handler registriert (asyncio)")
-    else:
-        logger.warning(f"[{_session_id}] Nicht im Main Thread - kein Signal-Handler")
 
-    # AsyncDeepgramClient verwenden
     client = AsyncDeepgramClient(api_key=api_key)
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # PARALLELER STARTUP: Mikrofon SOFORT starten, Audio puffern während
-    # WebSocket connected. Ready-Sound nach Mikrofon-Init (~170ms statt ~670ms)
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    # Audio-Buffer für Chunks während WebSocket-Connect
-    audio_buffer: list[bytes] = []
-    buffer_lock = threading.Lock()
-    buffering_active = True  # True = Buffer, False = direkt in Queue
-
-    # Audio-Queue (wird nach WebSocket-Connect befüllt)
     audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
-    # Audio-Callback mit Buffering-Logik (läuft im sounddevice-Thread)
-    def audio_callback(indata, _frames, _time_info, status):
-        if status:
-            logger.warning(f"[{_session_id}] Audio-Status: {status}")
-        if stop_event.is_set():
-            return
+    # --- Modus-spezifische Initialisierung ---
+    if early_buffer:
+        # Daemon-Mode: Early-Buffer direkt in Queue laden
+        for chunk in early_buffer:
+            audio_queue.put_nowait(chunk)
+        logger.info(
+            f"[{_session_id}] {len(early_buffer)} early chunks in Queue geladen"
+        )
 
-        audio_bytes = (indata * 32767).astype(np.int16).tobytes()
-
-        with buffer_lock:
-            if buffering_active:
-                # WebSocket noch nicht bereit → Buffer
-                audio_buffer.append(audio_bytes)
-            else:
-                # WebSocket bereit → direkt in Queue
+        # Einfacher Audio-Callback ohne Buffering
+        def audio_callback(indata, _frames, _time_info, status):
+            if status:
+                logger.warning(f"[{_session_id}] Audio-Status: {status}")
+            if not stop_event.is_set():
+                audio_bytes = (indata * 32767).astype(np.int16).tobytes()
                 loop.call_soon_threadsafe(audio_queue.put_nowait, audio_bytes)
 
-    # Mikrofon SOFORT starten (vor WebSocket-Connect!)
-    logger.info(f"[{_session_id}] Starte Mikrofon (Buffering-Modus)...")
+        buffering_active = False
+        audio_buffer = None
+        buffer_lock = None
+    else:
+        # CLI-Mode: Buffering während WebSocket-Connect
+        audio_buffer = []
+        buffer_lock = threading.Lock()
+        buffering_active = True
+
+        def audio_callback(indata, _frames, _time_info, status):
+            if status:
+                logger.warning(f"[{_session_id}] Audio-Status: {status}")
+            if stop_event.is_set():
+                return
+            audio_bytes = (indata * 32767).astype(np.int16).tobytes()
+            with buffer_lock:
+                if buffering_active:
+                    audio_buffer.append(audio_bytes)
+                else:
+                    loop.call_soon_threadsafe(audio_queue.put_nowait, audio_bytes)
+
+    # Mikrofon starten
     mic_stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=CHANNELS,
-        blocksize=BLOCKSIZE,
+        samplerate=WHISPER_SAMPLE_RATE,
+        channels=WHISPER_CHANNELS,
+        blocksize=WHISPER_BLOCKSIZE,
         dtype=np.float32,
         callback=audio_callback,
     )
     mic_stream.start()
 
-    # Ready-Sound SOFORT - Benutzer kann sprechen, Audio wird gepuffert!
     mic_init_ms = (time.perf_counter() - stream_start) * 1000
     logger.info(f"[{_session_id}] Mikrofon bereit nach {mic_init_ms:.0f}ms")
-    play_ready_sound()
+
+    if play_ready:
+        play_ready_sound()
 
     try:
-        # Async Context Manager für WebSocket (SDK v5.3 API)
         async with client.listen.v1.connect(
             model=model,
             language=language,
@@ -790,31 +797,31 @@ async def _transcribe_with_deepgram_stream_async(
             punctuate="true",
             interim_results="false",
             encoding="linear16",
-            sample_rate=str(SAMPLE_RATE),
-            channels=str(CHANNELS),
+            sample_rate=str(WHISPER_SAMPLE_RATE),
+            channels=str(WHISPER_CHANNELS),
         ) as connection:
-            # Event-Handler registrieren
             connection.on(EventType.MESSAGE, on_message)
             connection.on(EventType.ERROR, on_error)
             connection.on(EventType.CLOSE, on_close)
 
-            # WebSocket verbunden! Buffer leeren und Live-Modus aktivieren
             ws_time = (time.perf_counter() - stream_start) * 1000
-            with buffer_lock:
-                buffering_active = False
-                buffered_count = len(audio_buffer)
-                for chunk in audio_buffer:
-                    audio_queue.put_nowait(chunk)
-                audio_buffer.clear()
 
-            logger.info(
-                f"[{_session_id}] WebSocket verbunden nach {ws_time:.0f}ms, "
-                f"{buffered_count} gepufferte Chunks gesendet"
-            )
+            # Buffer flush nur im CLI-Mode
+            if buffer_lock and audio_buffer is not None:
+                with buffer_lock:
+                    buffering_active = False
+                    buffered_count = len(audio_buffer)
+                    for chunk in audio_buffer:
+                        audio_queue.put_nowait(chunk)
+                    audio_buffer.clear()
+                logger.info(
+                    f"[{_session_id}] WebSocket verbunden nach {ws_time:.0f}ms, "
+                    f"{buffered_count} gepufferte Chunks"
+                )
+            else:
+                logger.info(f"[{_session_id}] WebSocket verbunden nach {ws_time:.0f}ms")
 
-            # Audio-Sender Task
             async def send_audio():
-                """Sendet Audio-Chunks aus der Queue an Deepgram."""
                 nonlocal stream_error
                 try:
                     while not stop_event.is_set():
@@ -822,21 +829,19 @@ async def _transcribe_with_deepgram_stream_async(
                             chunk = await asyncio.wait_for(
                                 audio_queue.get(), timeout=0.1
                             )
-                            if chunk is None:  # Sentinel für Shutdown
+                            if chunk is None:
                                 break
                             await connection.send_media(chunk)
                         except asyncio.TimeoutError:
                             continue
                 except asyncio.CancelledError:
-                    pass  # Normales Shutdown
+                    pass
                 except Exception as e:
                     logger.error(f"[{_session_id}] Audio-Send Fehler: {e}")
                     stream_error = e
-                    stop_event.set()  # Signal für Abbruch
+                    stop_event.set()
 
-            # Listener Task (offizielle SDK API)
             async def listen_for_messages():
-                """Empfängt Messages über start_listening()."""
                 try:
                     await connection.start_listening()
                 except asyncio.CancelledError:
@@ -844,47 +849,36 @@ async def _transcribe_with_deepgram_stream_async(
                 except Exception as e:
                     logger.debug(f"[{_session_id}] Listener beendet: {e}")
 
-            # Tasks starten (Mikrofon läuft bereits!)
             send_task = asyncio.create_task(send_audio())
             listen_task = asyncio.create_task(listen_for_messages())
 
-            # Warte auf Stop-Signal (SIGUSR1 oder Connection Close)
             await stop_event.wait()
-
             logger.info(f"[{_session_id}] Stop-Signal empfangen")
 
-            # 1. Restliche Audio-Chunks senden (Queue leeren)
-            await audio_queue.put(None)  # Sentinel für send_audio
-            await send_task  # Warten bis alle Chunks gesendet
+            await audio_queue.put(None)
+            await send_task
 
-            # 2. Finalize an Deepgram senden - fordert finale Transkripte an
             logger.info(f"[{_session_id}] Sende Finalize...")
             try:
                 await connection.send_control(ListenV1ControlMessage(type="Finalize"))
             except Exception as e:
                 logger.warning(f"[{_session_id}] Finalize fehlgeschlagen: {e}")
 
-            # 3. Auf finale Transkripte warten (max 2s)
             try:
                 await asyncio.wait_for(finalize_received.wait(), timeout=2.0)
                 logger.info(f"[{_session_id}] Finale Transkripte empfangen")
             except asyncio.TimeoutError:
                 logger.warning(f"[{_session_id}] Timeout beim Warten auf Finalize")
 
-            # 4. Listener beenden
             listen_task.cancel()
             await asyncio.gather(listen_task, return_exceptions=True)
 
     finally:
-        # Mikrofon stoppen (manuelles Cleanup statt Context-Manager)
         try:
             mic_stream.stop()
             mic_stream.close()
-            logger.debug(f"[{_session_id}] Mikrofon-Stream beendet")
-        except Exception as e:
-            logger.warning(f"[{_session_id}] Mikrofon-Cleanup fehlgeschlagen: {e}")
-
-        # Signal-Handler entfernen
+        except Exception:
+            pass
         if threading.current_thread() is threading.main_thread():
             try:
                 loop.remove_signal_handler(signal.SIGUSR1)
@@ -896,199 +890,39 @@ async def _transcribe_with_deepgram_stream_async(
 
     result = " ".join(final_transcripts)
     logger.info(f"[{_session_id}] Streaming abgeschlossen: {len(result)} Zeichen")
-
     return result
+
+
+async def _transcribe_with_deepgram_stream_async(
+    model: str = DEFAULT_DEEPGRAM_MODEL,
+    language: str | None = None,
+) -> str:
+    """Async Deepgram Streaming für CLI-Nutzung (Wrapper um Core)."""
+    return await _deepgram_stream_core(model, language, play_ready=True)
 
 
 def _transcribe_with_deepgram_stream_with_buffer(
     model: str,
     language: str | None,
     early_buffer: list[bytes],
-    np,  # numpy module
-    sd,  # sounddevice module
-    AsyncDeepgramClient,
-    EventType,
-    ListenV1ControlMessage,
+    np,  # Ignoriert - für Rückwärtskompatibilität
+    sd,  # Ignoriert
+    AsyncDeepgramClient,  # Ignoriert
+    EventType,  # Ignoriert
+    ListenV1ControlMessage,  # Ignoriert
 ) -> str:
     """
-    Streaming mit vorgepuffertem Audio (für ultra-fast startup).
+    Streaming mit vorgepuffertem Audio (Daemon-Mode, Wrapper um Core).
 
-    Diese Funktion wird von run_daemon_mode_streaming aufgerufen, nachdem
-    das Mikrofon bereits gestartet wurde und Audio gepuffert wurde.
+    Module-Parameter werden ignoriert - Core importiert selbst.
     """
     import asyncio
 
-    async def _stream_with_buffer() -> str:
-        api_key = os.getenv("DEEPGRAM_API_KEY")
-        if not api_key:
-            raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
-
-        stream_start = time.perf_counter()
-        logger.info(
-            f"[{_session_id}] Deepgram-Stream (mit Buffer): {model}, "
-            f"lang={language or 'auto'}, {len(early_buffer)} early chunks"
+    return asyncio.run(
+        _deepgram_stream_core(
+            model, language, early_buffer=early_buffer, play_ready=False
         )
-
-        SAMPLE_RATE = 16000
-        CHANNELS = 1
-        BLOCKSIZE = 1024
-
-        final_transcripts: list[str] = []
-        stop_event = asyncio.Event()
-        finalize_received = asyncio.Event()
-        stream_error: Exception | None = None
-
-        def on_message(result):
-            if getattr(result, "from_finalize", False):
-                logger.info(f"[{_session_id}] Finalize-Antwort empfangen")
-                finalize_received.set()
-            channel = getattr(result, "channel", None)
-            if channel:
-                alternatives = getattr(channel, "alternatives", [])
-                if alternatives:
-                    transcript = getattr(alternatives[0], "transcript", "")
-                    if transcript:
-                        final_transcripts.append(transcript)
-                        logger.info(
-                            f"[{_session_id}] Transcript: {_log_preview(transcript)}"
-                        )
-
-        def on_error(error):
-            nonlocal stream_error
-            logger.error(f"[{_session_id}] Deepgram Error: {error}")
-            stream_error = (
-                error if isinstance(error, Exception) else Exception(str(error))
-            )
-
-        def on_close(_data):
-            logger.debug(f"[{_session_id}] Connection closed")
-            stop_event.set()
-
-        loop = asyncio.get_running_loop()
-        if threading.current_thread() is threading.main_thread():
-            loop.add_signal_handler(signal.SIGUSR1, stop_event.set)
-
-        client = AsyncDeepgramClient(api_key=api_key)
-        audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-
-        # Early-Buffer sofort in Queue laden
-        for chunk in early_buffer:
-            audio_queue.put_nowait(chunk)
-        logger.info(
-            f"[{_session_id}] {len(early_buffer)} early chunks in Queue geladen"
-        )
-
-        # Audio-Callback für neues Mikrofon
-        def audio_callback(indata, _frames, _time_info, status):
-            if status:
-                logger.warning(f"[{_session_id}] Audio-Status: {status}")
-            if not stop_event.is_set():
-                audio_bytes = (indata * 32767).astype(np.int16).tobytes()
-                loop.call_soon_threadsafe(audio_queue.put_nowait, audio_bytes)
-
-        # Neues Mikrofon starten (das alte wurde in run_daemon_mode_streaming gestoppt)
-        mic_stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            blocksize=BLOCKSIZE,
-            dtype=np.float32,
-            callback=audio_callback,
-        )
-        mic_stream.start()
-        logger.info(f"[{_session_id}] Neues Mikrofon gestartet")
-
-        try:
-            async with client.listen.v1.connect(
-                model=model,
-                language=language,
-                smart_format="true",
-                punctuate="true",
-                interim_results="false",
-                encoding="linear16",
-                sample_rate=str(SAMPLE_RATE),
-                channels=str(CHANNELS),
-            ) as connection:
-                connection.on(EventType.MESSAGE, on_message)
-                connection.on(EventType.ERROR, on_error)
-                connection.on(EventType.CLOSE, on_close)
-
-                ws_time = (time.perf_counter() - stream_start) * 1000
-                logger.info(f"[{_session_id}] WebSocket verbunden nach {ws_time:.0f}ms")
-
-                async def send_audio():
-                    nonlocal stream_error
-                    try:
-                        while not stop_event.is_set():
-                            try:
-                                chunk = await asyncio.wait_for(
-                                    audio_queue.get(), timeout=0.1
-                                )
-                                if chunk is None:
-                                    break
-                                await connection.send_media(chunk)
-                            except asyncio.TimeoutError:
-                                continue
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        logger.error(f"[{_session_id}] Audio-Send Fehler: {e}")
-                        stream_error = e
-                        stop_event.set()
-
-                async def listen_for_messages():
-                    try:
-                        await connection.start_listening()
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        logger.debug(f"[{_session_id}] Listener beendet: {e}")
-
-                send_task = asyncio.create_task(send_audio())
-                listen_task = asyncio.create_task(listen_for_messages())
-
-                await stop_event.wait()
-                logger.info(f"[{_session_id}] Stop-Signal empfangen")
-
-                await audio_queue.put(None)
-                await send_task
-
-                logger.info(f"[{_session_id}] Sende Finalize...")
-                try:
-                    await connection.send_control(
-                        ListenV1ControlMessage(type="Finalize")
-                    )
-                except Exception as e:
-                    logger.warning(f"[{_session_id}] Finalize fehlgeschlagen: {e}")
-
-                try:
-                    await asyncio.wait_for(finalize_received.wait(), timeout=2.0)
-                    logger.info(f"[{_session_id}] Finale Transkripte empfangen")
-                except asyncio.TimeoutError:
-                    logger.warning(f"[{_session_id}] Timeout beim Warten auf Finalize")
-
-                listen_task.cancel()
-                await asyncio.gather(listen_task, return_exceptions=True)
-
-        finally:
-            try:
-                mic_stream.stop()
-                mic_stream.close()
-            except Exception:
-                pass
-            if threading.current_thread() is threading.main_thread():
-                try:
-                    loop.remove_signal_handler(signal.SIGUSR1)
-                except Exception:
-                    pass
-
-        if stream_error:
-            raise stream_error
-
-        result = " ".join(final_transcripts)
-        logger.info(f"[{_session_id}] Streaming abgeschlossen: {len(result)} Zeichen")
-        return result
-
-    return asyncio.run(_stream_with_buffer())
+    )
 
 
 def transcribe_with_deepgram_stream(
@@ -1632,11 +1466,6 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
         f"(seit Prozessstart: {since_process_start:.0f}ms)"
     )
 
-    # Audio-Konfiguration
-    SAMPLE_RATE = 16000
-    CHANNELS = 1
-    BLOCKSIZE = 1024
-
     # Audio-Buffer für frühe Aufnahme
     early_audio_buffer: list[bytes] = []
     early_buffer_lock = threading.Lock()
@@ -1654,9 +1483,9 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
     # 2. Mikrofon SOFORT starten
     logger.info(f"[{_session_id}] Starte Mikrofon (ultra-early)...")
     early_mic_stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=CHANNELS,
-        blocksize=BLOCKSIZE,
+        samplerate=WHISPER_SAMPLE_RATE,
+        channels=WHISPER_CHANNELS,
+        blocksize=WHISPER_BLOCKSIZE,
         dtype=np.float32,
         callback=early_audio_callback,
     )
