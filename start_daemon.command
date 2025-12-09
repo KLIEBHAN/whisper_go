@@ -1,5 +1,5 @@
 #!/bin/bash
-# WhisperGo Hotkey Daemon Starter
+# WhisperGo Unified Daemon Starter
 # Füge diese Datei zu Login Items hinzu:
 # Systemeinstellungen → Allgemein → Anmeldeobjekte → "+"
 
@@ -26,5 +26,5 @@ if [[ -f .env ]]; then
     set +a
 fi
 
-# Daemon starten
-exec "$PYTHON" hotkey_daemon.py
+# Unified Daemon starten
+exec "$PYTHON" whisper_daemon.py
