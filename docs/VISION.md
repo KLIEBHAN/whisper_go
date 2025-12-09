@@ -87,6 +87,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
   - Konfigurierbare Tastenkombinationen (z. B. F19, Cmd+Shift+R)
   - Keine Accessibility-Berechtigung erforderlich
   - Raycast wird optional (für Nutzer, die es bevorzugen)
+- [ ] Platform-Abstraktion und Projektstruktur, siehe unten
 - [ ] **Native Hotkeys (Windows/Linux)** – Cross-Platform
   - Geplant: [pynput](https://pynput.readthedocs.io/) für Windows und Linux
   - Gleiche UX wie macOS-Implementierung
@@ -239,19 +240,21 @@ class DaemonController(Protocol):
 
 ### Implementierungsplan
 
-| PR | Inhalt | Aufwand | Status |
-|----|--------|---------|--------|
-| **PR 1** | `whisper_platform/` Layer + `providers/` Extraktion | 12-16h | ✅ Abgeschlossen |
-| **PR 2** | `audio/`, `refine/`, `utils/` + Streaming | 10-14h | 📋 Geplant |
-| **PR 3** | CLI Modernisierung + Cleanup | 6-8h | 📋 Geplant |
+| PR       | Inhalt                                              | Aufwand | Status           |
+| -------- | --------------------------------------------------- | ------- | ---------------- |
+| **PR 1** | `whisper_platform/` Layer + `providers/` Extraktion | 12-16h  | ✅ Abgeschlossen |
+| **PR 2** | `audio/`, `refine/`, `utils/` + Streaming           | 10-14h  | 📋 Geplant       |
+| **PR 3** | CLI Modernisierung + Cleanup                        | 6-8h    | 📋 Geplant       |
 
 #### PR 1 Details (Abgeschlossen)
+
 - `whisper_platform/`: Factory, Protocols, Sound, Clipboard, App-Detection, Daemon, Hotkey
 - `providers/`: OpenAI, Deepgram (REST), Groq, Local
 - `transcribe()` nutzt jetzt `providers.get_provider()`
 - ~290 Zeilen aus `transcribe.py` entfernt
 
 #### PR 2 Details (Geplant)
+
 - **`audio/recording.py`**: Mikrofon-Aufnahme mit sounddevice
 - **`providers/deepgram_stream.py`**: WebSocket-Streaming (nur Protokoll)
 - **`refine/`**: LLM-Nachbearbeitung extrahieren
@@ -261,6 +264,10 @@ class DaemonController(Protocol):
 > zusammen mit Audio-Recording extrahiert. Die ~400 Zeilen Streaming-Code vermischen
 > aktuell Provider-Logik, Audio-Aufnahme und Orchestrierung. Für saubere Trennung
 > muss beides gleichzeitig refactored werden.
+>
+> **Hinweis Recording:** Aktuell existiert eine Code-Duplizierung für Audio-Recording
+> zwischen `whisper_daemon.py` (`_recording_worker`) und `transcribe.py`. Diese wird
+> in PR 2 durch die zentrale `audio/recording.py` Komponente aufgelöst.
 
 ### Rückwärtskompatibilität
 
@@ -271,4 +278,3 @@ class DaemonController(Protocol):
 ---
 
 _Stand: Dezember 2025_
-
