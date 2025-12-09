@@ -74,6 +74,7 @@ Zwei Hauptfunktionen: Audiodateien transkribieren oder direkt vom Mikrofon aufne
 
 ```bash
 python transcribe.py audio.mp3                        # Standard (API-Modus)
+python transcribe.py audio.mp3 --mode api             # OpenAI GPT-4o Transcribe
 python transcribe.py audio.mp3 --mode deepgram        # Deepgram Nova-3
 python transcribe.py audio.mp3 --mode groq            # Groq (schnellste Option)
 python transcribe.py audio.mp3 --mode local           # Offline mit lokalem Whisper
