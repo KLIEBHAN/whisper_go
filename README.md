@@ -36,7 +36,35 @@ export DEEPGRAM_API_KEY="dein_key"
 python transcribe.py --record --copy --mode deepgram
 ```
 
-> **Tipp:** Kopiere `.env.example` nach `.env` für dauerhafte Konfiguration. Für systemweite Hotkeys siehe [Raycast Integration](#raycast-integration).
+### Empfohlene `.env` Konfiguration
+
+Erstelle eine `.env`-Datei im Projektverzeichnis für dauerhafte Einstellungen:
+
+```bash
+# API-Keys
+DEEPGRAM_API_KEY=...
+GROQ_API_KEY=...
+
+# Transkription
+WHISPER_GO_MODE=deepgram
+WHISPER_GO_LANGUAGE=de
+
+# LLM-Nachbearbeitung
+WHISPER_GO_REFINE=true
+WHISPER_GO_REFINE_PROVIDER=groq
+WHISPER_GO_REFINE_MODEL=openai/gpt-oss-120b
+```
+
+**Warum diese Einstellungen?**
+
+| Einstellung | Begründung |
+|-------------|------------|
+| `MODE=deepgram` | Schnellste Option (~300ms) durch WebSocket-Streaming |
+| `REFINE_PROVIDER=groq` | Kostenlose/günstige LLM-Inferenz auf LPU-Hardware |
+| `REFINE_MODEL=openai/gpt-oss-120b` | Open-Source GPT-Alternative mit exzellenter Qualität |
+| `LANGUAGE=de` | Explizite Sprache verbessert Transkriptionsgenauigkeit |
+
+> **Tipp:** Für systemweite Hotkeys siehe [Hotkey Integration](#hotkey-integration).
 
 ## CLI-Nutzung
 
