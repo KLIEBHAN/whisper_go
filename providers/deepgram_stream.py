@@ -29,31 +29,24 @@ from typing import TYPE_CHECKING, AsyncIterator
 if TYPE_CHECKING:
     from deepgram.listen.v1.socket_client import AsyncV1SocketClient
 
+# Zentrale Konfiguration importieren
+from config import (
+    WHISPER_SAMPLE_RATE,
+    WHISPER_CHANNELS,
+    WHISPER_BLOCKSIZE,
+    INT16_MAX,
+    INTERIM_THROTTLE_MS,
+    FINALIZE_TIMEOUT,
+    DEEPGRAM_WS_URL,
+    DEEPGRAM_CLOSE_TIMEOUT,
+    INTERIM_FILE,
+    DEFAULT_DEEPGRAM_MODEL,
+)
+
 logger = logging.getLogger("whisper_go")
 
-# =============================================================================
-# Konfiguration
-# =============================================================================
-
-# Default-Modell
-DEFAULT_MODEL = "nova-3"
-
-# Audio-Konfiguration (muss mit Whisper-Erwartungen übereinstimmen)
-WHISPER_SAMPLE_RATE = 16000
-WHISPER_CHANNELS = 1
-WHISPER_BLOCKSIZE = 1024
-
-# Streaming-Timeouts
-INTERIM_THROTTLE_MS = 150    # Max. Update-Rate für Interim-File
-FINALIZE_TIMEOUT = 2.0       # Warten auf finale Transkripte
-DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
-DEEPGRAM_CLOSE_TIMEOUT = 0.5 # Schneller WebSocket-Shutdown
-
-# IPC-Dateien
-INTERIM_FILE = Path("/tmp/whisper_go.interim")
-
-# Konstante für Audio-Konvertierung (float32 → int16)
-INT16_MAX = 32767
+# Default-Modell (Alias für Rückwärtskompatibilität)
+DEFAULT_MODEL = DEFAULT_DEEPGRAM_MODEL
 
 # Session-ID Cache
 _session_id: str = ""
