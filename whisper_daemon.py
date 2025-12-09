@@ -501,6 +501,9 @@ def main() -> int:
     """CLI-Einstiegspunkt."""
     import argparse
 
+    # Environment laden bevor Argumente definiert werden (für Defaults)
+    load_environment()
+
     parser = argparse.ArgumentParser(
         description="whisper_daemon – Unified Daemon für whisper_go",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -565,8 +568,6 @@ Beispiele:
 
     args = parser.parse_args()
 
-    # Environment laden
-    load_environment()
     setup_logging(debug=args.debug)
 
     # Konfiguration: CLI > ENV > Default
