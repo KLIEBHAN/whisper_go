@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 
-from prompts import DEFAULT_APP_CONTEXTS
+from .prompts import DEFAULT_APP_CONTEXTS
 
 logger = logging.getLogger("whisper_go")
 

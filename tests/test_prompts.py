@@ -2,7 +2,7 @@
 
 import pytest
 
-from prompts import (
+from refine.prompts import (
     CONTEXT_PROMPTS,
     DEFAULT_REFINE_PROMPT,
     VOICE_COMMANDS_INSTRUCTION,

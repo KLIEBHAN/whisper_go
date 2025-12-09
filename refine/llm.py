@@ -8,7 +8,7 @@ import argparse
 import logging
 import os
 
-from prompts import get_prompt_for_context
+from .prompts import get_prompt_for_context
 from .context import detect_context
 
 # Zentrale Konfiguration importieren
