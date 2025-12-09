@@ -29,81 +29,28 @@ import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# IPC-Dateien für Interim-Text (Kompatibilität mit transcribe.py)
-INTERIM_FILE = Path("/tmp/whisper_go.interim")
+from config import INTERIM_FILE, LOG_FILE, SCRIPT_DIR  # LOG_FILE from config is whisper_go.log, utilizing unified logging
+from utils import setup_logging, log, error, get_session_id
 
-# =============================================================================
-# Konfiguration
-# =============================================================================
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-LOG_DIR = SCRIPT_DIR / "logs"
-LOG_FILE = LOG_DIR / "whisper_daemon.log"
-
-# Hotkey-Debouncing
-# 300ms verhindert Doppel-Auslösung durch Keyboard-Auto-Repeat
-# und zu schnelles Doppelklicken (typische Auto-Repeat-Rate: 30-50ms)
+# DEBOUNCE_INTERVAL defined locally as it is specific to hotkey daemon
 DEBOUNCE_INTERVAL = 0.3
-
-# =============================================================================
-# Logging
-# =============================================================================
-
 logger = logging.getLogger("whisper_daemon")
 
 
-def setup_logging(debug: bool = False) -> None:
-    """Konfiguriert Logging mit Datei-Output."""
-    # Verhindere doppelte Handler bei mehrfachem Aufruf
-    if logger.handlers:
-        return
-    
-    LOG_DIR.mkdir(exist_ok=True)
-
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
-
-    file_handler = RotatingFileHandler(
-        LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
-    )
-    logger.addHandler(file_handler)
-
-    if debug:
-        stderr_handler = logging.StreamHandler(sys.stderr)
-        stderr_handler.setLevel(logging.DEBUG)
-        stderr_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-        logger.addHandler(stderr_handler)
 
 
 # =============================================================================
-# Lazy Imports (DRY: Import statt Duplizieren)
+# Imports (Direct)
 # =============================================================================
 
-_transcribe_module = None
-_hotkey_module = None
+from config import DEFAULT_DEEPGRAM_MODEL
+from providers.deepgram_stream import deepgram_stream_core
+from providers import get_provider
+from refine.llm import refine_transcript
+from refine.context import detect_context
+from whisper_platform import get_sound_player
 
-
-def _get_transcribe():
-    """Lazy Import für transcribe.py."""
-    global _transcribe_module
-    if _transcribe_module is None:
-        import transcribe
-
-        _transcribe_module = transcribe
-    return _transcribe_module
-
-
-def _get_hotkey():
-    """Lazy Import für hotkey_daemon.py."""
-    global _hotkey_module
-    if _hotkey_module is None:
-        import hotkey_daemon
-
-        _hotkey_module = hotkey_daemon
-    return _hotkey_module
+from utils import parse_hotkey, paste_transcript
 
 
 # =============================================================================
@@ -722,12 +669,10 @@ class WhisperDaemon:
         """
         import asyncio
 
-        transcribe = _get_transcribe()
-
         try:
-            model = self.model or transcribe.DEFAULT_DEEPGRAM_MODEL
+            model = self.model or DEFAULT_DEEPGRAM_MODEL
 
-            transcribe.setup_logging(debug=logger.level == logging.DEBUG)
+            # setup_logging(debug=logger.level == logging.DEBUG) # Bereits global konfiguriert
 
             # Eigener Event-Loop, da wir nicht im Main-Thread sind
             loop = asyncio.new_event_loop()
@@ -735,7 +680,7 @@ class WhisperDaemon:
 
             try:
                 transcript = loop.run_until_complete(
-                    transcribe._deepgram_stream_core(
+                    deepgram_stream_core(
                         model=model,
                         language=self.language,
                         play_ready=True,
@@ -745,7 +690,7 @@ class WhisperDaemon:
 
                 # LLM-Nachbearbeitung (optional)
                 if self.refine and transcript:
-                    transcript = transcribe.refine_transcript(
+                    transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
                         provider=self.refine_provider,
@@ -766,19 +711,18 @@ class WhisperDaemon:
         Standard-Aufnahme für OpenAI, Groq, Local.
         
         Nimmt Audio auf bis Stop-Event, speichert als WAV,
-        und ruft dann transcribe() auf.
+        und ruft dann Provider direkt auf.
         """
         import numpy as np
         import sounddevice as sd
         import soundfile as sf
         
-        transcribe = _get_transcribe()
-        
         recorded_chunks = []
+        player = get_sound_player()
         
         try:
             # Ready-Sound
-            transcribe.play_sound("ready")
+            player.play("ready")
             
             # Aufnahme-Loop
             def callback(indata, frames, time, status):
@@ -789,7 +733,7 @@ class WhisperDaemon:
                     sd.sleep(50)
             
             # Stop-Sound
-            transcribe.play_sound("stop")
+            player.play("stop")
             
             # Speichern
             if not recorded_chunks:
@@ -808,17 +752,17 @@ class WhisperDaemon:
                 # Update State: Transcribing
                 # (via Queue nicht direkt möglich, aber _stop_recording setzt es im Main-Thread)
                 
-                # Transkribieren
-                transcript = transcribe.transcribe(
+                # Transkribieren via Provider
+                provider = get_provider(self.mode)
+                transcript = provider.transcribe(
                     Path(temp_path),
-                    mode=self.mode,
                     model=self.model,
                     language=self.language
                 )
                 
                 # LLM-Refine
                 if self.refine and transcript:
-                    transcript = transcribe.refine_transcript(
+                    transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
                         provider=self.refine_provider,
@@ -872,8 +816,7 @@ class WhisperDaemon:
 
                 if isinstance(result, Exception):
                     logger.error(f"Fehler: {result}")
-                    transcribe = _get_transcribe()
-                    transcribe.play_sound("error")
+                    get_sound_player().play("error")
                     self._update_state("error")
                 elif result:
                     self._paste_result(result)
@@ -898,8 +841,7 @@ class WhisperDaemon:
 
     def _paste_result(self, transcript: str) -> None:
         """Fügt Transkript via Auto-Paste ein."""
-        hotkey = _get_hotkey()
-        success = hotkey.paste_transcript(transcript)
+        success = paste_transcript(transcript)
         if success:
             logger.info(f"✓ Text eingefügt: '{transcript[:50]}...'")
         else:
@@ -912,8 +854,6 @@ class WhisperDaemon:
         from Foundation import NSTimer  # type: ignore[import-not-found]
         import signal
 
-        hotkey = _get_hotkey()
-
         # UI-Controller initialisieren
         logger.info("Initialisiere UI-Controller...")
         self._menubar = MenuBarController()
@@ -921,7 +861,7 @@ class WhisperDaemon:
         logger.info("UI-Controller bereit")
 
         # Hotkey parsen
-        virtual_key, modifier_mask = hotkey.parse_hotkey(self.hotkey)
+        virtual_key, modifier_mask = parse_hotkey(self.hotkey)
 
         logger.info(
             f"Daemon gestartet: hotkey={self.hotkey}, "

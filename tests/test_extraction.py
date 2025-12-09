@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from refine.llm import _extract_message_content
-from transcribe import _extract_transcript
+from providers.deepgram_stream import _extract_transcript
 
 
 class TestExtractMessageContent:

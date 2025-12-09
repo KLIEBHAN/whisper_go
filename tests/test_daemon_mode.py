@@ -12,13 +12,10 @@ from whisper_daemon import WhisperDaemon
 
 class TestDaemonMode(unittest.TestCase):
     def setUp(self):
-        self.mock_transcribe_module = MagicMock()
-        self.mock_transcribe_module.DEFAULT_DEEPGRAM_MODEL = "nova-3"
-        self.patcher = patch("whisper_daemon._get_transcribe", return_value=self.mock_transcribe_module)
-        self.patcher.start()
+        pass
         
     def tearDown(self):
-        self.patcher.stop()
+        pass
 
     @patch("whisper_daemon.threading.Thread")
     def test_start_recording_openai_mode(self, mock_thread_cls):
@@ -146,7 +143,12 @@ class TestDaemonMode(unittest.TestCase):
             daemon._stop_event.set()
         mock_sd.sleep.side_effect = side_effect_sleep
         
-        # Mock tempfile
+        # Mock dependencies
+        mock_provider = MagicMock()
+        mock_get_provider = MagicMock(return_value=mock_provider)
+        mock_player = MagicMock()
+        mock_get_player = MagicMock(return_value=mock_player)
+        
         with patch.dict(sys.modules, {
                 "sounddevice": mock_sd, 
                 "soundfile": mock_sf, 
@@ -155,15 +157,22 @@ class TestDaemonMode(unittest.TestCase):
              patch("whisper_daemon.tempfile.mkstemp", return_value=(123, "/tmp/fake.wav")), \
              patch("whisper_daemon.os.close"), \
              patch("whisper_daemon.os.unlink"), \
-             patch("whisper_daemon.os.path.exists", return_value=True):
+             patch("whisper_daemon.os.path.exists", return_value=True), \
+             patch("whisper_daemon.get_provider", mock_get_provider), \
+             patch("whisper_daemon.get_sound_player", mock_get_player):
             
             daemon._recording_worker()
             
-            # Verify transcribe called
-            self.mock_transcribe_module.transcribe.assert_called_once()
-            call_args = self.mock_transcribe_module.transcribe.call_args
-            self.assertEqual(str(call_args[0][0]), "/tmp/fake.wav")
-            self.assertEqual(call_args[1]["mode"], "openai")
+            # Verify usage
+            mock_player.play.assert_any_call("ready")
+            mock_player.play.assert_any_call("stop")
+            
+            # Verify provider called
+            mock_get_provider.assert_called_with("openai")
+            mock_provider.transcribe.assert_called_once()
+            call_args = mock_provider.transcribe.call_args
+            self.assertEqual(str(call_args[0][0]), "/tmp/fake.wav")  # First arg is audio_path
+            self.assertEqual(call_args[1]["model"], None) # Default
             self.assertEqual(call_args[1]["language"], "de")
             
             # Verify result put in queue

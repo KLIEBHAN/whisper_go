@@ -33,8 +33,9 @@ import signal  # noqa: E402
 import sys  # noqa: E402
 import threading  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
-from contextlib import asynccontextmanager, contextmanager  # noqa: E402
+import asyncio  # noqa: E402
 from typing import TYPE_CHECKING  # noqa: E402
+from providers.deepgram_stream import deepgram_stream_core  # noqa: E402
 from logging.handlers import RotatingFileHandler  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -135,121 +136,7 @@ from audio.recording import record_audio, record_audio_daemon
 # =============================================================================
 
 
-def _is_whisper_go_process(pid: int) -> bool:
-    """Prüft ob die PID zu einem whisper_go Prozess gehört."""
-    import subprocess
-    try:
-        # ps -p PID -o command=
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-        if result.returncode != 0:
-            return False
-        
-        command = result.stdout.strip()
-        # Prüfe auf transcribe.py und Argumente
-        return "transcribe.py" in command and "--record-daemon" in command
-    except Exception:
-        return False
-
-
-def _daemonize() -> None:
-    """
-    Double-Fork für echte Daemon-Prozesse (verhindert Zombies).
-
-    Wenn Raycast spawn(detached) + unref() nutzt, wird wait() nie aufgerufen.
-    Der beendete Python-Prozess bleibt als Zombie. Lösung: Double-Fork.
-    """
-    # 1. Fork
-    try:
-        pid = os.fork()
-        if pid > 0:
-            sys.exit(0)
-    except OSError as e:
-        error(f"Fork #1 fehlgeschlagen: {e}")
-        sys.exit(1)
-
-    # 2. Session entkoppeln
-    os.setsid()
-
-    # 3. Fork
-    try:
-        pid = os.fork()
-        if pid > 0:
-            sys.exit(0)
-    except OSError as e:
-        error(f"Fork #2 fehlgeschlagen: {e}")
-        sys.exit(1)
-
-
-def _cleanup_stale_pid_file() -> None:
-    """
-    Entfernt PID-File und killt alten Prozess falls nötig (Crash-Recovery).
-    """
-    if not PID_FILE.exists():
-        return
-
-    try:
-        old_pid = int(PID_FILE.read_text().strip())
-
-        # Eigene PID? Dann nicht killen!
-        if old_pid == os.getpid():
-            return
-
-        # Prozess läuft noch?
-        try:
-            # Signal 0 ist ein "Ping" – prüft Existenz ohne Seiteneffekte
-            os.kill(old_pid, 0)
-        except ProcessLookupError:
-            # Prozess tot -> PID-File löschen
-             logger.info(f"[{_get_session_id()}] Stale PID-File gelöscht (Prozess weg): {PID_FILE}")
-             PID_FILE.unlink(missing_ok=True)
-             return
-
-        # SICHERHEIT: Nur killen wenn es wirklich ein whisper_go Prozess ist!
-        if not _is_whisper_go_process(old_pid):
-            logger.warning(
-                f"[{_get_session_id()}] PID {old_pid} ist kein whisper_go Prozess, "
-                f"lösche nur PID-File (PID-Recycling?)"
-            )
-            PID_FILE.unlink(missing_ok=True)
-            return
-
-        # Prozess läuft noch und ist whisper_go -> KILL
-        logger.warning(
-            f"[{_get_session_id()}] Alter Daemon-Prozess {old_pid} läuft noch, beende ihn..."
-        )
-
-        # Erst freundlich (SIGTERM), dann hart (SIGKILL)
-        try:
-            os.kill(old_pid, signal.SIGTERM)
-            time.sleep(0.5)
-            try:
-                os.kill(old_pid, 0)
-                os.kill(old_pid, signal.SIGKILL)
-                logger.info(
-                    f"[{_get_session_id()}] Alter Prozess {old_pid} gekillt (SIGKILL)"
-                )
-            except ProcessLookupError:
-                logger.info(
-                    f"[{_get_session_id()}] Alter Prozess {old_pid} beendet (SIGTERM)"
-                )
-        except ProcessLookupError:
-            pass
-
-        PID_FILE.unlink(missing_ok=True)
-    except (ValueError, ProcessLookupError):
-        logger.info(f"[{_get_session_id()}] Stale PID-File gelöscht: {PID_FILE}")
-        PID_FILE.unlink(missing_ok=True)
-    except PermissionError:
-        logger.warning(f"[{_get_session_id()}] PID-File existiert, keine Berechtigung")
-
-
-
-
+from utils import daemonize as _daemonize, cleanup_stale_pid_file as _cleanup_stale_pid_file, is_whisper_go_process as _is_whisper_go_process
 
 
 # =============================================================================
@@ -303,96 +190,6 @@ def load_vocabulary() -> dict:
 #
 # Für neuen Code: Importiere direkt aus providers.deepgram_stream
 # =============================================================================
-
-
-def _extract_transcript(result) -> str | None:
-    """Re-export von providers.deepgram_stream._extract_transcript."""
-    from providers.deepgram_stream import _extract_transcript as impl
-    return impl(result)
-
-
-@asynccontextmanager
-async def _create_deepgram_connection(
-    api_key: str,
-    *,
-    model: str,
-    language: str | None = None,
-    smart_format: bool = True,
-    punctuate: bool = True,
-    interim_results: bool = True,
-    encoding: str = "linear16",
-    sample_rate: int = 16000,
-    channels: int = 1,
-) -> AsyncIterator["AsyncV1SocketClient"]:
-    """Deepgram WebSocket Connection - delegiert an providers.deepgram_stream."""
-    from providers.deepgram_stream import _create_deepgram_connection as create_impl
-    async with create_impl(
-        api_key,
-        model=model,
-        language=language,
-        smart_format=smart_format,
-        punctuate=punctuate,
-        interim_results=interim_results,
-        encoding=encoding,
-        sample_rate=sample_rate,
-        channels=channels,
-    ) as connection:
-        yield connection
-
-
-async def _deepgram_stream_core(
-    model: str,
-    language: str | None,
-    *,
-    early_buffer: list[bytes] | None = None,
-    play_ready: bool = True,
-    external_stop_event: threading.Event | None = None,
-) -> str:
-    """Gemeinsamer Streaming-Core für Deepgram.
-
-    Delegiert an providers.deepgram_stream.deepgram_stream_core.
-    Wrapper für Rückwärtskompatibilität.
-    """
-    from providers.deepgram_stream import deepgram_stream_core
-    return await deepgram_stream_core(
-        model,
-        language,
-        early_buffer=early_buffer,
-        play_ready=play_ready,
-        external_stop_event=external_stop_event,
-    )
-
-
-async def _transcribe_with_deepgram_stream_async(
-    model: str = DEFAULT_DEEPGRAM_MODEL,
-    language: str | None = None,
-) -> str:
-    """Async Deepgram Streaming für CLI-Nutzung (Wrapper um Core)."""
-    from providers.deepgram_stream import _transcribe_with_deepgram_stream_async as impl
-    return await impl(model, language)
-
-
-def _transcribe_with_deepgram_stream_with_buffer(
-    model: str,
-    language: str | None,
-    early_buffer: list[bytes],
-) -> str:
-    """Streaming mit vorgepuffertem Audio (Daemon-Mode, Wrapper um Core)."""
-    from providers.deepgram_stream import transcribe_with_deepgram_stream_with_buffer as impl
-    return impl(model, language, early_buffer)
-
-
-def transcribe_with_deepgram_stream(
-    model: str = DEFAULT_DEEPGRAM_MODEL,
-    language: str | None = None,
-) -> str:
-    """Sync Wrapper für async Deepgram Streaming.
-
-    Verwendet asyncio.run() um die async Implementierung auszuführen.
-    Für Raycast-Integration: SIGUSR1 stoppt die Aufnahme sauber.
-    """
-    from providers.deepgram_stream import transcribe_with_deepgram_stream as impl
-    return impl(model, language)
 
 
 
@@ -710,10 +507,12 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
             raise deepgram_error
 
         # 5. Streaming mit vorgepuffertem Audio starten
-        transcript = _transcribe_with_deepgram_stream_with_buffer(
-            model=args.model or DEFAULT_DEEPGRAM_MODEL,
-            language=args.language,
-            early_buffer=early_chunks,
+        transcript = asyncio.run(
+            deepgram_stream_core(
+                model=args.model or DEFAULT_DEEPGRAM_MODEL,
+                language=args.language,
+                early_buffer=early_chunks,
+            )
         )
 
         play_sound("stop")

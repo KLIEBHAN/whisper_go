@@ -12,14 +12,12 @@ Usage:
 
 from .logging import setup_logging, log, error, get_logger, get_session_id
 from .timing import timed_operation, format_duration, log_preview
+from .daemon import daemonize, is_whisper_go_process, cleanup_stale_pid_file
+from .hotkey import parse_hotkey, paste_transcript
 
 __all__ = [
-    "setup_logging",
-    "log",
-    "error",
-    "get_logger",
-    "get_session_id",
-    "timed_operation",
-    "format_duration",
-    "log_preview",
+    "setup_logging", "log", "error",
+    "timed_operation", "log_preview", "format_duration",
+    "daemonize", "is_whisper_go_process", "cleanup_stale_pid_file",
+    "parse_hotkey", "paste_transcript",
 ]
