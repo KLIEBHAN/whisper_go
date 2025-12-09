@@ -9,6 +9,15 @@ Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). 
 
 > **Performance:** Ultra-Fast-Startup mit ~170ms bis Ready-Sound dank parallelem Mikrofon- und WebSocket-Init. Audio wird während der Aufnahme transkribiert – Ergebnis erscheint sofort nach dem Stoppen.
 
+### Provider im Überblick
+
+| Provider | Latenz | Methode | Besonderheit |
+|----------|--------|---------|---------------|
+| **Deepgram** | ~300ms ⚡ | WebSocket | Echtzeit-Streaming, empfohlen |
+| **Groq** | ~1s | REST | Whisper auf LPU, sehr schnell |
+| **OpenAI** | ~2-3s | REST | GPT-4o, höchste Qualität |
+| **Lokal** | ~5-10s | Whisper | Offline, keine API-Kosten |
+
 ## Schnellstart
 
 In unter 2 Minuten einsatzbereit:
@@ -220,13 +229,16 @@ open start_daemon.command
 
 > **Keine Accessibility-Berechtigung erforderlich!** QuickMacHotKey nutzt die native Carbon-API (`RegisterEventHotKey`).
 
-### Alternative: Hotkey-Daemon + Raycast
+### Alternative: Hotkey-Daemon
 
-Für Raycast-Integration oder wenn du Overlay/Menübar separat steuern möchtest:
+Für Raycast-Integration oder wenn du feinere Kontrolle brauchst:
 
 ```bash
-# Hotkey-Daemon als LaunchAgent installieren
-./scripts/install_hotkey_daemon.sh
+# Standalone Hotkey-Daemon starten
+python hotkey_daemon.py
+
+# Mit anderen Optionen
+python hotkey_daemon.py --hotkey cmd+shift+r
 ```
 
 ### Konfiguration

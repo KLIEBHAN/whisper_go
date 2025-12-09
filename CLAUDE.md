@@ -10,19 +10,19 @@ Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
 
 ```
 whisper_go/
-├── transcribe.py          # CLI für Transkription
+├── transcribe.py          # CLI für Transkription (Core-Logic)
+├── whisper_daemon.py      # Unified Daemon (Hotkey + Recording + UI)
+├── hotkey_daemon.py       # Standalone Hotkey-Daemon (Alternative)
 ├── prompts.py             # LLM-Prompts und Kontext-Mappings
-├── menubar.py             # Menübar-Status (rumps)
-├── overlay.py             # Untertitel-Overlay (PyObjC)
+├── start_daemon.command   # macOS Login Item für Auto-Start
 ├── requirements.txt       # Dependencies
 ├── README.md              # Benutzer-Dokumentation
 ├── CLAUDE.md              # Diese Datei
 ├── docs/
-│   └── VISION.md          # Produkt-Vision & Roadmap
-└── whisper-go-raycast/    # Raycast Extension (Phase 2)
-    ├── src/
-    │   └── toggle-recording.tsx
-    └── package.json
+│   ├── VISION.md          # Produkt-Vision & Roadmap
+│   ├── Deepgram.md        # Deepgram Integration
+│   └── WINDOWS_ANALYSIS.md
+└── tests/                 # Unit & Integration Tests (145+ Tests)
 ```
 
 ## Kern-Datei: `transcribe.py`
@@ -33,9 +33,7 @@ whisper_go/
 | ----------------------------------- | ---------------------------------------------- |
 | `record_audio()`                    | Mikrofon-Aufnahme (interaktiv, mit ENTER)      |
 | `record_audio_daemon()`             | Mikrofon-Aufnahme (Signal-basiert, Raycast)    |
-| `play_ready_sound()`                | Ready-Ton via CoreAudio (~0.2ms Latenz)        |
-| `play_stop_sound()`                 | Stop-Ton via CoreAudio                         |
-| `play_error_sound()`                | Fehler-Ton via CoreAudio                       |
+| `play_sound(name)`                  | System-Sound abspielen (ready/stop/error)      |
 | `transcribe()`                      | Zentrale API – wählt Modus automatisch         |
 | `transcribe_with_api()`             | OpenAI API Transkription                       |
 | `transcribe_with_deepgram()`        | Deepgram Nova-3 Transkription (REST)           |
@@ -61,6 +59,36 @@ whisper_go/
 - Flache Struktur mit Early Returns
 - Double-Fork Daemon: Verhindert Zombies bei Raycast spawn+unref
 
+## Unified Daemon: `whisper_daemon.py`
+
+Konsolidiert alle Komponenten in einem Prozess (empfohlen für tägliche Nutzung):
+
+**Klassen:**
+
+| Klasse | Zweck |
+| ------ | ----- |
+| `MenuBarController` | Menübar-Status via NSStatusBar (🎤 🔴 ⏳ ✅ ❌) |
+| `OverlayController` | Animiertes Overlay am unteren Bildschirmrand |
+| `SoundWaveView` | Animierte Schallwellen-Visualisierung (Recording/Loading) |
+| `WhisperDaemon` | Hauptklasse: Hotkey + Recording + Streaming + UI |
+
+**Architektur:**
+
+- **Main-Thread:** Hotkey-Listener (QuickMacHotKey) + UI-Updates
+- **Worker-Thread:** Deepgram-Streaming (async)
+
+**State-Flow:** `idle` → `recording` → `transcribing` → `done`/`error` → `idle`
+
+## Hotkey-Daemon: `hotkey_daemon.py`
+
+Standalone-Alternative für Raycast-Integration:
+
+| Funktion | Zweck |
+| -------- | ----- |
+| `parse_hotkey()` | Parst Hotkey-String (z.B. "cmd+shift+r") |
+| `paste_transcript()` | Auto-Paste via pynput/Quartz/osascript |
+| `HotkeyDaemon` | Globaler Hotkey-Listener (QuickMacHotKey) |
+
 ## CLI-Interface
 
 ```bash
@@ -74,18 +102,18 @@ python transcribe.py --record --copy --language de
 
 ## Dependencies
 
-| Paket            | Zweck                               |
-| ---------------- | ----------------------------------- |
-| `openai`         | API-Modus + LLM-Refine (OpenRouter) |
-| `openai-whisper` | Lokaler Modus                       |
-| `deepgram-sdk`   | Deepgram Nova-3 Transkription       |
-| `groq`           | Groq Whisper + LLM-Refine           |
-| `sounddevice`    | Mikrofon-Aufnahme                   |
-| `soundfile`      | WAV-Export                          |
-| `pyperclip`      | Zwischenablage                      |
-| `python-dotenv`  | .env Konfiguration                  |
-| `pyobjc`         | Overlay-UI (NSWindow, Animation)    |
-| `rumps`          | Menübar-App                         |
+| Paket            | Zweck                                     |
+| ---------------- | ----------------------------------------- |
+| `openai`         | API-Modus + LLM-Refine (OpenRouter)       |
+| `openai-whisper` | Lokaler Modus                             |
+| `deepgram-sdk`   | Deepgram Nova-3 Transkription (REST + WS) |
+| `groq`           | Groq Whisper + LLM-Refine                 |
+| `sounddevice`    | Mikrofon-Aufnahme                         |
+| `soundfile`      | WAV-Export                                |
+| `pyperclip`      | Zwischenablage                            |
+| `python-dotenv`  | .env Konfiguration                        |
+| `rumps`          | Menübar-App                               |
+| `quickmachotkey` | Globale Hotkeys (Carbon API, kein TCC)    |
 
 **Externe:**
 
