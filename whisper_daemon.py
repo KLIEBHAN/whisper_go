@@ -4,21 +4,21 @@ whisper_daemon.py – Unified Daemon für whisper_go.
 
 Konsolidiert in einem Prozess:
 - Hotkey-Listener (QuickMacHotKey, keine Accessibility nötig)
-- Mikrofon-Aufnahme (sounddevice)
-- Transkription (Deepgram Streaming)
+- Mikrofon-Aufnahme + Deepgram Streaming (wie run_daemon_mode_streaming)
+- Menübar-Status (NSStatusBar)
+- Overlay mit Animationen (NSWindow)
 - LLM-Nachbearbeitung (optional)
 - Auto-Paste (pynput/Quartz)
 
 Architektur:
-- Main Thread: NSApplication Event-Loop (QuickMacHotKey, Mikrofon-Callback)
-- Worker Thread: asyncio Event-Loop (Deepgram WebSocket, HTTP APIs)
+- Main Thread: NSApplication Event-Loop (QuickMacHotKey, Menübar, Overlay)
+- Worker Thread: _deepgram_stream_core() mit external_stop_event
 
 Usage:
     python whisper_daemon.py              # Mit Defaults aus .env
     python whisper_daemon.py --hotkey f19 # Hotkey überschreiben
 """
 
-import asyncio
 import logging
 import os
 import queue
@@ -27,7 +27,9 @@ import threading
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Callable
+
+# IPC-Dateien für Interim-Text (Kompatibilität mit transcribe.py)
+INTERIM_FILE = Path("/tmp/whisper_go.interim")
 
 # =============================================================================
 # Konfiguration
@@ -37,14 +39,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_FILE = LOG_DIR / "whisper_daemon.log"
 
-# Audio-Konfiguration (Whisper-kompatibel)
-WHISPER_SAMPLE_RATE = 16000
-WHISPER_CHANNELS = 1
-WHISPER_BLOCKSIZE = 1024
-INT16_MAX = 32767
-
 # Timeouts
-RESULT_POLL_INTERVAL_MS = 50  # NSTimer Polling-Intervall
 DEBOUNCE_INTERVAL = 0.3  # Ignoriere Hotkey-Events innerhalb 300ms
 
 # =============================================================================
@@ -77,10 +72,9 @@ def setup_logging(debug: bool = False) -> None:
 
 
 # =============================================================================
-# Imports aus bestehenden Modulen (DRY: Import statt Duplizieren)
+# Lazy Imports (DRY: Import statt Duplizieren)
 # =============================================================================
 
-# Lazy Imports für schnelleren Startup
 _transcribe_module = None
 _hotkey_module = None
 
@@ -106,70 +100,423 @@ def _get_hotkey():
 
 
 # =============================================================================
-# AsyncWorker: Eigener Thread mit asyncio Event-Loop
+# Menübar-Controller (Phase 2)
 # =============================================================================
 
+# Status-Icons für Menübar
+MENUBAR_ICONS = {
+    "idle": "🎤",
+    "recording": "🔴",
+    "transcribing": "⏳",
+    "done": "✅",
+    "error": "❌",
+}
 
-class AsyncWorker:
+
+class MenuBarController:
     """
-    Worker-Thread mit eigenem asyncio Event-Loop.
+    Menübar-Status-Anzeige via NSStatusBar.
 
-    Verarbeitet async Tasks (Deepgram WebSocket, HTTP APIs) ohne
-    den Main-Thread (NSApplication) zu blockieren.
-
-    Thread-Sicherheit:
-    - submit() ist von jedem Thread aufrufbar
-    - result_queue ist thread-sicher für Cross-Thread Kommunikation
+    Zeigt aktuellen State als Icon + optional Interim-Text.
+    Kein Polling - wird direkt via Callback aktualisiert.
     """
 
     def __init__(self):
-        self._thread: threading.Thread | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._started = threading.Event()
-        self.result_queue: queue.Queue[str | Exception | None] = queue.Queue()
+        from AppKit import NSStatusBar, NSVariableStatusItemLength  # type: ignore[import-not-found]
 
-    def start(self) -> None:
-        """Startet Worker-Thread."""
-        self._thread = threading.Thread(
-            target=self._run, daemon=True, name="AsyncWorker"
+        self._status_bar = NSStatusBar.systemStatusBar()
+        self._status_item = self._status_bar.statusItemWithLength_(
+            NSVariableStatusItemLength
         )
-        self._thread.start()
-        # Warten bis Event-Loop bereit ist
-        self._started.wait(timeout=5.0)
-        logger.info("AsyncWorker gestartet")
+        self._status_item.setTitle_(MENUBAR_ICONS["idle"])
+        self._current_state = "idle"
 
-    def _run(self) -> None:
-        """Event-Loop im Worker-Thread."""
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        self._started.set()
+    def update_state(self, state: str, interim_text: str | None = None) -> None:
+        """Aktualisiert Menübar-Icon und optional Text."""
+        self._current_state = state
+        icon = MENUBAR_ICONS.get(state, MENUBAR_ICONS["idle"])
 
-        try:
-            self._loop.run_forever()
-        except Exception as e:
-            logger.exception(f"AsyncWorker crashed: {e}")
-            # Auto-Restart bei Crash
-            time.sleep(1)
-            self._run()
-        finally:
-            self._loop.close()
+        if state == "recording" and interim_text:
+            # Kürzen für Menübar
+            preview = (
+                interim_text[:20] + "…" if len(interim_text) > 20 else interim_text
+            )
+            self._status_item.setTitle_(f"{icon} {preview}")
+        else:
+            self._status_item.setTitle_(icon)
 
-    def submit(self, coro) -> "asyncio.Future":
-        """
-        Submit async Coroutine zur Ausführung im Worker-Thread.
 
-        Thread-sicher: Kann von Main-Thread aufgerufen werden.
-        """
-        if not self._loop:
-            raise RuntimeError("AsyncWorker not started")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore[return-value]
+# =============================================================================
+# Overlay-Controller (Phase 3)
+# =============================================================================
 
-    def stop(self) -> None:
-        """Stoppt Worker-Thread sauber."""
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        if self._thread:
-            self._thread.join(timeout=2.0)
+# Overlay-Konfiguration
+OVERLAY_MIN_WIDTH = 260
+OVERLAY_MAX_WIDTH_RATIO = 0.75
+OVERLAY_HEIGHT = 100
+OVERLAY_MARGIN_BOTTOM = 110
+OVERLAY_CORNER_RADIUS = 22
+OVERLAY_PADDING_H = 24
+OVERLAY_ALPHA = 0.95
+OVERLAY_FONT_SIZE = 15
+OVERLAY_TEXT_FIELD_HEIGHT = 24
+OVERLAY_WINDOW_LEVEL = 25
+
+# Schallwellen-Konfiguration
+WAVE_BAR_COUNT = 5
+WAVE_BAR_WIDTH = 4
+WAVE_BAR_GAP = 5
+WAVE_BAR_MIN_HEIGHT = 8
+WAVE_BAR_MAX_HEIGHT = 32
+WAVE_AREA_WIDTH = WAVE_BAR_COUNT * WAVE_BAR_WIDTH + (WAVE_BAR_COUNT - 1) * WAVE_BAR_GAP
+
+# Feedback Timing
+FEEDBACK_DISPLAY_DURATION = 2.0
+FEEDBACK_FADE_START = 1.5
+
+
+def _get_overlay_color(r: int, g: int, b: int, a: float = 1.0):
+    """Erstellt NSColor aus RGB-Werten."""
+    from AppKit import NSColor  # type: ignore[import-not-found]
+
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(
+        r / 255.0, g / 255.0, b / 255.0, a
+    )
+
+
+class SoundWaveView:
+    """
+    Animierte Schallwellen-Visualisierung (aus overlay.py).
+
+    Zeigt verschiedene Animationen je nach State:
+    - Recording: Organische Wellenanimation
+    - Transcribing: Sequentielle Ladeanimation
+    - Done: Einmaliges Hüpfen in Grün
+    - Error: Rotes Aufblinken
+    """
+
+    def __init__(self, frame):
+        from AppKit import NSColor, NSView  # type: ignore[import-not-found]
+        from Quartz import CALayer  # type: ignore[import-not-found]
+
+        # NSView erstellen
+        self._view = NSView.alloc().initWithFrame_(frame)
+        self._view.setWantsLayer_(True)
+        self.bars = []
+        self.animations_running = False
+        self.current_animation = None
+
+        # Farben
+        self._color_idle = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
+        self._color_recording = _get_overlay_color(255, 82, 82)
+        self._color_transcribing = _get_overlay_color(255, 177, 66)
+        self._color_success = _get_overlay_color(51, 217, 178)
+        self._color_error = _get_overlay_color(255, 71, 87)
+
+        # Balken erstellen
+        center_y = frame.size.height / 2
+        for i in range(WAVE_BAR_COUNT):
+            x = i * (WAVE_BAR_WIDTH + WAVE_BAR_GAP)
+            bar = CALayer.alloc().init()
+            bar.setBackgroundColor_(self._color_idle.CGColor())
+            bar.setCornerRadius_(WAVE_BAR_WIDTH / 2)
+            bar.setFrame_(
+                (
+                    (x, center_y - WAVE_BAR_MIN_HEIGHT / 2),
+                    (WAVE_BAR_WIDTH, WAVE_BAR_MIN_HEIGHT),
+                )
+            )
+            self._view.layer().addSublayer_(bar)
+            self.bars.append(bar)
+
+    @property
+    def view(self):
+        return self._view
+
+    def set_bar_color(self, ns_color) -> None:
+        """Setzt die Farbe aller Balken."""
+        cg_color = ns_color.CGColor()
+        for bar in self.bars:
+            bar.setBackgroundColor_(cg_color)
+
+    def _create_height_animation(
+        self, to_height, duration, delay=0, repeat=float("inf")
+    ):
+        """Erstellt Höhen-Animation für Balken."""
+        from Quartz import (  # type: ignore[import-not-found]
+            CABasicAnimation,
+            CAMediaTimingFunction,
+            kCAMediaTimingFunctionEaseInEaseOut,
+        )
+
+        anim = CABasicAnimation.animationWithKeyPath_("bounds.size.height")
+        anim.setFromValue_(WAVE_BAR_MIN_HEIGHT)
+        anim.setToValue_(to_height)
+        anim.setDuration_(duration)
+        anim.setAutoreverses_(True)
+        anim.setRepeatCount_(repeat)
+        anim.setTimingFunction_(
+            CAMediaTimingFunction.functionWithName_(kCAMediaTimingFunctionEaseInEaseOut)
+        )
+        return anim
+
+    def start_recording_animation(self) -> None:
+        """Startet organische Schallwellen-Animation."""
+        if self.current_animation == "recording":
+            return
+        self.stop_animating()
+        self.current_animation = "recording"
+        self.animations_running = True
+        self.set_bar_color(self._color_recording)
+
+        durations = [0.42, 0.38, 0.45, 0.39, 0.41]
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT, durations[i])
+            bar.addAnimation_forKey_(anim, f"heightAnim{i}")
+
+    def start_transcribing_animation(self) -> None:
+        """Startet Loading-Wellen-Animation."""
+        if self.current_animation == "transcribing":
+            return
+        self.stop_animating()
+        self.current_animation = "transcribing"
+        self.animations_running = True
+        self.set_bar_color(self._color_transcribing)
+
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.7, 1.0)
+            bar.addAnimation_forKey_(anim, f"transcribeAnim{i}")
+
+    def start_success_animation(self) -> None:
+        """Einmaliges Hüpfen in Grün."""
+        self.stop_animating()
+        self.current_animation = "success"
+        self.set_bar_color(self._color_success)
+
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(
+                WAVE_BAR_MAX_HEIGHT * 0.8, 0.3, repeat=1
+            )
+            bar.addAnimation_forKey_(anim, f"successAnim{i}")
+
+    def start_error_animation(self) -> None:
+        """Kurzes rotes Aufblinken."""
+        self.stop_animating()
+        self.current_animation = "error"
+        self.set_bar_color(self._color_error)
+
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT, 0.15, repeat=2)
+            bar.addAnimation_forKey_(anim, f"errorAnim{i}")
+
+    def stop_animating(self) -> None:
+        """Stoppt alle Animationen."""
+        if not self.animations_running:
+            return
+        self.animations_running = False
+        self.current_animation = None
+        from AppKit import NSMakeRect  # type: ignore[import-not-found]
+
+        for bar in self.bars:
+            bar.removeAllAnimations()
+            bar.setBounds_(NSMakeRect(0, 0, WAVE_BAR_WIDTH, WAVE_BAR_MIN_HEIGHT))
+
+
+class OverlayController:
+    """
+    Overlay-Fenster für Status und Interim-Text (aus overlay.py).
+
+    Zeigt animiertes Overlay am unteren Bildschirmrand.
+    Kein Polling - wird direkt via Callback aktualisiert.
+    """
+
+    def __init__(self):
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBackingStoreBuffered,
+            NSColor,
+            NSFont,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSScreen,
+            NSTextField,
+            NSTextAlignmentCenter,
+            NSVisualEffectView,
+            NSWindow,
+            NSWindowStyleMaskBorderless,
+        )
+
+        screen = NSScreen.mainScreen()
+        if not screen:
+            self.window = None
+            return
+
+        screen_frame = screen.frame()
+        width = OVERLAY_MIN_WIDTH
+        height = OVERLAY_HEIGHT
+        x = (screen_frame.size.width - width) / 2
+        y = OVERLAY_MARGIN_BOTTOM
+
+        # Fenster erstellen
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, width, height),
+            NSWindowStyleMaskBorderless,
+            NSBackingStoreBuffered,
+            False,
+        )
+        self.window.setLevel_(OVERLAY_WINDOW_LEVEL)
+        self.window.setIgnoresMouseEvents_(True)
+        self.window.setOpaque_(False)
+        self.window.setBackgroundColor_(NSColor.clearColor())
+        self.window.setAlphaValue_(0.0)
+        self.window.setHasShadow_(True)
+
+        # Visual Effect View (Blur)
+        self._visual_effect_view = NSVisualEffectView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, width, height)
+        )
+        self._visual_effect_view.setMaterial_(13)  # HUD Window
+        self._visual_effect_view.setBlendingMode_(0)  # Behind Window
+        self._visual_effect_view.setState_(1)  # Active
+        self._visual_effect_view.setWantsLayer_(True)
+        self._visual_effect_view.layer().setCornerRadius_(OVERLAY_CORNER_RADIUS)
+        self._visual_effect_view.layer().setMasksToBounds_(True)
+        self._visual_effect_view.layer().setBorderWidth_(1.0)
+        self._visual_effect_view.layer().setBorderColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.15).CGColor()
+        )
+        self.window.setContentView_(self._visual_effect_view)
+
+        # Schallwellen-View
+        wave_y = height - (WAVE_BAR_MAX_HEIGHT + 20)
+        wave_x = (width - WAVE_AREA_WIDTH) / 2
+        self._wave_view = SoundWaveView(
+            NSMakeRect(wave_x, wave_y, WAVE_AREA_WIDTH, WAVE_BAR_MAX_HEIGHT)
+        )
+        self._visual_effect_view.addSubview_(self._wave_view.view)
+
+        # Text-Feld
+        self._text_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(
+                OVERLAY_PADDING_H,
+                16,
+                width - 2 * OVERLAY_PADDING_H,
+                OVERLAY_TEXT_FIELD_HEIGHT,
+            )
+        )
+        self._text_field.setStringValue_("")
+        self._text_field.setBezeled_(False)
+        self._text_field.setDrawsBackground_(False)
+        self._text_field.setEditable_(False)
+        self._text_field.setSelectable_(False)
+        self._text_field.setAlignment_(NSTextAlignmentCenter)
+        self._text_field.cell().setLineBreakMode_(4)  # Truncate Tail
+        self._text_field.setTextColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.95)
+        )
+        self._text_field.setFont_(
+            NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightSemibold)
+        )
+        self._visual_effect_view.addSubview_(self._text_field)
+
+        # State
+        self._target_alpha = 0.0
+        self._current_state = "idle"
+        self._state_timestamp = 0.0
+        self._feedback_timer = None
+
+    def update_state(self, state: str, interim_text: str | None = None) -> None:
+        """Aktualisiert Overlay basierend auf State."""
+        if not self.window:
+            return
+
+        from AppKit import NSColor, NSFont, NSFontWeightMedium, NSFontWeightSemibold  # type: ignore[import-not-found]
+
+        self._current_state = state
+
+        if state == "recording":
+            self._wave_view.start_recording_animation()
+            if interim_text:
+                text = f"{interim_text} ..."
+                self._text_field.setFont_(
+                    NSFont.systemFontOfSize_weight_(
+                        OVERLAY_FONT_SIZE, NSFontWeightMedium
+                    )
+                )
+                self._text_field.setTextColor_(
+                    NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
+                )
+            else:
+                text = "Listening ..."
+                self._text_field.setFont_(
+                    NSFont.systemFontOfSize_weight_(
+                        OVERLAY_FONT_SIZE, NSFontWeightMedium
+                    )
+                )
+                self._text_field.setTextColor_(
+                    NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+                )
+            self._text_field.setStringValue_(text)
+            self._fade_in()
+
+        elif state == "transcribing":
+            self._wave_view.start_transcribing_animation()
+            self._text_field.setStringValue_("Transcribing ...")
+            self._text_field.setTextColor_(
+                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+            )
+            self._fade_in()
+
+        elif state == "done":
+            self._wave_view.start_success_animation()
+            self._text_field.setStringValue_("Done")
+            self._text_field.setTextColor_(_get_overlay_color(51, 217, 178))
+            self._text_field.setFont_(
+                NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightSemibold)
+            )
+            self._fade_in()
+            self._start_fade_out_timer()
+
+        elif state == "error":
+            self._wave_view.start_error_animation()
+            self._text_field.setStringValue_("Error")
+            self._text_field.setTextColor_(_get_overlay_color(255, 71, 87))
+            self._text_field.setFont_(
+                NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightSemibold)
+            )
+            self._fade_in()
+            self._start_fade_out_timer()
+
+        else:  # idle
+            self._wave_view.stop_animating()
+            self._fade_out()
+
+    def _fade_in(self) -> None:
+        """Blendet Overlay ein."""
+        if self._target_alpha != OVERLAY_ALPHA:
+            self._target_alpha = OVERLAY_ALPHA
+            self.window.orderFront_(None)
+            self.window.animator().setAlphaValue_(OVERLAY_ALPHA)
+
+    def _fade_out(self) -> None:
+        """Blendet Overlay aus."""
+        if self._target_alpha != 0.0:
+            self._target_alpha = 0.0
+            self.window.animator().setAlphaValue_(0.0)
+
+    def _start_fade_out_timer(self) -> None:
+        """Startet Timer für automatisches Ausblenden nach Done/Error."""
+        from Foundation import NSTimer  # type: ignore[import-not-found]
+
+        if self._feedback_timer:
+            self._feedback_timer.invalidate()
+
+        def fade_out_callback(_timer):
+            self._fade_out()
+            self._feedback_timer = None
+
+        self._feedback_timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            FEEDBACK_DISPLAY_DURATION, False, fade_out_callback
+        )
 
 
 # =============================================================================
@@ -181,17 +528,13 @@ class WhisperDaemon:
     """
     Unified Daemon für whisper_go.
 
-    Koordiniert:
-    - QuickMacHotKey Listener (Main-Thread)
-    - Mikrofon-Aufnahme (Main-Thread Callback)
-    - Deepgram Streaming (Worker-Thread)
-    - Auto-Paste (Main-Thread)
+    Nutzt _deepgram_stream_core() mit external_stop_event für
+    optimiertes Live-Streaming (gleiche Pipeline wie run_daemon_mode_streaming).
     """
 
     def __init__(
         self,
         hotkey: str = "f19",
-        mode: str = "toggle",
         language: str | None = None,
         model: str | None = None,
         refine: bool = False,
@@ -200,7 +543,6 @@ class WhisperDaemon:
         context: str | None = None,
     ):
         self.hotkey = hotkey
-        self.mode = mode  # toggle (PTT nicht unterstützt mit QuickMacHotKey)
         self.language = language
         self.model = model
         self.refine = refine
@@ -212,27 +554,39 @@ class WhisperDaemon:
         self._recording = False
         self._toggle_lock = threading.Lock()
         self._last_hotkey_time = 0.0
+        self._current_state = "idle"
 
-        # Worker für async Tasks
-        self.worker = AsyncWorker()
+        # Stop-Event für _deepgram_stream_core
+        self._stop_event: threading.Event | None = None
 
-        # Audio-Buffer für Early-Recording
-        self._audio_buffer: list[bytes] = []
-        self._buffer_lock = threading.Lock()
-        self._mic_stream = None
-        self._stop_event = threading.Event()
+        # Worker-Thread für Streaming
+        self._worker_thread: threading.Thread | None = None
 
-        # NSTimer für Result-Polling
+        # Result-Queue für Transkripte
+        self._result_queue: queue.Queue[str | Exception | None] = queue.Queue()
+
+        # NSTimer für Result-Polling und Interim-Polling
         self._result_timer = None
+        self._interim_timer = None
+        self._last_interim_mtime = 0.0
 
-        # Callback für State-Updates (für spätere Menübar-Integration)
-        self.on_state_change: Callable[[str], None] | None = None
+        # UI-Controller (werden in run() initialisiert)
+        self._menubar: MenuBarController | None = None
+        self._overlay: OverlayController | None = None
 
-    def _update_state(self, state: str) -> None:
-        """Benachrichtigt über State-Änderung."""
-        logger.debug(f"State: {state}")
-        if self.on_state_change:
-            self.on_state_change(state)
+    def _update_state(self, state: str, interim_text: str | None = None) -> None:
+        """Aktualisiert State und benachrichtigt UI-Controller."""
+        self._current_state = state
+        logger.debug(
+            f"State: {state}"
+            + (f" interim='{interim_text[:20]}...'" if interim_text else "")
+        )
+
+        # UI-Controller aktualisieren
+        if self._menubar:
+            self._menubar.update_state(state, interim_text)
+        if self._overlay:
+            self._overlay.update_state(state, interim_text)
 
     def _on_hotkey(self) -> None:
         """Callback bei Hotkey-Aktivierung."""
@@ -262,172 +616,126 @@ class WhisperDaemon:
             self._start_recording()
 
     def _start_recording(self) -> None:
-        """Startet Mikrofon-Aufnahme."""
-        import numpy as np
-        import sounddevice as sd
-
-        transcribe = _get_transcribe()
-        transcribe.play_sound("ready")
-
-        self._audio_buffer.clear()
-        self._stop_event.clear()
+        """Startet Streaming-Aufnahme im Worker-Thread."""
         self._recording = True
         self._update_state("recording")
 
-        def audio_callback(indata, _frames, _time_info, status):
-            """Mikrofon-Callback: Audio in Buffer sammeln."""
-            if status:
-                logger.warning(f"Audio-Status: {status}")
-            if not self._stop_event.is_set():
-                # float32 [-1,1] → int16 für Deepgram
-                audio_bytes = (indata * INT16_MAX).astype(np.int16).tobytes()
-                with self._buffer_lock:
-                    self._audio_buffer.append(audio_bytes)
+        # Neues Stop-Event für diese Aufnahme
+        self._stop_event = threading.Event()
 
-        self._mic_stream = sd.InputStream(
-            samplerate=WHISPER_SAMPLE_RATE,
-            channels=WHISPER_CHANNELS,
-            blocksize=WHISPER_BLOCKSIZE,
-            dtype=np.float32,
-            callback=audio_callback,
+        # Worker-Thread starten
+        self._worker_thread = threading.Thread(
+            target=self._streaming_worker,
+            daemon=True,
+            name="StreamingWorker",
         )
-        self._mic_stream.start()
-        logger.info("Aufnahme gestartet")
+        self._worker_thread.start()
 
-    def _stop_recording(self) -> None:
-        """Stoppt Aufnahme und startet Transkription."""
-        if not self._recording:
-            return
+        # Interim-Polling starten (für Live-Preview)
+        self._start_interim_polling()
 
-        transcribe = _get_transcribe()
-        transcribe.play_sound("stop")
+        logger.info("Streaming gestartet (Worker-Thread)")
 
-        # Mikrofon stoppen
-        self._stop_event.set()
-        if self._mic_stream:
-            self._mic_stream.stop()
-            self._mic_stream.close()
-            self._mic_stream = None
+    def _start_interim_polling(self) -> None:
+        """Startet NSTimer für Interim-Text-Polling."""
+        from Foundation import NSTimer  # type: ignore[import-not-found]
 
-        # Buffer kopieren
-        with self._buffer_lock:
-            audio_chunks = list(self._audio_buffer)
-            self._audio_buffer.clear()
+        self._last_interim_mtime = 0.0
 
-        self._recording = False
-        self._update_state("transcribing")
+        def poll_interim() -> None:
+            if self._current_state != "recording":
+                return
+            try:
+                mtime = INTERIM_FILE.stat().st_mtime
+                if mtime > self._last_interim_mtime:
+                    self._last_interim_mtime = mtime
+                    interim_text = INTERIM_FILE.read_text().strip()
+                    if interim_text:
+                        self._update_state("recording", interim_text)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
-        logger.info(f"Aufnahme beendet: {len(audio_chunks)} Chunks")
+        self._interim_timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            0.2, True, lambda _: poll_interim()
+        )
 
-        if not audio_chunks:
-            logger.warning("Keine Audio-Daten aufgenommen")
-            self._update_state("idle")
-            return
+    def _stop_interim_polling(self) -> None:
+        """Stoppt Interim-Polling."""
+        if self._interim_timer:
+            self._interim_timer.invalidate()
+            self._interim_timer = None
 
-        # Transkription im Worker-Thread starten
-        self.worker.submit(self._transcribe_and_paste(audio_chunks))
-
-        # Result-Polling starten (NSTimer im Main-Thread)
-        self._start_result_polling()
-
-    async def _transcribe_and_paste(self, audio_chunks: list[bytes]) -> None:
+    def _streaming_worker(self) -> None:
         """
-        Async Transkription (läuft im Worker-Thread).
+        Worker-Thread: Führt _deepgram_stream_core() aus.
 
-        Sendet gepufferte Audio-Chunks an Deepgram WebSocket.
-        KEIN eigenes Mikrofon - Audio kam bereits vom Main-Thread.
+        Nutzt die optimierte Pipeline aus transcribe.py mit Live-Streaming.
         """
+        import asyncio
+
         transcribe = _get_transcribe()
 
         try:
             model = self.model or transcribe.DEFAULT_DEEPGRAM_MODEL
-            transcript = await self._stream_audio_to_deepgram(audio_chunks, model)
 
-            # LLM-Nachbearbeitung (optional)
-            if self.refine and transcript:
-                transcript = transcribe.refine_transcript(
-                    transcript,
-                    model=self.refine_model,
-                    provider=self.refine_provider,
-                    context=self.context,
+            # Setup Logging für transcribe.py
+            transcribe.setup_logging(debug=logger.level == logging.DEBUG)
+
+            # Async Event-Loop für diesen Thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                # _deepgram_stream_core mit external_stop_event
+                # Dies startet Mikrofon, streamt live, wartet auf Stop-Event
+                transcript = loop.run_until_complete(
+                    transcribe._deepgram_stream_core(
+                        model=model,
+                        language=self.language,
+                        play_ready=True,  # Ready-Sound
+                        external_stop_event=self._stop_event,
+                    )
                 )
 
-            self.worker.result_queue.put(transcript)
+                # LLM-Nachbearbeitung (optional)
+                if self.refine and transcript:
+                    transcript = transcribe.refine_transcript(
+                        transcript,
+                        model=self.refine_model,
+                        provider=self.refine_provider,
+                        context=self.context,
+                    )
+
+                self._result_queue.put(transcript)
+
+            finally:
+                loop.close()
 
         except Exception as e:
-            logger.exception(f"Transkription fehlgeschlagen: {e}")
-            self.worker.result_queue.put(e)
+            logger.exception(f"Streaming-Worker Fehler: {e}")
+            self._result_queue.put(e)
 
-    async def _stream_audio_to_deepgram(
-        self, audio_chunks: list[bytes], model: str
-    ) -> str:
-        """
-        Sendet Audio-Buffer an Deepgram und wartet auf Transkript.
+    def _stop_recording(self) -> None:
+        """Stoppt Aufnahme durch Setzen des Stop-Events."""
+        if not self._recording:
+            return
 
-        Schlanke Version von _deepgram_stream_core() - OHNE Mikrofon.
-        Nutzt _create_deepgram_connection() für WebSocket-Handling.
-        """
-        transcribe = _get_transcribe()
-        from deepgram.core.events import EventType
-        from deepgram.extensions.types.sockets import ListenV1ControlMessage
+        logger.info("Stop-Event setzen...")
 
-        api_key = os.getenv("DEEPGRAM_API_KEY")
-        if not api_key:
-            raise ValueError("DEEPGRAM_API_KEY nicht gesetzt")
+        # Interim-Polling stoppen
+        self._stop_interim_polling()
 
-        final_transcripts: list[str] = []
-        finalize_done = asyncio.Event()
+        # Stop-Event setzen → _deepgram_stream_core beendet sich
+        if self._stop_event:
+            self._stop_event.set()
 
-        def on_message(result):
-            if getattr(result, "from_finalize", False):
-                finalize_done.set()
-            transcript = transcribe._extract_transcript(result)
-            if transcript and getattr(result, "is_final", False):
-                final_transcripts.append(transcript)
-                logger.debug(f"Final: {transcript[:50]}...")
+        self._recording = False
+        self._update_state("transcribing")
 
-        def on_error(error):
-            logger.error(f"Deepgram Error: {error}")
-
-        logger.info(f"Streaming {len(audio_chunks)} Chunks an Deepgram...")
-
-        async with transcribe._create_deepgram_connection(
-            api_key,
-            model=model,
-            language=self.language,
-            sample_rate=WHISPER_SAMPLE_RATE,
-            channels=WHISPER_CHANNELS,
-            interim_results=False,  # Nur finale Ergebnisse
-        ) as connection:
-            connection.on(EventType.MESSAGE, on_message)
-            connection.on(EventType.ERROR, on_error)
-
-            # Listener-Task starten
-            listen_task = asyncio.create_task(connection.start_listening())
-
-            # Alle Audio-Chunks senden
-            for chunk in audio_chunks:
-                await connection.send_media(chunk)
-
-            # Finalize senden
-            logger.debug("Sende Finalize...")
-            await connection.send_control(ListenV1ControlMessage(type="Finalize"))
-
-            # Warten auf finale Transkripte
-            try:
-                await asyncio.wait_for(finalize_done.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("Finalize-Timeout")
-
-            # CloseStream für sauberen Shutdown
-            await connection.send_control(ListenV1ControlMessage(type="CloseStream"))
-
-            listen_task.cancel()
-            await asyncio.gather(listen_task, return_exceptions=True)
-
-        result = " ".join(final_transcripts)
-        logger.info(f"Transkript: {len(result)} Zeichen")
-        return result
+        # Result-Polling starten
+        self._start_result_polling()
 
     def _start_result_polling(self) -> None:
         """Startet NSTimer für Result-Polling."""
@@ -435,7 +743,7 @@ class WhisperDaemon:
 
         def check_result() -> None:
             try:
-                result = self.worker.result_queue.get_nowait()
+                result = self._result_queue.get_nowait()
                 self._stop_result_polling()
 
                 if isinstance(result, Exception):
@@ -453,10 +761,9 @@ class WhisperDaemon:
             except queue.Empty:
                 pass  # Noch kein Result
 
-        # NSTimer für regelmäßiges Polling
-        interval = RESULT_POLL_INTERVAL_MS / 1000.0
+        # NSTimer für regelmäßiges Polling (50ms)
         self._result_timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
-            interval, True, lambda _: check_result()
+            0.05, True, lambda _: check_result()
         )
 
     def _stop_result_polling(self) -> None:
@@ -481,8 +788,11 @@ class WhisperDaemon:
 
         hotkey = _get_hotkey()
 
-        # Worker starten
-        self.worker.start()
+        # UI-Controller initialisieren
+        logger.info("Initialisiere UI-Controller...")
+        self._menubar = MenuBarController()
+        self._overlay = OverlayController()
+        logger.info("UI-Controller bereit")
 
         # Hotkey parsen
         virtual_key, modifier_mask = hotkey.parse_hotkey(self.hotkey)
@@ -495,7 +805,7 @@ class WhisperDaemon:
         print(f"   Hotkey: {self.hotkey}", file=sys.stderr)
         print("   Beenden mit Ctrl+C", file=sys.stderr)
 
-        # Hotkey registrieren (type: ignore wegen fehlender VirtualKey/ModifierKey Stubs)
+        # Hotkey registrieren
         @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
         def hotkey_handler() -> None:
             self._on_hotkey()

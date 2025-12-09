@@ -815,6 +815,8 @@ async def _deepgram_stream_core(
     *,
     early_buffer: list[bytes] | None = None,
     play_ready: bool = True,
+    external_stop_event: threading.Event | None = None,
+    audio_callback_out: list | None = None,
 ) -> str:
     """
     Gemeinsamer Streaming-Core für Deepgram (SDK v5.3).
@@ -824,10 +826,13 @@ async def _deepgram_stream_core(
         language: Sprachcode oder None für Auto-Detection
         early_buffer: Vorab gepuffertes Audio (für Daemon-Mode)
         play_ready: Ready-Sound nach Mikrofon-Init spielen (für CLI)
+        external_stop_event: threading.Event zum externen Stoppen (statt SIGUSR1)
+        audio_callback_out: Liste um Audio-Callback-Referenz zurückzugeben (für externes Mic)
 
-    Zwei Modi:
+    Drei Modi:
     - CLI (early_buffer=None): Buffering während WebSocket-Connect
     - Daemon (early_buffer=[...]): Buffer direkt in Queue, kein Buffering
+    - Unified (external_stop_event): Externes Stop-Event statt SIGUSR1
     """
     import asyncio
 
@@ -898,9 +903,20 @@ async def _deepgram_stream_core(
         logger.debug(f"[{_session_id}] Connection closed")
         stop_event.set()
 
-    # SIGUSR1 stoppt Aufnahme sauber (Raycast sendet dieses Signal)
+    # Stop-Mechanismus: SIGUSR1 oder externes Event
     loop = asyncio.get_running_loop()
-    if threading.current_thread() is threading.main_thread():
+
+    if external_stop_event is not None:
+        # Unified-Daemon-Mode: Externes threading.Event überwachen
+        def _watch_external_stop():
+            external_stop_event.wait()
+            loop.call_soon_threadsafe(stop_event.set)
+
+        stop_watcher = threading.Thread(target=_watch_external_stop, daemon=True)
+        stop_watcher.start()
+        logger.debug(f"[{_session_id}] External stop event watcher gestartet")
+    elif threading.current_thread() is threading.main_thread():
+        # CLI/Raycast-Mode: SIGUSR1 Signal-Handler
         loop.add_signal_handler(signal.SIGUSR1, stop_event.set)
 
     audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -1096,7 +1112,11 @@ async def _deepgram_stream_core(
             mic_stream.close()
         except Exception:
             pass
-        if threading.current_thread() is threading.main_thread():
+        # Signal-Handler nur entfernen wenn nicht external_stop_event verwendet
+        if (
+            external_stop_event is None
+            and threading.current_thread() is threading.main_thread()
+        ):
             try:
                 loop.remove_signal_handler(signal.SIGUSR1)
             except Exception:
