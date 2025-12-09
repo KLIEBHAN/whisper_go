@@ -371,6 +371,11 @@ def play_sound(name: str) -> None:
         _get_sound_player().play(name, path)
 
 
+# =============================================================================
+# Audio-Aufnahme
+# =============================================================================
+
+
 def record_audio() -> Path:
     """
     Nimmt Audio vom Mikrofon auf (Enter startet, Enter stoppt).
@@ -409,6 +414,11 @@ def record_audio() -> Path:
     sf.write(output_path, audio_data, WHISPER_SAMPLE_RATE)
 
     return output_path
+
+
+# =============================================================================
+# Daemon-Hilfsfunktionen (Raycast-Integration)
+# =============================================================================
 
 
 def _is_whisper_go_process(pid: int) -> bool:
@@ -591,6 +601,11 @@ def record_audio_daemon() -> Path:
     output_path = Path(tempfile.gettempdir()) / TEMP_RECORDING_FILENAME
     sf.write(output_path, audio_data, WHISPER_SAMPLE_RATE)
     return output_path
+
+
+# =============================================================================
+# Custom Vocabulary (Fachbegriffe, Namen)
+# =============================================================================
 
 
 def load_vocabulary() -> dict:
@@ -1276,6 +1291,11 @@ def _extract_message_content(content) -> str:
     return content.strip()
 
 
+# =============================================================================
+# Kontext-Erkennung (Auto-Detection der aktiven App)
+# =============================================================================
+
+
 def _get_frontmost_app() -> str | None:
     """Ermittelt aktive App via NSWorkspace (macOS only).
 
@@ -1355,6 +1375,11 @@ def detect_context(override: str | None = None) -> tuple[str, str | None, str]:
             return _app_to_context(app_name), app_name, "App"
 
     return "default", None, "Default"
+
+
+# =============================================================================
+# LLM-Nachbearbeitung (Refine)
+# =============================================================================
 
 
 def _get_refine_client(provider: str):

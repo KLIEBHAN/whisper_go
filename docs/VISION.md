@@ -168,4 +168,52 @@ Bewusst ausgeschlossen, um Fokus zu halten:
 
 ---
 
+## Future Refactoring
+
+Geplante Code-Struktur-Verbesserungen für bessere Wartbarkeit:
+
+### Modul-Aufteilung (transcribe.py → Modularisierung)
+
+Das CLI-Tool `transcribe.py` (~2000 Zeilen) könnte in fokussierte Module aufgeteilt werden:
+
+```
+whisper_go/
+├── cli.py                  # CLI-Interface, Argument-Parsing
+├── providers/
+│   ├── __init__.py
+│   ├── openai.py           # OpenAI Whisper API
+│   ├── deepgram.py         # Deepgram REST + WebSocket
+│   ├── groq.py             # Groq Whisper
+│   └── local.py            # Lokales Whisper-Modell
+├── audio/
+│   ├── recording.py        # Mikrofon-Aufnahme
+│   └── playback.py         # Sound-Feedback
+├── refine/
+│   ├── llm.py              # LLM-Nachbearbeitung
+│   └── context.py          # Kontext-Detection
+└── utils/
+    ├── logging.py          # Logging-Setup
+    └── ipc.py              # IPC-Dateien
+```
+
+### Provider-Abstraktion
+
+Einheitliches Interface für alle Transkriptions-Provider:
+
+```python
+class TranscriptionProvider(Protocol):
+    def transcribe(self, audio: Path, language: str | None) -> str: ...
+    def supports_streaming(self) -> bool: ...
+```
+
+### Priorität
+
+Diese Umstrukturierung ist **niedrige Priorität**, da:
+- Der aktuelle Code funktional und getestet ist
+- Die Änderung hauptsächlich Entwickler-DX verbessert
+- Rückwärtskompatibilität für CLI erhalten bleiben muss
+
+---
+
 _Stand: Dezember 2025_
+
