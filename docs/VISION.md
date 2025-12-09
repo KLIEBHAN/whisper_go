@@ -178,22 +178,28 @@ Das CLI-Tool `transcribe.py` (~2000 Zeilen) könnte in fokussierte Module aufget
 
 ```
 whisper_go/
-├── cli.py                  # CLI-Interface, Argument-Parsing
-├── providers/
-│   ├── __init__.py
-│   ├── openai.py           # OpenAI Whisper API
-│   ├── deepgram.py         # Deepgram REST + WebSocket
-│   ├── groq.py             # Groq Whisper
-│   └── local.py            # Lokales Whisper-Modell
-├── audio/
-│   ├── recording.py        # Mikrofon-Aufnahme
-│   └── playback.py         # Sound-Feedback
-├── refine/
-│   ├── llm.py              # LLM-Nachbearbeitung
-│   └── context.py          # Kontext-Detection
-└── utils/
-    ├── logging.py          # Logging-Setup
-    └── ipc.py              # IPC-Dateien
+├── src/
+│   └── whisper_go/
+│       ├── __init__.py
+│       ├── cli.py              # CLI-Interface, Argument-Parsing
+│       ├── providers/
+│       │   ├── __init__.py
+│       │   ├── openai.py       # OpenAI Whisper API
+│       │   ├── deepgram.py     # Deepgram REST + WebSocket
+│       │   ├── groq.py         # Groq Whisper
+│       │   └── local.py        # Lokales Whisper-Modell
+│       ├── audio/
+│       │   ├── recording.py    # Mikrofon-Aufnahme
+│       │   └── playback.py     # Sound-Feedback
+│       ├── refine/
+│       │   ├── llm.py          # LLM-Nachbearbeitung
+│       │   └── context.py      # Kontext-Detection
+│       └── utils/
+│           ├── logging.py      # Logging-Setup
+│           └── ipc.py          # IPC-Dateien
+├── tests/
+├── docs/
+└── pyproject.toml
 ```
 
 ### Provider-Abstraktion
