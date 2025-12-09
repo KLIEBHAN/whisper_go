@@ -181,15 +181,7 @@ def load_vocabulary() -> dict:
 # =============================================================================
 
 
-# =============================================================================
-# Deepgram WebSocket Streaming (delegiert an providers/deepgram_stream.py)
-# =============================================================================
-# HINWEIS: Die Streaming-Logik befindet sich jetzt in providers/deepgram_stream.py.
-# Die folgenden Funktionen sind Wrapper für Rückwärtskompatibilität, damit
-# bestehender Code weiterhin `from transcribe import ...` nutzen kann.
-#
-# Für neuen Code: Importiere direkt aus providers.deepgram_stream
-# =============================================================================
+
 
 
 
