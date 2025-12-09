@@ -39,7 +39,7 @@ class TestMaybeRefineTranscript:
             context=None,
         )
 
-        with patch("transcribe.refine_transcript") as mock_refine:
+        with patch("refine.llm.refine_transcript") as mock_refine:
             mock_refine.side_effect = APIError(
                 message="Service unavailable",
                 request=Mock(),
@@ -62,7 +62,7 @@ class TestMaybeRefineTranscript:
             context=None,
         )
 
-        with patch("transcribe.refine_transcript") as mock_refine:
+        with patch("refine.llm.refine_transcript") as mock_refine:
             mock_refine.side_effect = ValueError("OPENROUTER_API_KEY nicht gesetzt")
 
             result = maybe_refine_transcript("Rohtext", args)
@@ -82,7 +82,7 @@ class TestMaybeRefineTranscript:
             context=None,
         )
 
-        with patch("transcribe.refine_transcript") as mock_refine:
+        with patch("refine.llm.refine_transcript") as mock_refine:
             mock_refine.side_effect = RateLimitError(
                 message="Rate limit exceeded",
                 response=Mock(status_code=429),
@@ -105,7 +105,7 @@ class TestMaybeRefineTranscript:
             context=None,
         )
 
-        with patch("transcribe.refine_transcript") as mock_refine:
+        with patch("refine.llm.refine_transcript") as mock_refine:
             mock_refine.return_value = "Verarbeiteter Text"
 
             result = maybe_refine_transcript("Rohtext", args)

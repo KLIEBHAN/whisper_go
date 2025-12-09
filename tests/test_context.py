@@ -3,7 +3,12 @@
 import sys
 from unittest.mock import patch
 
-from transcribe import _app_to_context, _get_custom_app_contexts, detect_context
+from refine.context import (
+    detect_context,
+    _get_custom_app_contexts,
+    _app_to_context,
+    DEFAULT_APP_CONTEXTS,
+)
 
 
 class TestGetCustomAppContexts:
@@ -16,9 +21,9 @@ class TestGetCustomAppContexts:
 
     def test_valid_json(self, monkeypatch):
         """Gültiges JSON wird geparst."""
-        import transcribe
+        import refine.context
 
-        monkeypatch.setattr(transcribe, "_custom_app_contexts_cache", None)
+        monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"CustomApp": "email"}')
 
         result = _get_custom_app_contexts()
@@ -27,9 +32,9 @@ class TestGetCustomAppContexts:
 
     def test_invalid_json(self, monkeypatch):
         """Ungültiges JSON gibt leeres Dict zurück."""
-        import transcribe
+        import refine.context
 
-        monkeypatch.setattr(transcribe, "_custom_app_contexts_cache", None)
+        monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", "not valid json")
 
         result = _get_custom_app_contexts()
@@ -38,9 +43,9 @@ class TestGetCustomAppContexts:
 
     def test_caching(self, monkeypatch):
         """Ergebnis wird gecacht."""
-        import transcribe
+        import refine.context
 
-        monkeypatch.setattr(transcribe, "_custom_app_contexts_cache", None)
+        monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"App1": "chat"}')
 
         # Erster Aufruf
@@ -70,9 +75,9 @@ class TestAppToContext:
 
     def test_custom_override(self, monkeypatch):
         """Custom Mapping überschreibt Default."""
-        import transcribe
+        import refine.context
 
-        monkeypatch.setattr(transcribe, "_custom_app_contexts_cache", None)
+        monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         # Safari ist normalerweise nicht gemappt
         monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"Safari": "chat"}')
 
@@ -80,9 +85,9 @@ class TestAppToContext:
 
     def test_custom_override_default(self, monkeypatch):
         """Custom Mapping kann Default überschreiben."""
-        import transcribe
+        import refine.context
 
-        monkeypatch.setattr(transcribe, "_custom_app_contexts_cache", None)
+        monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         # Slack ist normalerweise "chat"
         monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"Slack": "code"}')
 
@@ -133,7 +138,7 @@ class TestDetectContext:
         if sys.platform != "darwin":
             return
 
-        with patch("transcribe._get_frontmost_app", return_value="Slack"):
+        with patch("refine.context._get_frontmost_app", return_value="Slack"):
             context, app, source = detect_context()
 
         assert context == "chat"
@@ -143,7 +148,7 @@ class TestDetectContext:
     def test_default_fallback(self, monkeypatch, clean_env):
         """Default wenn nichts gesetzt."""
         # App-Detection mocken als None
-        with patch("transcribe._get_frontmost_app", return_value=None):
+        with patch("refine.context._get_frontmost_app", return_value=None):
             context, app, source = detect_context()
 
         assert context == "default"

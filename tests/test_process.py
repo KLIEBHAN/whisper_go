@@ -12,6 +12,7 @@ class TestIsWhisperGoProcess:
     def test_matching_process(self):
         """Prozess mit transcribe.py --record-daemon wird erkannt."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = "python transcribe.py --record-daemon"
 
         with patch("subprocess.run", return_value=mock_result):
@@ -20,6 +21,7 @@ class TestIsWhisperGoProcess:
     def test_non_matching_process(self):
         """Fremder Prozess wird nicht erkannt."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = "python other_script.py"
 
         with patch("subprocess.run", return_value=mock_result):
@@ -28,6 +30,7 @@ class TestIsWhisperGoProcess:
     def test_partial_match_transcribe_only(self):
         """Nur transcribe.py ohne --record-daemon reicht nicht."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = "python transcribe.py --record"  # Ohne daemon
 
         with patch("subprocess.run", return_value=mock_result):
@@ -36,6 +39,7 @@ class TestIsWhisperGoProcess:
     def test_partial_match_daemon_only(self):
         """Nur --record-daemon ohne transcribe.py reicht nicht."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = "python other.py --record-daemon"
 
         with patch("subprocess.run", return_value=mock_result):
@@ -54,6 +58,7 @@ class TestIsWhisperGoProcess:
     def test_empty_stdout(self):
         """Leere Ausgabe gibt False zurück."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = ""
 
         with patch("subprocess.run", return_value=mock_result):
@@ -62,6 +67,7 @@ class TestIsWhisperGoProcess:
     def test_correct_ps_command(self):
         """Korrekter ps-Befehl wird aufgerufen."""
         mock_result = Mock()
+        mock_result.returncode = 0
         mock_result.stdout = "python transcribe.py --record-daemon"
 
         with patch("subprocess.run", return_value=mock_result) as mock_run:

@@ -11,7 +11,7 @@ Usage:
 """
 
 from .logging import setup_logging, log, error, get_logger, get_session_id
-from .timing import timed_operation, format_duration
+from .timing import timed_operation, format_duration, log_preview
 
 __all__ = [
     "setup_logging",
@@ -21,4 +21,5 @@ __all__ = [
     "get_session_id",
     "timed_operation",
     "format_duration",
+    "log_preview",
 ]

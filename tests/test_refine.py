@@ -4,10 +4,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from transcribe import (
-    DEFAULT_GROQ_REFINE_MODEL,
-    DEFAULT_REFINE_MODEL,
+from refine.llm import (
+    refine_transcript,
     _get_refine_client,
+    DEFAULT_REFINE_MODEL,
+    DEFAULT_GROQ_REFINE_MODEL,
+)
+from transcribe import (
+    maybe_refine_transcript,
+    detect_context,
+    _get_session_id,
     copy_to_clipboard,
 )
 
@@ -94,7 +100,7 @@ class TestGetRefineClient:
     def test_groq_uses_groq_client(self, monkeypatch):
         """Groq-Provider nutzt Groq-Client."""
         mock_groq_client = Mock()
-        monkeypatch.setattr("transcribe._get_groq_client", lambda: mock_groq_client)
+        monkeypatch.setattr("refine.llm._get_groq_client", lambda: mock_groq_client)
 
         client = _get_refine_client("groq")
 
@@ -111,11 +117,11 @@ class TestRefineProviderSelection:
 
     def test_cli_provider_overrides_env(self, monkeypatch):
         """CLI-Parameter überschreibt ENV."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
         monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "groq")
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
                 output_text="refined"
             )
@@ -127,11 +133,11 @@ class TestRefineProviderSelection:
 
     def test_env_provider_used_when_no_cli(self, monkeypatch):
         """ENV-Provider wird genutzt wenn kein CLI-Argument."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
         monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "groq")
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.chat.completions.create.return_value = Mock(
                 choices=[Mock(message=Mock(content="refined"))]
             )
@@ -142,9 +148,9 @@ class TestRefineProviderSelection:
 
     def test_default_provider_is_openai(self, monkeypatch, clean_env):
         """Default-Provider ist openai."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
                 output_text="refined"
             )
@@ -159,11 +165,11 @@ class TestRefineModelSelection:
 
     def test_cli_model_overrides_all(self, monkeypatch):
         """CLI-Model überschreibt alles."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
         monkeypatch.setenv("WHISPER_GO_REFINE_MODEL", "env-model")
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
                 output_text="refined"
             )
@@ -176,11 +182,11 @@ class TestRefineModelSelection:
 
     def test_env_model_used_when_no_cli(self, monkeypatch):
         """ENV-Model wird genutzt wenn kein CLI-Argument."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
         monkeypatch.setenv("WHISPER_GO_REFINE_MODEL", "env-model")
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
                 output_text="refined"
             )
@@ -192,9 +198,9 @@ class TestRefineModelSelection:
 
     def test_groq_default_model(self, monkeypatch, clean_env):
         """Groq-Provider nutzt llama-3.3 als Default."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.chat.completions.create.return_value = Mock(
                 choices=[Mock(message=Mock(content="refined"))]
             )
@@ -206,9 +212,9 @@ class TestRefineModelSelection:
 
     def test_openai_default_model(self, monkeypatch, clean_env):
         """OpenAI-Provider nutzt gpt-5-nano als Default."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
                 output_text="refined"
             )
@@ -224,9 +230,9 @@ class TestRefineEdgeCases:
 
     def test_empty_transcript_returns_unchanged(self, clean_env):
         """Leeres Transkript wird nicht verarbeitet."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             result = refine_transcript("")
 
         # Client sollte nie aufgerufen werden
@@ -235,9 +241,9 @@ class TestRefineEdgeCases:
 
     def test_whitespace_only_returns_unchanged(self, clean_env):
         """Nur Whitespace wird nicht verarbeitet."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             result = refine_transcript("   \n\t  ")
 
         mock_client.assert_not_called()
@@ -245,9 +251,9 @@ class TestRefineEdgeCases:
 
     def test_none_transcript_returns_unchanged(self, clean_env):
         """None-Transkript gibt Falsy zurück."""
-        from transcribe import refine_transcript
+        # from transcribe import refine_transcript (removed)
 
-        with patch("transcribe._get_refine_client") as mock_client:
+        with patch("refine.llm._get_refine_client") as mock_client:
             result = refine_transcript(None)  # type: ignore
 
         mock_client.assert_not_called()
