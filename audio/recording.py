@@ -12,20 +12,16 @@ import threading
 import time
 from pathlib import Path
 
+# Zentrale Konfiguration importieren
+from config import (
+    WHISPER_SAMPLE_RATE,
+    WHISPER_CHANNELS,
+    WHISPER_BLOCKSIZE,
+    PID_FILE,
+    TEMP_RECORDING_FILENAME,
+)
+
 logger = logging.getLogger("whisper_go")
-
-# =============================================================================
-# Audio-Konfiguration
-# =============================================================================
-
-# Whisper erwartet Audio mit 16kHz – andere Sampleraten führen zu schlechteren Ergebnissen
-WHISPER_SAMPLE_RATE = 16000
-WHISPER_CHANNELS = 1
-WHISPER_BLOCKSIZE = 1024
-
-# IPC-Dateien
-PID_FILE = Path("/tmp/whisper_go.pid")
-TEMP_RECORDING_FILENAME = "whisper_recording.wav"
 
 
 def _get_session_id() -> str:

@@ -11,14 +11,14 @@ import os
 from prompts import get_prompt_for_context
 from .context import detect_context
 
+# Zentrale Konfiguration importieren
+from config import (
+    DEFAULT_REFINE_MODEL,
+    DEFAULT_GROQ_REFINE_MODEL,
+    OPENROUTER_BASE_URL,
+)
+
 logger = logging.getLogger("whisper_go")
-
-# Default-Modelle für LLM-Nachbearbeitung
-DEFAULT_REFINE_MODEL = "gpt-5-nano"
-DEFAULT_GROQ_REFINE_MODEL = "llama-3.3-70b-versatile"
-
-# API-Endpunkte
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Groq-Client Singleton
 _groq_client = None
