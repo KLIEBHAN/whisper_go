@@ -44,7 +44,7 @@ emergency_log("=== Booting Whisper Daemon ===")
 
 try:
     from config import INTERIM_FILE, VAD_THRESHOLD
-    from utils import setup_logging
+    from utils import setup_logging, show_error_alert
     from config import DEFAULT_DEEPGRAM_MODEL
     from providers.deepgram_stream import deepgram_stream_core
     from providers import get_provider
@@ -456,6 +456,11 @@ class WhisperDaemon:
                         self._stop_result_polling()
                         logger.error(f"Fehler: {result}")
                         emergency_log(f"Worker Exception: {result}") # Backup log
+                        
+                        # API-Key-Fehler als Pop-up anzeigen
+                        if isinstance(result, ValueError):
+                            show_error_alert("API-Key fehlt", str(result))
+                        
                         get_sound_player().play("error")
                         self._update_state(AppState.ERROR)
                         return
