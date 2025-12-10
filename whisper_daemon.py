@@ -270,6 +270,7 @@ class WhisperDaemon:
 
                 # LLM-Nachbearbeitung (optional)
                 if self.refine and transcript:
+                    self._result_queue.put(("status", "refining"))
                     transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
@@ -344,6 +345,7 @@ class WhisperDaemon:
                 
                 # LLM-Refine
                 if self.refine and transcript:
+                    self._result_queue.put(("status", "refining"))
                     transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
@@ -394,6 +396,12 @@ class WhisperDaemon:
         def check_result() -> None:
             try:
                 result = self._result_queue.get_nowait()
+                
+                # Check for status update tuple
+                if isinstance(result, tuple) and len(result) == 2 and result[0] == "status":
+                    self._update_state(result[1])
+                    return  # Continue polling
+
                 self._stop_result_polling()
 
                 if isinstance(result, Exception):

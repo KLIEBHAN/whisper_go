@@ -57,8 +57,10 @@ class SoundWaveView:
 
         # Farben
         self._color_idle = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
+        self._color_listening = _get_overlay_color(255, 182, 193)
         self._color_recording = _get_overlay_color(255, 82, 82)
         self._color_transcribing = _get_overlay_color(255, 177, 66)
+        self._color_refining = _get_overlay_color(156, 39, 176)
         self._color_success = _get_overlay_color(51, 217, 178)
         self._color_error = _get_overlay_color(255, 71, 87)
 
@@ -109,6 +111,20 @@ class SoundWaveView:
         )
         return anim
 
+    def start_listening_animation(self) -> None:
+        """Startet sanfte Listening-Animation (Warten auf Sprache)."""
+        if self.current_animation == "listening":
+            return
+        self.stop_animating()
+        self.current_animation = "listening"
+        self.animations_running = True
+        self.set_bar_color(self._color_listening)
+
+        # Langsames Atmen
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.4, 1.2)
+            bar.addAnimation_forKey_(anim, f"listenAnim{i}")
+
     def start_recording_animation(self) -> None:
         """Startet organische Schallwellen-Animation."""
         if self.current_animation == "recording":
@@ -135,6 +151,20 @@ class SoundWaveView:
         for i, bar in enumerate(self.bars):
             anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.7, 1.0)
             bar.addAnimation_forKey_(anim, f"transcribeAnim{i}")
+
+    def start_refining_animation(self) -> None:
+        """Startet Refining-Animation (Pulsieren)."""
+        if self.current_animation == "refining":
+            return
+        self.stop_animating()
+        self.current_animation = "refining"
+        self.animations_running = True
+        self.set_bar_color(self._color_refining)
+
+        # Synchrones Pulsieren
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.6, 0.8)
+            bar.addAnimation_forKey_(anim, f"refineAnim{i}")
 
     def start_success_animation(self) -> None:
         """Einmaliges Hüpfen in Grün."""
@@ -283,8 +313,8 @@ class OverlayController:
         self._current_state = state
 
         if state == "recording":
-            self._wave_view.start_recording_animation()
             if interim_text:
+                self._wave_view.start_recording_animation()
                 text = f"{interim_text} ..."
                 self._text_field.setFont_(
                     NSFont.systemFontOfSize_weight_(
@@ -295,6 +325,7 @@ class OverlayController:
                     NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.9)
                 )
             else:
+                self._wave_view.start_listening_animation()
                 text = "Listening ..."
                 self._text_field.setFont_(
                     NSFont.systemFontOfSize_weight_(
@@ -310,6 +341,14 @@ class OverlayController:
         elif state == "transcribing":
             self._wave_view.start_transcribing_animation()
             self._text_field.setStringValue_("Transcribing ...")
+            self._text_field.setTextColor_(
+                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+            )
+            self._fade_in()
+
+        elif state == "refining":
+            self._wave_view.start_refining_animation()
+            self._text_field.setStringValue_("Refining ...")
             self._text_field.setTextColor_(
                 NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
             )
