@@ -547,8 +547,14 @@ class WhisperDaemon:
         # NSApplication initialisieren
         app = NSApplication.sharedApplication()
         
-        # Application Menu erstellen (für CMD+Q Support)
-        self._setup_app_menu(app)
+        # Dock-Icon: Konfigurierbar via ENV (default: an)
+        # 0 = Regular (Dock-Icon), 1 = Accessory (kein Dock-Icon)
+        show_dock = os.getenv("WHISPER_GO_DOCK_ICON", "true").lower() != "false"
+        app.setActivationPolicy_(0 if show_dock else 1)
+        
+        # Application Menu erstellen (für CMD+Q Support wenn Dock-Icon aktiv)
+        if show_dock:
+            self._setup_app_menu(app)
 
         # UI-Controller initialisieren
         logger.info("Initialisiere UI-Controller...")
@@ -570,7 +576,10 @@ class WhisperDaemon:
         )
         print("🎤 whisper_daemon läuft", file=sys.stderr)
         print(f"   Hotkey: {self.hotkey}", file=sys.stderr)
-        print("   Beenden mit CMD+Q oder Ctrl+C", file=sys.stderr)
+        if show_dock:
+            print("   Beenden: CMD+Q (wenn fokussiert) oder Ctrl+C", file=sys.stderr)
+        else:
+            print("   Beenden: Menubar-Icon → Quit oder Ctrl+C", file=sys.stderr)
 
         # Hotkey registrieren
         @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
