@@ -64,10 +64,10 @@ def setup_logging(debug: bool = False) -> None:
 
     handler_added = False
 
-    # Datei-Handler mit Rotation (max 1MB, 3 Backups)
+    # Datei-Handler mit Rotation (max 5MB, 5 Backups)
     try:
         file_handler = RotatingFileHandler(
-            LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+            LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
         )
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(
@@ -81,7 +81,7 @@ def setup_logging(debug: bool = False) -> None:
             fallback = Path("/tmp/whisper_go.log")
             fallback.parent.mkdir(parents=True, exist_ok=True)
             file_handler = RotatingFileHandler(
-                fallback, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+                fallback, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
             )
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(
