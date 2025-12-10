@@ -546,12 +546,21 @@ class WhisperDaemon:
 
 
 def load_environment() -> None:
-    """Lädt .env-Datei falls vorhanden."""
+    """Lädt .env-Datei aus dem User-Config-Verzeichnis."""
     try:
         from dotenv import load_dotenv
+        from config import USER_CONFIG_DIR
 
-        env_file = SCRIPT_DIR / ".env"
-        load_dotenv(env_file if env_file.exists() else None)
+        # Priorität 1: .env im User-Verzeichnis ~/.whisper_go/.env
+        user_env = USER_CONFIG_DIR / ".env"
+        if user_env.exists():
+            load_dotenv(user_env)
+        
+        # Priorität 2: .env im aktuellen Verzeichnis (für Dev)
+        local_env = Path(".env")
+        if local_env.exists():
+            load_dotenv(local_env)
+
     except ImportError:
         pass
 
