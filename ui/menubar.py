@@ -28,15 +28,15 @@ class MenuBarController:
         self._status_item.setTitle_(MENUBAR_ICONS["idle"])
         self._current_state = "idle"
 
-    def update_state(self, state: str, interim_text: str | None = None) -> None:
+    def update_state(self, state: str, text: str | None = None) -> None:
         """Aktualisiert Menübar-Icon und optional Text."""
         self._current_state = state
         icon = MENUBAR_ICONS.get(state, MENUBAR_ICONS["idle"])
 
-        if state == "recording" and interim_text:
+        if state == "recording" and text:
             # Kürzen für Menübar
             preview = (
-                interim_text[:20] + "…" if len(interim_text) > 20 else interim_text
+                text[:20] + "…" if len(text) > 20 else text
             )
             self._status_item.setTitle_(f"{icon} {preview}")
         else:

@@ -116,19 +116,19 @@ class WhisperDaemon:
         self._menubar: MenuBarController | None = None
         self._overlay: OverlayController | None = None
 
-    def _update_state(self, state: str, interim_text: str | None = None) -> None:
+    def _update_state(self, state: str, text: str | None = None) -> None:
         """Aktualisiert State und benachrichtigt UI-Controller."""
         self._current_state = state
         logger.debug(
             f"State: {state}"
-            + (f" interim='{interim_text[:20]}...'" if interim_text else "")
+            + (f" text='{text[:20]}...'" if text else "")
         )
 
         # UI-Controller aktualisieren
         if self._menubar:
-            self._menubar.update_state(state, interim_text)
+            self._menubar.update_state(state, text)
         if self._overlay:
-            self._overlay.update_state(state, interim_text)
+            self._overlay.update_state(state, text)
 
     def _on_hotkey(self) -> None:
         """Callback bei Hotkey-Aktivierung."""

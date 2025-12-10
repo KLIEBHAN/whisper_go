@@ -303,7 +303,7 @@ class OverlayController:
         self._state_timestamp = 0.0
         self._feedback_timer = None
 
-    def update_state(self, state: str, interim_text: str | None = None) -> None:
+    def update_state(self, state: str, text: str | None = None) -> None:
         """Aktualisiert Overlay basierend auf State."""
         if not self.window:
             return
@@ -313,9 +313,9 @@ class OverlayController:
         self._current_state = state
 
         if state == "recording":
-            if interim_text:
+            if text:
                 self._wave_view.start_recording_animation()
-                text = f"{interim_text} ..."
+                display_text = f"{text} ..."
                 self._text_field.setFont_(
                     NSFont.systemFontOfSize_weight_(
                         OVERLAY_FONT_SIZE, NSFontWeightMedium
@@ -326,7 +326,7 @@ class OverlayController:
                 )
             else:
                 self._wave_view.start_listening_animation()
-                text = "Listening ..."
+                display_text = "Listening ..."
                 self._text_field.setFont_(
                     NSFont.systemFontOfSize_weight_(
                         OVERLAY_FONT_SIZE, NSFontWeightMedium
@@ -335,7 +335,7 @@ class OverlayController:
                 self._text_field.setTextColor_(
                     NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
                 )
-            self._text_field.setStringValue_(text)
+            self._text_field.setStringValue_(display_text)
             self._fade_in()
 
         elif state == "transcribing":
@@ -358,12 +358,12 @@ class OverlayController:
             self._wave_view.start_success_animation()
             
             # Show actual text if available
-            if interim_text:
-                text = interim_text.replace("\n", " ").strip()
+            if text:
+                display_text = text.replace("\n", " ").strip()
             else:
-                text = "Done"
+                display_text = "Done"
                 
-            self._text_field.setStringValue_(text)
+            self._text_field.setStringValue_(display_text)
             self._text_field.setTextColor_(_get_overlay_color(51, 217, 178))
             self._text_field.setFont_(
                 NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightBold)
