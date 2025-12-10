@@ -443,3 +443,25 @@ pytest --cov=. --cov-report=term-missing
 ```
 
 Tests laufen automatisch via GitHub Actions bei Push und Pull Requests.
+
+### macOS App Bundle erstellen
+
+Um eine eigenständige `WhisperGo.app` zu erstellen:
+
+```bash
+# PyInstaller installieren (falls noch nicht vorhanden)
+pip install pyinstaller
+
+# App bauen
+pyinstaller build_app.spec
+
+# Output: dist/WhisperGo.app
+```
+
+**Optional: Code-Signierung für stabile Accessibility-Berechtigungen**
+
+```bash
+codesign --force --deep --sign - dist/WhisperGo.app
+```
+
+> **Hinweis:** Ohne Signierung muss die App nach jedem Neubuild in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen neu autorisiert werden. Siehe [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle).
