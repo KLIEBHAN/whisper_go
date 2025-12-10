@@ -52,7 +52,7 @@ try:
     from whisper_platform import get_sound_player
     from utils.state import AppState, DaemonMessage, MessageType
     from utils import parse_hotkey, paste_transcript
-    from utils.permissions import check_microphone_permission
+    from utils.permissions import check_microphone_permission, check_accessibility_permission
     from ui import MenuBarController, OverlayController
 except Exception as e:
     emergency_log(f"CRITICAL IMPORT ERROR: {e}")
@@ -568,10 +568,13 @@ class WhisperDaemon:
         # Hotkey parsen
         virtual_key, modifier_mask = parse_hotkey(self.hotkey)
 
-        # Berechtigungen prüfen (Mikrofon)
+        # Berechtigungen prüfen (Mikrofon - blockierend)
         if not check_microphone_permission():
             logger.error("Daemon Start abgebrochen: Fehlende Mikrofon-Berechtigung")
             return
+        
+        # Accessibility prüfen (nur Warnung, nicht blockierend)
+        check_accessibility_permission()
 
         logger.info(
             f"Daemon gestartet: hotkey={self.hotkey}, "
