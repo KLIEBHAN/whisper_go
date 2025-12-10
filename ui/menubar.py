@@ -1,12 +1,15 @@
 """Menübar-Controller für whisper_go."""
 
+from utils.state import AppState
+
 # Status-Icons für Menübar
 MENUBAR_ICONS = {
-    "idle": "🎤",
-    "recording": "🔴",
-    "transcribing": "⏳",
-    "done": "✅",
-    "error": "❌",
+    AppState.IDLE: "🎤",
+    AppState.RECORDING: "🔴",
+    AppState.TRANSCRIBING: "⏳",
+    AppState.REFINING: "⏳", # Refining uses same icon as transcribing for now
+    AppState.DONE: "✅",
+    AppState.ERROR: "❌",
 }
 
 
@@ -25,15 +28,15 @@ class MenuBarController:
         self._status_item = self._status_bar.statusItemWithLength_(
             NSVariableStatusItemLength
         )
-        self._status_item.setTitle_(MENUBAR_ICONS["idle"])
-        self._current_state = "idle"
+        self._status_item.setTitle_(MENUBAR_ICONS[AppState.IDLE])
+        self._current_state = AppState.IDLE
 
-    def update_state(self, state: str, text: str | None = None) -> None:
+    def update_state(self, state: AppState, text: str | None = None) -> None:
         """Aktualisiert Menübar-Icon und optional Text."""
         self._current_state = state
-        icon = MENUBAR_ICONS.get(state, MENUBAR_ICONS["idle"])
+        icon = MENUBAR_ICONS.get(state, MENUBAR_ICONS[AppState.IDLE])
 
-        if state == "recording" and text:
+        if state == AppState.RECORDING and text:
             # Kürzen für Menübar
             preview = (
                 text[:20] + "…" if len(text) > 20 else text

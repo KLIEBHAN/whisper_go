@@ -24,6 +24,8 @@ WAVE_AREA_WIDTH = WAVE_BAR_COUNT * WAVE_BAR_WIDTH + (WAVE_BAR_COUNT - 1) * WAVE_
 FEEDBACK_DISPLAY_DURATION = 0.8  # Sekunden für Done/Error-Anzeige
 
 
+from utils.state import AppState
+
 def _get_overlay_color(r: int, g: int, b: int, a: float = 1.0):
     """Erstellt NSColor aus RGB-Werten."""
     from AppKit import NSColor  # type: ignore[import-not-found]
@@ -299,11 +301,11 @@ class OverlayController:
 
         # State
         self._target_alpha = 0.0
-        self._current_state = "idle"
+        self._current_state = AppState.IDLE
         self._state_timestamp = 0.0
         self._feedback_timer = None
 
-    def update_state(self, state: str, text: str | None = None) -> None:
+    def update_state(self, state: AppState, text: str | None = None) -> None:
         """Aktualisiert Overlay basierend auf State."""
         if not self.window:
             return
@@ -312,7 +314,7 @@ class OverlayController:
 
         self._current_state = state
 
-        if state == "recording":
+        if state == AppState.RECORDING:
             if text:
                 self._wave_view.start_recording_animation()
                 display_text = f"{text} ..."
@@ -338,7 +340,7 @@ class OverlayController:
             self._text_field.setStringValue_(display_text)
             self._fade_in()
 
-        elif state == "transcribing":
+        elif state == AppState.TRANSCRIBING:
             self._wave_view.start_transcribing_animation()
             self._text_field.setStringValue_("Transcribing ...")
             self._text_field.setTextColor_(
@@ -346,7 +348,7 @@ class OverlayController:
             )
             self._fade_in()
 
-        elif state == "refining":
+        elif state == AppState.REFINING:
             self._wave_view.start_refining_animation()
             self._text_field.setStringValue_("Refining ...")
             self._text_field.setTextColor_(
@@ -354,7 +356,7 @@ class OverlayController:
             )
             self._fade_in()
 
-        elif state == "done":
+        elif state == AppState.DONE:
             self._wave_view.start_success_animation()
             
             # Show actual text if available
@@ -371,7 +373,7 @@ class OverlayController:
             self._fade_in()
             self._start_fade_out_timer()
 
-        elif state == "error":
+        elif state == AppState.ERROR:
             self._wave_view.start_error_animation()
             self._text_field.setStringValue_("Error")
             self._text_field.setTextColor_(_get_overlay_color(255, 71, 87))
