@@ -7,6 +7,7 @@ import logging
 import sys
 import uuid
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 # Logger-Singleton
 logger = logging.getLogger("whisper_go")
@@ -61,15 +62,45 @@ def setup_logging(debug: bool = False) -> None:
     except Exception:
         pass # Ignorieren falls keine Berechtigung, Handler wird dann meckern
 
+    handler_added = False
+
     # Datei-Handler mit Rotation (max 1MB, 3 Backups)
-    file_handler = RotatingFileHandler(
-        LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
-    )
-    logger.addHandler(file_handler)
+    try:
+        file_handler = RotatingFileHandler(
+            LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
+        )
+        logger.addHandler(file_handler)
+        handler_added = True
+    except PermissionError:
+        # Fallback: /tmp, wenn Home-Verzeichnis nicht beschreibbar (z.B. Sandbox)
+        try:
+            fallback = Path("/tmp/whisper_go.log")
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                fallback, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(
+                logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
+            )
+            logger.addHandler(file_handler)
+            handler_added = True
+        except Exception:
+            pass
+    except Exception:
+        # Keine harten Fehler, Logging darf App-Start nicht blockieren
+        pass
+
+    if not handler_added:
+        # Minimaler Fallback, um Stillstand zu vermeiden
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setLevel(logging.DEBUG if debug else logging.INFO)
+        stderr_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S"))
+        logger.addHandler(stderr_handler)
 
     # Stderr-Handler (nur im Debug-Modus)
     if debug:

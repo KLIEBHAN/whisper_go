@@ -128,6 +128,48 @@ def play_sound(name: str) -> None:
         pass
 
 from audio.recording import record_audio, record_audio_daemon
+
+# =============================================================================
+# Logging-Helfer
+# =============================================================================
+
+
+def _log_preview(text: str, max_length: int = 100) -> str:
+    """Kürzt Logtexte, um Logfiles schlank zu halten."""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + "..."
+
+
+# =============================================================================
+# Prozess-Helfer
+# =============================================================================
+
+
+def _is_whisper_go_process(pid: int) -> bool:
+    """Prüft, ob PID zu einem laufenden whisper_go Daemon gehört."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception:
+        return False
+
+    if result.returncode != 0:
+        return False
+
+    cmdline = (result.stdout or "").strip()
+    if not cmdline:
+        return False
+
+    return "transcribe.py" in cmdline and "--record-daemon" in cmdline
 # =============================================================================
 # Daemon-Hilfsfunktionen (Raycast-Integration)
 # =============================================================================
