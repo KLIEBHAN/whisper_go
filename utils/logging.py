@@ -9,9 +9,6 @@ import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Importiere Pfade aus zentraler Config
-from config import LOG_FILE
-
 # Logger-Singleton
 logger = logging.getLogger("whisper_go")
 
@@ -43,6 +40,9 @@ def setup_logging(debug: bool = False) -> None:
     Args:
         debug: Wenn True, wird auch auf stderr geloggt
     """
+    # Lazy import: bricht circular import (config → utils → logging → config)
+    from config import LOG_FILE
+
     global _session_id
 
     # Session-ID nur einmal generieren
