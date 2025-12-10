@@ -307,14 +307,14 @@ WHISPER_GO_DOCK_ICON=true
 
 Das Overlay zeigt den aktuellen Status durch Farben und Animationen an:
 
-| Status           | Farbe  | Animation | Bedeutung |
-| ---------------- | ------ | --------- | --------- |
-| **Listening**    | 🌸 Rosa  | Atmen     | Hotkey gedrückt, wartet auf Sprache |
-| **Recording**    | 🔴 Rot   | Wellen    | Sprache erkannt, Aufnahme läuft |
-| **Transcribing** | 🟠 Orange| Laden     | Finalisierung der Transkription |
-| **Refining**     | 💜 Violett| Pulsieren | LLM-Nachbearbeitung läuft |
-| **Done**         | ✅ Grün  | Hüpfen    | Fertig, Text eingefügt |
-| **Error**        | ❌ Rot   | Blinken   | Fehler aufgetreten |
+| Status           | Farbe      | Animation | Bedeutung                           |
+| ---------------- | ---------- | --------- | ----------------------------------- |
+| **Listening**    | 🌸 Rosa    | Atmen     | Hotkey gedrückt, wartet auf Sprache |
+| **Recording**    | 🔴 Rot     | Wellen    | Sprache erkannt, Aufnahme läuft     |
+| **Transcribing** | 🟠 Orange  | Laden     | Finalisierung der Transkription     |
+| **Refining**     | 💜 Violett | Pulsieren | LLM-Nachbearbeitung läuft           |
+| **Done**         | ✅ Grün    | Hüpfen    | Fertig, Text eingefügt              |
+| **Error**        | ❌ Rot     | Blinken   | Fehler aufgetreten                  |
 
 Beides ist integriert und startet automatisch mit dem Daemon.
 

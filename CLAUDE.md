@@ -36,11 +36,11 @@ whisper_go/
 
 **Funktionen:**
 
-| Funktion                            | Zweck                                          |
-| ----------------------------------- | ---------------------------------------------- |
-| `transcribe()`                      | Zentrale API – orchestriert Provider           |
-| `run_daemon_mode()`                 | Raycast-Modus: Aufnahme → Transkript-Datei     |
-| `parse_args()`                      | CLI-Argument-Handling                          |
+| Funktion            | Zweck                                      |
+| ------------------- | ------------------------------------------ |
+| `transcribe()`      | Zentrale API – orchestriert Provider       |
+| `run_daemon_mode()` | Raycast-Modus: Aufnahme → Transkript-Datei |
+| `parse_args()`      | CLI-Argument-Handling                      |
 
 **Design-Entscheidungen:**
 
@@ -57,12 +57,12 @@ Konsolidiert alle Komponenten in einem Prozess (empfohlen für tägliche Nutzung
 
 **Komponenten:**
 
-| Klasse | Modul | Zweck |
-| ------ | ----- | ----- |
-| `MenuBarController` | `ui.menubar` | Menübar-Status via NSStatusBar (🎤 🔴 ⏳ ✅ ❌) |
-| `OverlayController` | `ui.overlay` | Animiertes Overlay am unteren Bildschirmrand |
-| `SoundWaveView` | `ui.overlay` | Animierte Schallwellen-Visualisierung |
-| `WhisperDaemon` | `whisper_daemon` | Hauptklasse: Orchestriert Hotkey, Audio & UI |
+| Klasse              | Modul            | Zweck                                           |
+| ------------------- | ---------------- | ----------------------------------------------- |
+| `MenuBarController` | `ui.menubar`     | Menübar-Status via NSStatusBar (🎤 🔴 ⏳ ✅ ❌) |
+| `OverlayController` | `ui.overlay`     | Animiertes Overlay am unteren Bildschirmrand    |
+| `SoundWaveView`     | `ui.overlay`     | Animierte Schallwellen-Visualisierung           |
+| `WhisperDaemon`     | `whisper_daemon` | Hauptklasse: Orchestriert Hotkey, Audio & UI    |
 
 **Architektur:**
 
@@ -122,13 +122,13 @@ python transcribe.py --record --copy --language de
 
 ## Dateipfade
 
-| Pfad                                  | Beschreibung                              |
-| ------------------------------------- | ----------------------------------------- |
-| `~/.whisper_go/`                      | User-Konfigurationsverzeichnis            |
-| `~/.whisper_go/.env`                  | User-spezifische ENV-Datei (Priorität 1)  |
-| `~/.whisper_go/logs/whisper_go.log`   | Haupt-Logdatei (rotierend, max 1MB)       |
-| `~/.whisper_go/startup.log`           | Emergency-Log für Startup-Fehler          |
-| `~/.whisper_go/vocabulary.json`       | Custom Vocabulary für Transkription       |
+| Pfad                                | Beschreibung                             |
+| ----------------------------------- | ---------------------------------------- |
+| `~/.whisper_go/`                    | User-Konfigurationsverzeichnis           |
+| `~/.whisper_go/.env`                | User-spezifische ENV-Datei (Priorität 1) |
+| `~/.whisper_go/logs/whisper_go.log` | Haupt-Logdatei (rotierend, max 1MB)      |
+| `~/.whisper_go/startup.log`         | Emergency-Log für Startup-Fehler         |
+| `~/.whisper_go/vocabulary.json`     | Custom Vocabulary für Transkription      |
 
 ## Transkriptions-Modi
 
@@ -180,6 +180,7 @@ pyinstaller build_app.spec --clean
 ```
 
 **Besonderheiten:**
+
 - `utils/paths.py`: `get_resource_path()` für Bundle-kompatible Pfade
 - `utils/permissions.py`: Mikrofon-Berechtigung mit Alert-Dialog
 - `config.py`: Logs in `~/.whisper_go/logs/` (nicht im Bundle)
