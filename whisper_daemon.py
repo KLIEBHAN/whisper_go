@@ -29,13 +29,7 @@ import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from config import INTERIM_FILE, LOG_FILE, SCRIPT_DIR, VAD_THRESHOLD  # LOG_FILE from config is whisper_go.log, utilizing unified logging
-from utils import setup_logging, log, error, get_session_id
-
-# DEBOUNCE_INTERVAL defined locally as it is specific to hotkey daemon
-DEBOUNCE_INTERVAL = 0.3
-logger = logging.getLogger("whisper_go")
-
+# --- Emergency Logging (Before everything else) ---
 def emergency_log(msg: str):
     """Schreibt direkt in eine Datei im User-Home, falls Logging versagt."""
     try:
@@ -45,25 +39,33 @@ def emergency_log(msg: str):
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] {msg}\n")
     except Exception:
-        pass # Wenn das schiefgeht, sind wir wirklich verloren.
+        pass
 
+emergency_log("=== Booting Whisper Daemon ===")
 
-# =============================================================================
-# Imports (Direct)
-# =============================================================================
+try:
+    from config import INTERIM_FILE, LOG_FILE, SCRIPT_DIR, VAD_THRESHOLD
+    from utils import setup_logging, log, error, get_session_id
+    from config import DEFAULT_DEEPGRAM_MODEL
+    from providers.deepgram_stream import deepgram_stream_core
+    from providers import get_provider
+    from refine.llm import refine_transcript
+    from refine.context import detect_context
+    from whisper_platform import get_sound_player
+    from utils.state import AppState, DaemonMessage, MessageType
+    from utils import parse_hotkey, paste_transcript
+    from utils.permissions import check_microphone_permission
+    from ui import MenuBarController, OverlayController
+except Exception as e:
+    emergency_log(f"CRITICAL IMPORT ERROR: {e}")
+    sys.exit(1)
 
-from config import DEFAULT_DEEPGRAM_MODEL
-from providers.deepgram_stream import deepgram_stream_core
-from providers import get_provider
-from refine.llm import refine_transcript
-from refine.context import detect_context
-from whisper_platform import get_sound_player
-from utils.state import AppState, DaemonMessage, MessageType
+emergency_log("Imports successful")
 
-from utils import parse_hotkey, paste_transcript
-from utils.permissions import check_microphone_permission
+# DEBOUNCE_INTERVAL defined locally as it is specific to hotkey daemon
+DEBOUNCE_INTERVAL = 0.3
+logger = logging.getLogger("whisper_go")
 
-from ui import MenuBarController, OverlayController
 
 # =============================================================================
 # WhisperDaemon: Hauptklasse
