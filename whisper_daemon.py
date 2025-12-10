@@ -36,7 +36,16 @@ from utils import setup_logging, log, error, get_session_id
 DEBOUNCE_INTERVAL = 0.3
 logger = logging.getLogger("whisper_go")
 
-
+def emergency_log(msg: str):
+    """Schreibt direkt in eine Datei im User-Home, falls Logging versagt."""
+    try:
+        debug_file = Path.home() / ".whisper_go" / "startup.log"
+        debug_file.parent.mkdir(exist_ok=True)
+        with open(debug_file, "a", encoding="utf-8") as f:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] {msg}\n")
+    except Exception:
+        pass # Wenn das schiefgeht, sind wir wirklich verloren.
 
 
 # =============================================================================
@@ -437,6 +446,7 @@ class WhisperDaemon:
                     if isinstance(result, Exception):
                         self._stop_result_polling()
                         logger.error(f"Fehler: {result}")
+                        emergency_log(f"Worker Exception: {result}") # Backup log
                         get_sound_player().play("error")
                         self._update_state(AppState.ERROR)
                         return
@@ -579,6 +589,19 @@ def load_environment() -> None:
 def main() -> int:
     """CLI-Einstiegspunkt."""
     import argparse
+    
+    # Globaler Exception Handler für Crashes
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        msg = f"Uncaught exception: {exc_type.__name__}: {exc_value}"
+        logger.critical(msg, exc_info=(exc_type, exc_value, exc_traceback))
+        emergency_log(msg) # Backup
+        
+    sys.excepthook = handle_exception
+    
+    emergency_log("=== Whisper Go Daemon gestartet ===")
 
     # Environment laden bevor Argumente definiert werden (für Defaults)
     load_environment()
