@@ -1,5 +1,11 @@
 """Menübar-Controller für whisper_go."""
 
+from pathlib import Path
+
+import objc
+from Foundation import NSObject  # type: ignore[import-not-found]
+
+from config import LOG_FILE
 from utils.state import AppState
 
 # Status-Icons für Menübar
@@ -11,6 +17,28 @@ MENUBAR_ICONS = {
     AppState.DONE: "✅",
     AppState.ERROR: "❌",
 }
+
+
+class _MenuActionHandler(NSObject):
+    """Objective-C Target für Menü-Actions."""
+
+    def initWithLogPath_(self, log_path: str):
+        self = objc.super(_MenuActionHandler, self).init()
+        if self is None:
+            return None
+        self.log_path = log_path
+        return self
+
+    @objc.signature(b"v@:@")
+    def openLogs_(self, _sender) -> None:
+        """Öffnet die Log-Datei im Standard-Viewer."""
+        from AppKit import NSWorkspace  # type: ignore[import-not-found]
+
+        log_path = Path(self.log_path)
+        if not log_path.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.touch()
+        NSWorkspace.sharedWorkspace().openFile_(str(log_path))
 
 
 class MenuBarController:
@@ -29,6 +57,9 @@ class MenuBarController:
             NSMenuItem,
         )
 
+        # Target für Menü-Callbacks
+        self._action_handler = _MenuActionHandler.alloc().initWithLogPath_(str(LOG_FILE))
+
         self._status_bar = NSStatusBar.systemStatusBar()
         self._status_item = self._status_bar.statusItemWithLength_(
             NSVariableStatusItemLength
@@ -44,6 +75,15 @@ class MenuBarController:
         )
         title_item.setEnabled_(False)
         menu.addItem_(title_item)
+
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        # Logs öffnen
+        logs_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Open Logs", "openLogs:", ""
+        )
+        logs_item.setTarget_(self._action_handler)
+        menu.addItem_(logs_item)
 
         menu.addItem_(NSMenuItem.separatorItem())
 

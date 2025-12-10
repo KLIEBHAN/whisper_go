@@ -56,6 +56,15 @@ try:
     from ui import MenuBarController, OverlayController
 except Exception as e:
     emergency_log(f"CRITICAL IMPORT ERROR: {e}")
+    # Auch direkt auf stderr ausgeben, damit der Fehler bei CLI-Start sichtbar ist
+    try:
+        import traceback  # noqa: WPS433 (safety import inside except)
+
+        traceback.print_exc()
+    except Exception:
+        # Falls traceback import fehlschlägt, zumindest den Fehler ausgeben
+        print(f"CRITICAL IMPORT ERROR: {e}", file=sys.stderr)
+
     sys.exit(1)
 
 emergency_log("Imports successful")
