@@ -9,10 +9,8 @@ import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Log-Konfiguration
-SCRIPT_DIR = Path(__file__).parent.parent
-LOG_DIR = SCRIPT_DIR / "logs"
-LOG_FILE = LOG_DIR / "whisper_go.log"
+# Importiere Pfade aus zentraler Config
+from config import LOG_FILE
 
 # Logger-Singleton
 logger = logging.getLogger("whisper_go")
@@ -58,8 +56,11 @@ def setup_logging(debug: bool = False) -> None:
 
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
-    # Log-Verzeichnis erstellen falls nicht vorhanden
-    LOG_DIR.mkdir(exist_ok=True)
+    # Log-Verzeichnis sicherstellen
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass # Ignorieren falls keine Berechtigung, Handler wird dann meckern
 
     # Datei-Handler mit Rotation (max 1MB, 3 Backups)
     file_handler = RotatingFileHandler(
