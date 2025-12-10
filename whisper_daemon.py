@@ -49,6 +49,7 @@ from providers import get_provider
 from refine.llm import refine_transcript
 from refine.context import detect_context
 from whisper_platform import get_sound_player
+from utils.state import AppState, DaemonMessage, MessageType
 
 from utils import parse_hotkey, paste_transcript
 
@@ -96,7 +97,7 @@ class WhisperDaemon:
         self._recording = False
         self._toggle_lock = threading.Lock()
         self._last_hotkey_time = 0.0
-        self._current_state = "idle"
+        self._current_state = AppState.IDLE
 
         # Stop-Event für _deepgram_stream_core
         self._stop_event: threading.Event | None = None
@@ -105,7 +106,7 @@ class WhisperDaemon:
         self._worker_thread: threading.Thread | None = None
 
         # Result-Queue für Transkripte
-        self._result_queue: queue.Queue[str | Exception | None] = queue.Queue()
+        self._result_queue: queue.Queue[DaemonMessage | Exception] = queue.Queue()
 
         # NSTimer für Result-Polling und Interim-Polling
         self._result_timer = None
@@ -116,19 +117,19 @@ class WhisperDaemon:
         self._menubar: MenuBarController | None = None
         self._overlay: OverlayController | None = None
 
-    def _update_state(self, state: str, interim_text: str | None = None) -> None:
+    def _update_state(self, state: AppState, text: str | None = None) -> None:
         """Aktualisiert State und benachrichtigt UI-Controller."""
         self._current_state = state
         logger.debug(
             f"State: {state}"
-            + (f" interim='{interim_text[:20]}...'" if interim_text else "")
+            + (f" text='{text[:20]}...'" if text else "")
         )
 
         # UI-Controller aktualisieren
         if self._menubar:
-            self._menubar.update_state(state, interim_text)
+            self._menubar.update_state(state, text)
         if self._overlay:
-            self._overlay.update_state(state, interim_text)
+            self._overlay.update_state(state, text)
 
     def _on_hotkey(self) -> None:
         """Callback bei Hotkey-Aktivierung."""
@@ -172,7 +173,7 @@ class WhisperDaemon:
             self._stop_event = None
 
         self._recording = True
-        self._update_state("recording")
+        self._update_state(AppState.RECORDING)
 
         # Interim-Datei löschen, um veralteten Text zu vermeiden
         INTERIM_FILE.unlink(missing_ok=True)
@@ -214,7 +215,7 @@ class WhisperDaemon:
         self._last_interim_mtime = 0.0
 
         def poll_interim() -> None:
-            if self._current_state != "recording":
+            if self._current_state != AppState.RECORDING:
                 return
             try:
                 mtime = INTERIM_FILE.stat().st_mtime
@@ -222,7 +223,7 @@ class WhisperDaemon:
                     self._last_interim_mtime = mtime
                     interim_text = INTERIM_FILE.read_text().strip()
                     if interim_text:
-                        self._update_state("recording", interim_text)
+                        self._update_state(AppState.RECORDING, interim_text)
             except FileNotFoundError:
                 pass
             except OSError:
@@ -270,6 +271,9 @@ class WhisperDaemon:
 
                 # LLM-Nachbearbeitung (optional)
                 if self.refine and transcript:
+                    self._result_queue.put(
+                        DaemonMessage(type=MessageType.STATUS_UPDATE, payload=AppState.REFINING)
+                    )
                     transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
@@ -279,7 +283,9 @@ class WhisperDaemon:
                 elif not self.refine:
                     logger.debug("Refine deaktiviert (self.refine=False)")
 
-                self._result_queue.put(transcript)
+                self._result_queue.put(
+                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload=transcript)
+                )
 
             finally:
                 loop.close()
@@ -344,6 +350,9 @@ class WhisperDaemon:
                 
                 # LLM-Refine
                 if self.refine and transcript:
+                    self._result_queue.put(
+                        DaemonMessage(type=MessageType.STATUS_UPDATE, payload=AppState.REFINING)
+                    )
                     transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
@@ -351,7 +360,9 @@ class WhisperDaemon:
                         context=self.context,
                     )
                 
-                self._result_queue.put(transcript)
+                self._result_queue.put(
+                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload=transcript)
+                )
                 
             finally:
                 if os.path.exists(temp_path):
@@ -382,7 +393,7 @@ class WhisperDaemon:
                 logger.warning("Worker-Thread noch aktiv nach Timeout")
 
         self._recording = False
-        self._update_state("transcribing")
+        self._update_state(AppState.TRANSCRIBING)
 
         # Polling statt Blocking: Main-Thread bleibt reaktiv für UI
         self._start_result_polling()
@@ -394,18 +405,36 @@ class WhisperDaemon:
         def check_result() -> None:
             try:
                 result = self._result_queue.get_nowait()
-                self._stop_result_polling()
-
+                
+                # Exception Handling
                 if isinstance(result, Exception):
+                    self._stop_result_polling()
                     logger.error(f"Fehler: {result}")
                     get_sound_player().play("error")
-                    self._update_state("error")
-                elif result:
-                    self._paste_result(result)
-                    self._update_state("done")
-                else:
-                    logger.warning("Leeres Transkript")
-                    self._update_state("idle")
+                    self._update_state(AppState.ERROR)
+                    return
+
+                # DaemonMessage Handling
+                if isinstance(result, DaemonMessage):
+                    if result.type == MessageType.STATUS_UPDATE:
+                        self._update_state(result.payload)
+                        return # Continue polling
+                    
+                    elif result.type == MessageType.TRANSCRIPT_RESULT:
+                        self._stop_result_polling()
+                        transcript = result.payload
+                        if transcript:
+                            self._paste_result(transcript)
+                            self._update_state(AppState.DONE, transcript)
+                        else:
+                            logger.warning("Leeres Transkript")
+                            self._update_state(AppState.IDLE)
+                        return
+
+                # Fallback / Unerwarteter Typ
+                self._stop_result_polling()
+                logger.error(f"Unerwarteter Result-Typ: {type(result)}")
+                self._update_state(AppState.ERROR)
 
             except queue.Empty:
                 pass  # Noch kein Result
