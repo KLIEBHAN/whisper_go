@@ -410,7 +410,7 @@ class OverlayController:
                 self._text_field.setFont_(italic_font)
 
                 self._text_field.setTextColor_(
-                    NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+                    NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5)
                 )
             else:
                 # Fallback falls Recording ohne Text (sollte eigentlich Visualisierung haben)
@@ -453,9 +453,11 @@ class OverlayController:
                 display_text = "Done"
                 
             self._text_field.setStringValue_(display_text)
-            self._text_field.setTextColor_(_get_overlay_color(51, 217, 178))
+            self._text_field.setTextColor_(
+                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.95)
+            )
             self._text_field.setFont_(
-                NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightBold)
+                NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightSemibold)
             )
             self._fade_in()
             self._start_fade_out_timer()
