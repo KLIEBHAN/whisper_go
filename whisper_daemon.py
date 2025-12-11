@@ -28,6 +28,7 @@ import threading
 import time
 from pathlib import Path
 
+
 # --- Emergency Logging (Before everything else) ---
 def emergency_log(msg: str):
     """Schreibt direkt in eine Datei im User-Home, falls Logging versagt."""
@@ -39,6 +40,7 @@ def emergency_log(msg: str):
             f.write(f"[{timestamp}] {msg}\n")
     except Exception:
         pass
+
 
 emergency_log("=== Booting Whisper Daemon ===")
 
@@ -52,7 +54,10 @@ try:
     from whisper_platform import get_sound_player
     from utils.state import AppState, DaemonMessage, MessageType
     from utils import parse_hotkey, paste_transcript
-    from utils.permissions import check_microphone_permission, check_accessibility_permission
+    from utils.permissions import (
+        check_microphone_permission,
+        check_accessibility_permission,
+    )
     from ui import MenuBarController, OverlayController
 except Exception as e:
     emergency_log(f"CRITICAL IMPORT ERROR: {e}")
@@ -82,11 +87,11 @@ logger = logging.getLogger("whisper_go")
 class WhisperDaemon:
     """
     Unified Daemon für whisper_go.
-    
+
     Architektur:
         Main-Thread: Hotkey-Listener (QuickMacHotKey) + UI-Updates
         Worker-Thread: Deepgram-Streaming (async)
-    
+
     State-Flow:
         idle → [Hotkey] → recording → [Hotkey] → transcribing → done/error → idle
     """
@@ -99,7 +104,6 @@ class WhisperDaemon:
         refine: bool = False,
         refine_model: str | None = None,
         refine_provider: str | None = None,
-
         context: str | None = None,
         mode: str | None = None,
     ):
@@ -139,10 +143,7 @@ class WhisperDaemon:
     def _update_state(self, state: AppState, text: str | None = None) -> None:
         """Aktualisiert State und benachrichtigt UI-Controller."""
         self._current_state = state
-        logger.debug(
-            f"State: {state}"
-            + (f" text='{text[:20]}...'" if text else "")
-        )
+        logger.debug(f"State: {state}" + (f" text='{text[:20]}...'" if text else ""))
 
         # UI-Controller aktualisieren
         if self._menubar:
@@ -273,10 +274,10 @@ class WhisperDaemon:
     def _streaming_worker(self) -> None:
         """
         Hintergrund-Thread für Deepgram-Streaming.
-        
+
         Läuft in eigenem Thread, weil Deepgram async ist,
         aber der Main-Thread für QuickMacHotKey und UI frei bleiben muss.
-        
+
         Lifecycle: Start → Mikrofon → Stream → Stop-Event → Finalize → Result
         """
         import asyncio
@@ -304,7 +305,9 @@ class WhisperDaemon:
                 # LLM-Nachbearbeitung (optional)
                 if self.refine and transcript:
                     self._result_queue.put(
-                        DaemonMessage(type=MessageType.STATUS_UPDATE, payload=AppState.REFINING)
+                        DaemonMessage(
+                            type=MessageType.STATUS_UPDATE, payload=AppState.REFINING
+                        )
                     )
                     transcript = refine_transcript(
                         transcript,
@@ -316,7 +319,9 @@ class WhisperDaemon:
                     logger.debug("Refine deaktiviert (self.refine=False)")
 
                 self._result_queue.put(
-                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload=transcript)
+                    DaemonMessage(
+                        type=MessageType.TRANSCRIPT_RESULT, payload=transcript
+                    )
                 )
 
             finally:
@@ -329,21 +334,21 @@ class WhisperDaemon:
     def _recording_worker(self) -> None:
         """
         Standard-Aufnahme für OpenAI, Groq, Local.
-        
+
         Nimmt Audio auf bis Stop-Event, speichert als WAV,
         und ruft dann Provider direkt auf.
         """
         import numpy as np
         import sounddevice as sd
         import soundfile as sf
-        
+
         recorded_chunks = []
         player = get_sound_player()
-        
+
         try:
             # Ready-Sound
             player.play("ready")
-            
+
             # Aufnahme-Loop
             def callback(indata, frames, time, status):
                 recorded_chunks.append(indata.copy())
@@ -355,43 +360,45 @@ class WhisperDaemon:
                     )
                 except queue.Full:
                     pass
-                
-            with sd.InputStream(samplerate=16000, channels=1, dtype="float32", callback=callback):
+
+            with sd.InputStream(
+                samplerate=16000, channels=1, dtype="float32", callback=callback
+            ):
                 while not self._stop_event.is_set():
                     sd.sleep(50)
-            
+
             # Stop-Sound
             player.play("stop")
-            
+
             # Speichern
             if not recorded_chunks:
                 logger.warning("Keine Audiodaten aufgenommen")
                 return
 
             audio_data = np.concatenate(recorded_chunks)
-            
+
             # Temp-File erstellen
             fd, temp_path = tempfile.mkstemp(suffix=".wav")
             os.close(fd)
-            
+
             try:
                 sf.write(temp_path, audio_data, 16000)
-                
+
                 # Update State: Transcribing
                 # (via Queue nicht direkt möglich, aber _stop_recording setzt es im Main-Thread)
-                
+
                 # Transkribieren via Provider
                 provider = get_provider(self.mode)
                 transcript = provider.transcribe(
-                    Path(temp_path),
-                    model=self.model,
-                    language=self.language
+                    Path(temp_path), model=self.model, language=self.language
                 )
-                
+
                 # LLM-Refine
                 if self.refine and transcript:
                     self._result_queue.put(
-                        DaemonMessage(type=MessageType.STATUS_UPDATE, payload=AppState.REFINING)
+                        DaemonMessage(
+                            type=MessageType.STATUS_UPDATE, payload=AppState.REFINING
+                        )
                     )
                     transcript = refine_transcript(
                         transcript,
@@ -399,15 +406,17 @@ class WhisperDaemon:
                         provider=self.refine_provider,
                         context=self.context,
                     )
-                
+
                 self._result_queue.put(
-                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload=transcript)
+                    DaemonMessage(
+                        type=MessageType.TRANSCRIPT_RESULT, payload=transcript
+                    )
                 )
-                
+
             finally:
                 if os.path.exists(temp_path):
                     os.unlink(temp_path)
-                    
+
         except Exception as e:
             logger.exception(f"Recording-Worker Fehler: {e}")
             self._result_queue.put(e)
@@ -450,17 +459,17 @@ class WhisperDaemon:
                 while True:
                     result = self._result_queue.get_nowait()
                     processed_count += 1
-                    
+
                     # Exception Handling
                     if isinstance(result, Exception):
                         self._stop_result_polling()
                         logger.error(f"Fehler: {result}")
-                        emergency_log(f"Worker Exception: {result}") # Backup log
-                        
+                        emergency_log(f"Worker Exception: {result}")  # Backup log
+
                         # API-Key-Fehler als Pop-up anzeigen
                         if isinstance(result, ValueError):
                             show_error_alert("API-Key fehlt", str(result))
-                        
+
                         get_sound_player().play("error")
                         self._update_state(AppState.ERROR)
                         return
@@ -470,15 +479,21 @@ class WhisperDaemon:
                         if result.type == MessageType.STATUS_UPDATE:
                             self._update_state(result.payload)
                             # Continue draining
-                        
+
                         elif result.type == MessageType.AUDIO_LEVEL:
                             level = result.payload
                             # VAD Logic: Switch LISTENING -> RECORDING
-                            if self._current_state == AppState.LISTENING and level > VAD_THRESHOLD:
-                                 self._update_state(AppState.RECORDING)
-                            
+                            if (
+                                self._current_state == AppState.LISTENING
+                                and level > VAD_THRESHOLD
+                            ):
+                                self._update_state(AppState.RECORDING)
+
                             # Forward to Overlay (nur wenn noch Recording/Listening)
-                            if self._overlay and self._current_state in [AppState.LISTENING, AppState.RECORDING]:
+                            if self._overlay and self._current_state in [
+                                AppState.LISTENING,
+                                AppState.RECORDING,
+                            ]:
                                 self._overlay.update_audio_level(level)
                             # Continue draining
 
@@ -492,7 +507,7 @@ class WhisperDaemon:
                                 logger.warning("Leeres Transkript")
                                 self._update_state(AppState.IDLE)
                             return
-                    
+
                     # Safety Break nach zu vielen Messages pro Tick, um UI nicht zu blockieren
                     if processed_count > 50:
                         break
@@ -521,38 +536,84 @@ class WhisperDaemon:
     def _setup_app_menu(self, app) -> None:
         """Erstellt Application Menu für CMD+Q Support."""
         from AppKit import NSMenu, NSMenuItem, NSEventModifierFlagCommand  # type: ignore[import-not-found]
-        
+
         # Hauptmenüleiste
         menubar = NSMenu.alloc().init()
-        
+
         # App-Menü (erstes Menü, zeigt App-Name in der Menüleiste)
         app_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Whisper Go", None, ""
         )
         menubar.addItem_(app_menu_item)
-        
+
         # App-Menü Inhalt (Submenu)
         app_menu = NSMenu.alloc().initWithTitle_("Whisper Go")
-        
+
         # "About Whisper Go" Item
         about_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "About Whisper Go", "orderFrontStandardAboutPanel:", ""
         )
         app_menu.addItem_(about_item)
-        
+
         app_menu.addItem_(NSMenuItem.separatorItem())
-        
+
         # "Quit Whisper Go" Item mit CMD+Q
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Quit Whisper Go", "terminate:", "q"
         )
         quit_item.setKeyEquivalentModifierMask_(NSEventModifierFlagCommand)
         app_menu.addItem_(quit_item)
-        
+
         app_menu_item.setSubmenu_(app_menu)
-        
+
         # Menüleiste aktivieren
         app.setMainMenu_(menubar)
+
+    def _show_welcome_if_needed(self) -> None:
+        """Zeigt Welcome Window beim ersten Start oder wenn aktiviert."""
+        from utils import has_seen_onboarding, get_show_welcome_on_startup
+        from ui import WelcomeController
+
+        show_welcome = not has_seen_onboarding() or get_show_welcome_on_startup()
+
+        if show_welcome:
+            self._welcome = WelcomeController(
+                hotkey=self.hotkey,
+                config={
+                    "deepgram_key": bool(os.getenv("DEEPGRAM_API_KEY")),
+                    "groq_key": bool(os.getenv("GROQ_API_KEY")),
+                    "refine": self.refine,
+                    "refine_model": self.refine_model,
+                    "language": self.language,
+                    "mode": self.mode,
+                },
+            )
+            self._welcome.show()
+        else:
+            self._welcome = None
+
+        # Callback für Menubar "Setup..." setzen
+        if self._menubar:
+            self._menubar.set_welcome_callback(self._show_welcome_window)
+
+    def _show_welcome_window(self) -> None:
+        """Zeigt Welcome Window (via Menubar)."""
+        from ui import WelcomeController
+
+        # Neues Window erstellen falls noch nicht vorhanden
+        if self._welcome is None:
+            self._welcome = WelcomeController(
+                hotkey=self.hotkey,
+                config={
+                    "deepgram_key": bool(os.getenv("DEEPGRAM_API_KEY")),
+                    "groq_key": bool(os.getenv("GROQ_API_KEY")),
+                    "refine": self.refine,
+                    "refine_model": self.refine_model,
+                    "language": self.language,
+                    "mode": self.mode,
+                },
+            )
+        self._welcome.show()
 
     def run(self) -> None:
         """Startet Daemon (blockiert)."""
@@ -563,12 +624,12 @@ class WhisperDaemon:
 
         # NSApplication initialisieren
         app = NSApplication.sharedApplication()
-        
+
         # Dock-Icon: Konfigurierbar via ENV (default: an)
         # 0 = Regular (Dock-Icon), 1 = Accessory (kein Dock-Icon)
         show_dock = os.getenv("WHISPER_GO_DOCK_ICON", "true").lower() != "false"
         app.setActivationPolicy_(0 if show_dock else 1)
-        
+
         # Application Menu erstellen (für CMD+Q Support wenn Dock-Icon aktiv)
         if show_dock:
             self._setup_app_menu(app)
@@ -579,6 +640,9 @@ class WhisperDaemon:
         self._overlay = OverlayController()
         logger.info("UI-Controller bereit")
 
+        # Welcome Window (beim ersten Start oder wenn aktiviert)
+        self._show_welcome_if_needed()
+
         # Hotkey parsen
         virtual_key, modifier_mask = parse_hotkey(self.hotkey)
 
@@ -586,7 +650,7 @@ class WhisperDaemon:
         if not check_microphone_permission():
             logger.error("Daemon Start abgebrochen: Fehlende Mikrofon-Berechtigung")
             return
-        
+
         # Accessibility prüfen (nur Warnung, nicht blockierend)
         check_accessibility_permission()
 
@@ -608,9 +672,7 @@ class WhisperDaemon:
 
         # FIX: Ctrl+C Support
         # 1. Dummy-Timer, damit der Python-Interpreter regelmäßig läuft und Signale prüft
-        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
-            0.1, True, lambda _: None
-        )
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.1, True, lambda _: None)
 
         # 2. Signal-Handler, der die App sauber beendet
         def signal_handler(sig, frame):
@@ -636,7 +698,7 @@ def load_environment() -> None:
         user_env = USER_CONFIG_DIR / ".env"
         if user_env.exists():
             load_dotenv(user_env)
-        
+
         # Priorität 2: .env im aktuellen Verzeichnis (für Dev)
         local_env = Path(".env")
         if local_env.exists():
@@ -654,7 +716,7 @@ def load_environment() -> None:
 def main() -> int:
     """CLI-Einstiegspunkt."""
     import argparse
-    
+
     # Globaler Exception Handler für Crashes
     def handle_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -662,10 +724,10 @@ def main() -> int:
             return
         msg = f"Uncaught exception: {exc_type.__name__}: {exc_value}"
         logger.critical(msg, exc_info=(exc_type, exc_value, exc_traceback))
-        emergency_log(msg) # Backup
-        
+        emergency_log(msg)  # Backup
+
     sys.excepthook = handle_exception
-    
+
     emergency_log("=== Whisper Go Daemon gestartet ===")
 
     # Environment laden bevor Argumente definiert werden (für Defaults)
