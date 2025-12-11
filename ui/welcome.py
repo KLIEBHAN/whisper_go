@@ -16,11 +16,12 @@ from utils.preferences import (
 
 # Window-Konfiguration
 WELCOME_WIDTH = 500
-WELCOME_HEIGHT = 580
+WELCOME_HEIGHT = 650  # Erhöht für besseres Layout
 WELCOME_CORNER_RADIUS = 16
 WELCOME_PADDING = 24
-SECTION_SPACING = 20
+SECTION_SPACING = 16  # Reduziert für kompakteres Layout
 LABEL_SPACING = 6
+FOOTER_HEIGHT = 50  # Reservierter Bereich für Footer
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -420,18 +421,31 @@ class WelcomeController:
         return y - SECTION_SPACING
 
     def _build_footer(self) -> None:
-        """Erstellt Footer mit Checkbox und Start-Button."""
+        """Erstellt Footer mit Separator, Checkbox und Start-Button."""
         from AppKit import (  # type: ignore[import-not-found]
             NSBezelStyleRounded,
+            NSBox,
             NSButton,
             NSButtonTypeSwitch,
+            NSColor,
             NSFont,
             NSFontWeightSemibold,
             NSMakeRect,
         )
         import objc  # type: ignore[import-not-found]
 
-        footer_y = WELCOME_PADDING
+        footer_y = WELCOME_PADDING + 8
+
+        # Separator-Linie über dem Footer
+        separator_y = footer_y + 40
+        separator = NSBox.alloc().initWithFrame_(
+            NSMakeRect(
+                WELCOME_PADDING, separator_y, WELCOME_WIDTH - 2 * WELCOME_PADDING, 1
+            )
+        )
+        separator.setBoxType_(2)  # Separator
+        separator.setBorderColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.2))
+        self._content_view.addSubview_(separator)
 
         # "Show at startup" Checkbox
         checkbox = NSButton.alloc().initWithFrame_(
