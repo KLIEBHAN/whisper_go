@@ -732,14 +732,15 @@ def load_environment() -> None:
         from config import USER_CONFIG_DIR
 
         # Priorität 1: .env im User-Verzeichnis ~/.whisper_go/.env
+        # override=True damit geänderte Werte auch wirksam werden
         user_env = USER_CONFIG_DIR / ".env"
         if user_env.exists():
-            load_dotenv(user_env)
+            load_dotenv(user_env, override=True)
 
         # Priorität 2: .env im aktuellen Verzeichnis (für Dev)
         local_env = Path(".env")
         if local_env.exists():
-            load_dotenv(local_env)
+            load_dotenv(local_env, override=True)
 
     except ImportError:
         pass
