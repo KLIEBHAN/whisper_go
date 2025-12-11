@@ -165,8 +165,10 @@ class WelcomeController:
         return y - 72
 
     def _build_hotkey_card(self, y: int) -> int:
-        """Erstellt Hotkey-Karte mit Eingabefeld."""
+        """Erstellt Hotkey-Karte mit Eingabefeld und Restart-Button."""
         from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
             NSColor,
             NSFont,
             NSFontWeightMedium,
@@ -175,6 +177,7 @@ class WelcomeController:
             NSTextAlignmentCenter,
             NSTextField,
         )
+        import objc  # type: ignore[import-not-found]
 
         card_height = 85
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
@@ -204,7 +207,7 @@ class WelcomeController:
                 WELCOME_PADDING + CARD_PADDING, card_y + card_height - 46, 350, 14
             )
         )
-        desc.setStringValue_("Press to start/stop recording (restart required)")
+        desc.setStringValue_("Press to start/stop recording")
         desc.setBezeled_(False)
         desc.setDrawsBackground_(False)
         desc.setEditable_(False)
@@ -213,8 +216,8 @@ class WelcomeController:
         desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
         self._content_view.addSubview_(desc)
 
-        # Hotkey-Eingabefeld (volle Breite ohne Save-Button)
-        field_width = card_width - 2 * CARD_PADDING
+        # Hotkey-Eingabefeld (mit Platz für Restart-Button)
+        field_width = card_width - 2 * CARD_PADDING - 70
         field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(WELCOME_PADDING + CARD_PADDING, card_y + 12, field_width, 24)
         )
@@ -224,6 +227,27 @@ class WelcomeController:
         field.setAlignment_(NSTextAlignmentCenter)
         self._content_view.addSubview_(field)
         self._hotkey_field = field
+
+        # Restart-Button
+        restart_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - 60,
+                card_y + 12,
+                60,
+                24,
+            )
+        )
+        restart_btn.setTitle_("Restart")
+        restart_btn.setBezelStyle_(NSBezelStyleRounded)
+        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
+
+        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
+        restart_btn.setTarget_(restart_handler)
+        restart_btn.setAction_(
+            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
+        )
+        self._restart_handler = restart_handler
+        self._content_view.addSubview_(restart_btn)
 
         return card_y - CARD_SPACING
 
@@ -664,6 +688,35 @@ class WelcomeController:
                 1.5, False, lambda _: reset_title()
             )
 
+    def _restart_application(self) -> None:
+        """Speichert Settings und startet die Applikation neu."""
+        import logging
+        import os
+        import sys
+
+        log = logging.getLogger(__name__)
+
+        # Erst alle Settings speichern
+        self._save_all_settings()
+        log.info("Restarting application...")
+
+        # Kurze Verzögerung für UI-Feedback, dann Neustart
+        from Foundation import NSTimer  # type: ignore[import-not-found]
+
+        def do_restart():
+            # Schließe das Welcome-Fenster
+            if self._window:
+                self._window.close()
+
+            # Neustart via os.execv (ersetzt den aktuellen Prozess)
+            python = sys.executable
+            os.execv(python, [python] + sys.argv)
+
+        # Kleine Verzögerung damit "Saved!" noch angezeigt wird
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            0.5, False, lambda _: do_restart()
+        )
+
 
 # =============================================================================
 # Objective-C Handler Klassen
@@ -728,3 +781,26 @@ def _create_save_all_handler_class():
 
 
 _SaveAllHandler = _create_save_all_handler_class()
+
+
+def _create_restart_handler_class():
+    """Erstellt NSObject-Subklasse für Restart Button."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class RestartHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(RestartHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def restartApp_(self, _sender) -> None:
+            self._controller._restart_application()
+
+    return RestartHandler
+
+
+_RestartButtonHandler = _create_restart_handler_class()
