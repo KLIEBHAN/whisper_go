@@ -59,20 +59,23 @@ class WelcomeController:
         self.hotkey = hotkey
         self.config = config
         self._window = None
-        self._deepgram_field = None
-        self._groq_field = None
-        self._deepgram_status = None
-        self._groq_status = None
-        self._startup_checkbox = None
+        self._content_view = None
         self._on_start_callback = None
         self._on_settings_changed_callback = None
-        # Settings-Controls für Save-All
+
+        # UI-Referenzen (werden in _build_* Methoden gesetzt)
+        self._startup_checkbox = None
         self._hotkey_field = None
         self._mode_popup = None
         self._lang_popup = None
         self._refine_checkbox = None
         self._provider_popup = None
         self._model_field = None
+        self._save_btn = None
+        self._restart_handler = None
+        # API-Key-Felder werden dynamisch via setattr gesetzt:
+        # _{provider}_field, _{provider}_status für deepgram, groq, openai, openrouter
+
         self._build_window()
 
     def _build_window(self) -> None:
