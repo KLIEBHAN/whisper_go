@@ -19,7 +19,7 @@ from utils.preferences import (
 
 # Window-Konfiguration
 WELCOME_WIDTH = 500
-WELCOME_HEIGHT = 720
+WELCOME_HEIGHT = 825  # Erhöht für 4 API-Key-Felder
 WELCOME_PADDING = 20
 CARD_PADDING = 16
 CARD_CORNER_RADIUS = 12
@@ -261,7 +261,8 @@ class WelcomeController:
             NSTextField,
         )
 
-        card_height = 160
+        # 4 API Keys: Deepgram, Groq, OpenAI, OpenRouter
+        card_height = 265
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
@@ -283,18 +284,31 @@ class WelcomeController:
         title.setTextColor_(NSColor.whiteColor())
         self._content_view.addSubview_(title)
 
-        # Deepgram-Zeile (mehr Abstand zum Titel)
+        # API Key Zeilen (von oben nach unten)
         row_y = card_y + card_height - 70
-        self._build_api_row_compact(row_y, "Deepgram", "DEEPGRAM_API_KEY", True)
+        row_spacing = 54
 
-        # Groq-Zeile (mehr Abstand zwischen den Zeilen)
-        row_y -= 54
-        self._build_api_row_compact(row_y, "Groq (optional)", "GROQ_API_KEY", False)
+        # Deepgram (required for transcription)
+        self._build_api_row_compact(row_y, "Deepgram", "DEEPGRAM_API_KEY", "deepgram")
+        row_y -= row_spacing
+
+        # Groq (for refine)
+        self._build_api_row_compact(row_y, "Groq", "GROQ_API_KEY", "groq")
+        row_y -= row_spacing
+
+        # OpenAI (for refine)
+        self._build_api_row_compact(row_y, "OpenAI", "OPENAI_API_KEY", "openai")
+        row_y -= row_spacing
+
+        # OpenRouter (for refine)
+        self._build_api_row_compact(
+            row_y, "OpenRouter", "OPENROUTER_API_KEY", "openrouter"
+        )
 
         return card_y - CARD_SPACING
 
     def _build_api_row_compact(
-        self, y: int, label_text: str, key_name: str, is_deepgram: bool
+        self, y: int, label_text: str, key_name: str, provider: str
     ) -> None:
         """Erstellt kompakte API-Key-Zeile (ohne Save-Button, mit Copy/Paste)."""
         from AppKit import (  # type: ignore[import-not-found]
@@ -333,9 +347,7 @@ class WelcomeController:
         self._content_view.addSubview_(field)
 
         # Status-Indicator
-        has_key = bool(existing_key) or self.config.get(
-            "deepgram_key" if is_deepgram else "groq_key", False
-        )
+        has_key = bool(existing_key) or self.config.get(f"{provider}_key", False)
         status = NSTextField.alloc().initWithFrame_(
             NSMakeRect(base_x + field_width + 6, y + 2, 18, 18)
         )
@@ -350,12 +362,9 @@ class WelcomeController:
         )
         self._content_view.addSubview_(status)
 
-        if is_deepgram:
-            self._deepgram_field = field
-            self._deepgram_status = status
-        else:
-            self._groq_field = field
-            self._groq_status = status
+        # Referenzen speichern für Save
+        setattr(self, f"_{provider}_field", field)
+        setattr(self, f"_{provider}_status", status)
 
     def _build_settings_card(self, y: int) -> int:
         """Erstellt Settings-Karte mit konfigurierbaren Optionen."""
@@ -614,26 +623,25 @@ class WelcomeController:
             if hotkey:
                 save_env_setting("WHISPER_GO_HOTKEY", hotkey.lower())
 
-        # API Keys
-        if self._deepgram_field:
-            key = self._deepgram_field.stringValue().strip()
-            if key:
-                save_api_key("DEEPGRAM_API_KEY", key)
-                self._deepgram_status.setStringValue_("✓")
-                self._deepgram_status.setTextColor_(_get_color(51, 217, 178))
-            else:
-                self._deepgram_status.setStringValue_("✗")
-                self._deepgram_status.setTextColor_(_get_color(255, 82, 82, 0.7))
-
-        if self._groq_field:
-            key = self._groq_field.stringValue().strip()
-            if key:
-                save_api_key("GROQ_API_KEY", key)
-                self._groq_status.setStringValue_("✓")
-                self._groq_status.setTextColor_(_get_color(51, 217, 178))
-            else:
-                self._groq_status.setStringValue_("✗")
-                self._groq_status.setTextColor_(_get_color(255, 82, 82, 0.7))
+        # API Keys (alle 4 Provider)
+        api_keys = [
+            ("deepgram", "DEEPGRAM_API_KEY"),
+            ("groq", "GROQ_API_KEY"),
+            ("openai", "OPENAI_API_KEY"),
+            ("openrouter", "OPENROUTER_API_KEY"),
+        ]
+        for provider, env_key in api_keys:
+            field = getattr(self, f"_{provider}_field", None)
+            status = getattr(self, f"_{provider}_status", None)
+            if field and status:
+                key = field.stringValue().strip()
+                if key:
+                    save_api_key(env_key, key)
+                    status.setStringValue_("✓")
+                    status.setTextColor_(_get_color(51, 217, 178))
+                else:
+                    status.setStringValue_("✗")
+                    status.setTextColor_(_get_color(255, 82, 82, 0.7))
 
         # Mode
         if self._mode_popup:
