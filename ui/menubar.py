@@ -22,6 +22,8 @@ MENUBAR_ICONS = {
 class _MenuActionHandler(NSObject):
     """Objective-C Target für Menü-Actions."""
 
+    welcome_callback = None  # Callback für Setup-Fenster
+
     def initWithLogPath_(self, log_path: str):
         self = objc.super(_MenuActionHandler, self).init()
         if self is None:
@@ -39,6 +41,12 @@ class _MenuActionHandler(NSObject):
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.touch()
         NSWorkspace.sharedWorkspace().openFile_(str(log_path))
+
+    @objc.signature(b"v@:@")
+    def showSetup_(self, _sender) -> None:
+        """Öffnet das Setup/Welcome-Fenster."""
+        if self.welcome_callback:
+            self.welcome_callback()
 
 
 class MenuBarController:
@@ -58,7 +66,9 @@ class MenuBarController:
         )
 
         # Target für Menü-Callbacks
-        self._action_handler = _MenuActionHandler.alloc().initWithLogPath_(str(LOG_FILE))
+        self._action_handler = _MenuActionHandler.alloc().initWithLogPath_(
+            str(LOG_FILE)
+        )
 
         self._status_bar = NSStatusBar.systemStatusBar()
         self._status_item = self._status_bar.statusItemWithLength_(
@@ -77,6 +87,13 @@ class MenuBarController:
         menu.addItem_(title_item)
 
         menu.addItem_(NSMenuItem.separatorItem())
+
+        # Setup öffnen
+        setup_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Setup...", "showSetup:", ""
+        )
+        setup_item.setTarget_(self._action_handler)
+        menu.addItem_(setup_item)
 
         # Logs öffnen
         logs_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -108,3 +125,7 @@ class MenuBarController:
             self._status_item.setTitle_(f"{icon} {preview}")
         else:
             self._status_item.setTitle_(icon)
+
+    def set_welcome_callback(self, callback) -> None:
+        """Setzt Callback für Setup-Menü-Item."""
+        self._action_handler.welcome_callback = callback
