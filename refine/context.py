@@ -10,20 +10,12 @@ import os
 import sys
 
 from .prompts import DEFAULT_APP_CONTEXTS
+from utils.logging import get_session_id
 
 logger = logging.getLogger("whisper_go")
 
 # Cache für custom app contexts (aus ENV)
 _custom_app_contexts_cache: dict | None = None
-
-
-def _get_session_id() -> str:
-    """Holt Session-ID für Logging."""
-    try:
-        from utils.logging import get_session_id
-        return get_session_id()
-    except ImportError:
-        return "unknown"
 
 
 def _get_frontmost_app() -> str | None:
@@ -43,10 +35,10 @@ def _get_frontmost_app() -> str | None:
             app = NSWorkspace.sharedWorkspace().frontmostApplication()
             return app.localizedName() if app else None
         except ImportError:
-            logger.debug(f"[{_get_session_id()}] PyObjC/AppKit nicht verfügbar")
+            logger.debug(f"[{get_session_id()}] PyObjC/AppKit nicht verfügbar")
             return None
     except Exception as e:
-        logger.debug(f"[{_get_session_id()}] App-Detection fehlgeschlagen: {e}")
+        logger.debug(f"[{get_session_id()}] App-Detection fehlgeschlagen: {e}")
         return None
 
 
@@ -62,12 +54,12 @@ def _get_custom_app_contexts() -> dict:
         try:
             _custom_app_contexts_cache = json.loads(custom)
             logger.debug(
-                f"[{_get_session_id()}] Custom app contexts geladen: "
+                f"[{get_session_id()}] Custom app contexts geladen: "
                 f"{list(_custom_app_contexts_cache.keys())}"
             )
         except json.JSONDecodeError as e:
             logger.warning(
-                f"[{_get_session_id()}] WHISPER_GO_APP_CONTEXTS ungültiges JSON: {e}"
+                f"[{get_session_id()}] WHISPER_GO_APP_CONTEXTS ungültiges JSON: {e}"
             )
             _custom_app_contexts_cache = {}
     else:

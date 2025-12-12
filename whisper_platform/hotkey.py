@@ -9,6 +9,13 @@ import logging
 import sys
 from typing import Callable
 
+# Reuse the canonical macOS hotkey parsing + maps from utils to avoid duplication
+from utils.hotkey import (  # noqa: F401
+    KEY_CODE_MAP as VIRTUAL_KEY_CODES,
+    MODIFIER_MAP as MODIFIER_MASKS,
+    parse_hotkey,
+)
+
 logger = logging.getLogger("whisper_go.platform.hotkey")
 
 # Hotkey-Callback Typ
@@ -18,80 +25,9 @@ HotkeyCallback = Callable[[], None]
 # =============================================================================
 # Hotkey-Parsing (gemeinsam für alle Plattformen)
 # =============================================================================
-
-# Virtual Key Codes (Carbon/macOS)
-VIRTUAL_KEY_CODES = {
-    # Funktionstasten
-    "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
-    "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
-    "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79,
-    "f19": 80, "f20": 90,
-    # Fn / Globe key
-    "fn": 63,  # kVK_Function
-    # Buchstaben
-    "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
-    "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31,
-    "p": 35, "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9,
-    "w": 13, "x": 7, "y": 16, "z": 6,
-    # Zahlen
-    "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
-    "7": 26, "8": 28, "9": 25,
-    # Sondertasten
-    "space": 49, "tab": 48, "return": 36, "enter": 36, "escape": 53,
-    "esc": 53, "delete": 51, "backspace": 51, "forwarddelete": 117,
-    # CapsLock
-    "capslock": 57, "caps_lock": 57,
-    # Satzzeichen / Symbole (ANSI)
-    ".": 47, ",": 43, "/": 44, "\\": 42, ";": 41, "'": 39, "`": 50,
-    "-": 27, "=": 24, "[": 33, "]": 30,
-}
-
-# Modifier Masks (Carbon)
-MODIFIER_MASKS = {
-    "cmd": 1 << 8,      # cmdKey
-    "command": 1 << 8,
-    "shift": 1 << 9,    # shiftKey
-    "option": 1 << 11,  # optionKey
-    "alt": 1 << 11,
-    "control": 1 << 12, # controlKey
-    "ctrl": 1 << 12,
-}
-
-
-def parse_hotkey(hotkey_str: str) -> tuple[int, int]:
-    """Parst Hotkey-String in (virtualKey, modifierMask).
-
-    Args:
-        hotkey_str: Hotkey als String (z.B. "f19", "cmd+shift+r")
-
-    Returns:
-        Tuple (virtualKey, modifierMask) für QuickMacHotKey
-
-    Raises:
-        ValueError: Bei ungültigem Hotkey
-    """
-    parts = [p.strip().lower() for p in hotkey_str.split("+")]
-
-    if not parts:
-        raise ValueError(f"Leerer Hotkey: {hotkey_str}")
-
-    # Letzer Teil ist die Haupttaste
-    key = parts[-1]
-    modifiers = parts[:-1]
-
-    # Virtual Key Code ermitteln
-    if key not in VIRTUAL_KEY_CODES:
-        raise ValueError(f"Unbekannte Taste: {key}")
-    virtual_key = VIRTUAL_KEY_CODES[key]
-
-    # Modifier Mask berechnen
-    modifier_mask = 0
-    for mod in modifiers:
-        if mod not in MODIFIER_MASKS:
-            raise ValueError(f"Unbekannter Modifier: {mod}")
-        modifier_mask |= MODIFIER_MASKS[mod]
-
-    return virtual_key, modifier_mask
+#
+# Die eigentliche Implementierung liegt in utils.hotkey.parse_hotkey.
+# Hier nur Re-Exports/ Aliases, damit whisper_platform stabil bleibt.
 
 
 class MacOSHotkeyListener:

@@ -10,6 +10,8 @@ import os
 
 from .prompts import get_prompt_for_context
 from .context import detect_context
+from utils.timing import log_preview
+from utils.logging import get_session_id
 
 # Zentrale Konfiguration importieren
 from config import (
@@ -22,15 +24,6 @@ logger = logging.getLogger("whisper_go")
 
 # Groq-Client Singleton
 _groq_client = None
-
-
-def _get_session_id() -> str:
-    """Holt Session-ID für Logging."""
-    try:
-        from utils.logging import get_session_id
-        return get_session_id()
-    except ImportError:
-        return "unknown"
 
 
 def _get_groq_client():
@@ -46,7 +39,7 @@ def _get_groq_client():
         if not api_key:
             raise ValueError("GROQ_API_KEY nicht gesetzt")
         _groq_client = Groq(api_key=api_key)
-        logger.debug(f"[{_get_session_id()}] Groq-Client initialisiert")
+        logger.debug(f"[{get_session_id()}] Groq-Client initialisiert")
     return _groq_client
 
 
@@ -80,13 +73,6 @@ def _extract_message_content(content) -> str:
     return content.strip()
 
 
-def _log_preview(text: str, max_length: int = 100) -> str:
-    """Kürzt Text für Log-Ausgabe mit Ellipsis wenn nötig."""
-    if len(text) <= max_length:
-        return text
-    return f"{text[:max_length]}..."
-
-
 def refine_transcript(
     transcript: str,
     model: str | None = None,
@@ -116,7 +102,7 @@ def refine_transcript(
         def timed_operation(name):
             yield
 
-    session_id = _get_session_id()
+    session_id = get_session_id()
 
     # Leeres Transkript → nichts zu tun
     if not transcript or not transcript.strip():
@@ -206,7 +192,7 @@ def refine_transcript(
             response = client.responses.create(**api_params)
             result = response.output_text.strip()
 
-    logger.debug(f"[{session_id}] Output: {_log_preview(result)}")
+    logger.debug(f"[{session_id}] Output: {log_preview(result)}")
     return result
 
 

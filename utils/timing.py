@@ -24,18 +24,31 @@ def log_preview(text: str, max_length: int = 100) -> str:
 
 
 @contextmanager
-def timed_operation(name: str):
+def timed_operation(
+    name: str,
+    *,
+    logger=None,
+    include_session: bool = True,
+):
     """Kontextmanager für Zeitmessung mit automatischem Logging.
+
+    Args:
+        name: Name der Operation (Log-Label).
+        logger: Optionaler Logger. Default: whisper_go Root-Logger.
+        include_session: Wenn False, wird keine Session-ID vorangestellt.
 
     Usage:
         with timed_operation("API-Call"):
             response = api.call()
+        with timed_operation("Provider-Call", logger=provider_logger, include_session=False):
+            ...
     """
-    logger = get_logger()
-    session_id = get_session_id()
+    op_logger = logger or get_logger()
+    session_id = get_session_id() if include_session else ""
+    prefix = f"[{session_id}] " if session_id else ""
     start = time.perf_counter()
     try:
         yield
     finally:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.info(f"[{session_id}] {name}: {format_duration(elapsed_ms)}")
+        op_logger.info(f"{prefix}{name}: {format_duration(elapsed_ms)}")

@@ -20,17 +20,9 @@ from config import (
     PID_FILE,
     TEMP_RECORDING_FILENAME,
 )
+from utils.logging import get_session_id
 
 logger = logging.getLogger("whisper_go")
-
-
-def _get_session_id() -> str:
-    """Holt Session-ID für Logging."""
-    try:
-        from utils.logging import get_session_id
-        return get_session_id()
-    except ImportError:
-        return "unknown"
 
 
 def _log(message: str) -> None:
@@ -104,7 +96,7 @@ class AudioRecorder:
         if play_ready_sound:
             _play_sound("ready")
 
-        logger.info(f"[{_get_session_id()}] Aufnahme gestartet")
+        logger.info(f"[{get_session_id()}] Aufnahme gestartet")
 
     def stop(self, output_path: Path | None = None) -> Path:
         """Stoppt die Aufnahme und speichert die Audiodatei.
@@ -129,12 +121,12 @@ class AudioRecorder:
         self._stop_event.set()
 
         recording_duration = time.perf_counter() - self._recording_start
-        logger.info(f"[{_get_session_id()}] Aufnahme: {recording_duration:.1f}s")
+        logger.info(f"[{get_session_id()}] Aufnahme: {recording_duration:.1f}s")
 
         _play_sound("stop")
 
         if not self._recorded_chunks:
-            logger.error(f"[{_get_session_id()}] Keine Audiodaten aufgenommen")
+            logger.error(f"[{get_session_id()}] Keine Audiodaten aufgenommen")
             raise ValueError("Keine Audiodaten aufgenommen.")
 
         audio_data = np.concatenate(self._recorded_chunks)
@@ -225,7 +217,7 @@ def record_audio_daemon() -> Path:
     recorded_chunks: list = []
     recording_start = time.perf_counter()
     should_stop = False
-    session_id = _get_session_id()
+    session_id = get_session_id()
 
     def on_audio_chunk(indata, _frames, _time_info, _status):
         """Callback: Sammelt Audio-Chunks während der Aufnahme."""

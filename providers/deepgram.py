@@ -4,20 +4,16 @@ Nutzt Deepgram's REST API für Transkription.
 Für Streaming siehe deepgram_stream.py.
 """
 
-import json
 import logging
 import os
-from contextlib import contextmanager
 from pathlib import Path
-import time
+from utils.timing import timed_operation
+from utils.vocabulary import load_vocabulary
 
 logger = logging.getLogger("whisper_go.providers.deepgram")
 
 # Singleton Client
 _client = None
-
-# Vocabulary-Pfad
-VOCABULARY_FILE = Path.home() / ".whisper_go" / "vocabulary.json"
 
 
 def _get_client():
@@ -34,32 +30,6 @@ def _get_client():
     return _client
 
 
-def _load_vocabulary() -> dict:
-    """Lädt Custom Vocabulary aus JSON-Datei."""
-    if not VOCABULARY_FILE.exists():
-        return {"keywords": []}
-    try:
-        data = json.loads(VOCABULARY_FILE.read_text())
-        if not isinstance(data.get("keywords"), list):
-            data["keywords"] = []
-        return data
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Vocabulary-Datei fehlerhaft: {e}")
-        return {"keywords": []}
-
-
-@contextmanager
-def _timed_operation(name: str):
-    """Kontextmanager für Zeitmessung."""
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        if elapsed_ms >= 1000:
-            logger.info(f"{name}: {elapsed_ms / 1000:.2f}s")
-        else:
-            logger.info(f"{name}: {elapsed_ms:.0f}ms")
 
 
 class DeepgramProvider:
@@ -114,7 +84,7 @@ class DeepgramProvider:
 
         # Vocabulary laden
         MAX_KEYWORDS = 100
-        vocab = _load_vocabulary()
+        vocab = load_vocabulary()
         keywords = vocab.get("keywords", [])[:MAX_KEYWORDS]
 
         logger.info(
@@ -136,7 +106,7 @@ class DeepgramProvider:
             else:
                 vocab_params["keywords"] = keywords
 
-        with _timed_operation("Deepgram-Transkription"):
+        with timed_operation("Deepgram-Transkription", logger=logger, include_session=False):
             response = client.listen.v1.media.transcribe_file(
                 request=audio_data,
                 model=model,

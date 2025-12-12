@@ -26,6 +26,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncIterator, Callable
 
+from utils.timing import log_preview
+from utils.logging import get_session_id
+
 if TYPE_CHECKING:
     from deepgram.listen.v1.socket_client import AsyncV1SocketClient
 
@@ -47,30 +50,6 @@ logger = logging.getLogger("whisper_go")
 
 # Default-Modell (Alias für Rückwärtskompatibilität)
 DEFAULT_MODEL = DEFAULT_DEEPGRAM_MODEL
-
-# Session-ID Cache
-_session_id: str = ""
-
-
-def _get_session_id() -> str:
-    """Holt Session-ID für Logging."""
-    global _session_id
-    if not _session_id:
-        try:
-            from utils.logging import get_session_id
-            _session_id = get_session_id()
-        except ImportError:
-            import uuid
-            _session_id = uuid.uuid4().hex[:8]
-    return _session_id
-
-
-def _log_preview(text: str, max_length: int = 100) -> str:
-    """Kürzt Text für Log-Ausgabe mit Ellipsis wenn nötig."""
-    if len(text) <= max_length:
-        return text
-    return f"{text[:max_length]}..."
-
 
 def _play_sound(name: str) -> None:
     """Spielt benannten Sound ab."""
@@ -192,7 +171,7 @@ async def deepgram_stream_core(
     from deepgram.core.events import EventType
     from deepgram.extensions.types.sockets import ListenV1ControlMessage
 
-    session_id = _get_session_id()
+    session_id = get_session_id()
 
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
@@ -232,7 +211,7 @@ async def deepgram_stream_core(
 
         if is_final:
             final_transcripts.append(transcript)
-            logger.info(f"[{session_id}] Final: {_log_preview(transcript)}")
+            logger.info(f"[{session_id}] Final: {log_preview(transcript)}")
         else:
             # Throttling: Max alle INTERIM_THROTTLE_MS schreiben
             now = time.perf_counter()
@@ -241,7 +220,7 @@ async def deepgram_stream_core(
                     INTERIM_FILE.write_text(transcript)
                     last_interim_write = now
                     logger.debug(
-                        f"[{session_id}] Interim: {_log_preview(transcript, 30)}"
+                        f"[{session_id}] Interim: {log_preview(transcript, 30)}"
                     )
                 except OSError as e:
                     # I/O-Fehler nicht den Stream abbrechen lassen

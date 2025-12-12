@@ -5,31 +5,15 @@ Standardmäßig nutzt er openai-whisper (PyTorch). Optional kann über
 (CTranslate2) genutzt werden.
 """
 
-import json
 import logging
 import os
 import sys
 import threading
 from pathlib import Path
 
+from utils.vocabulary import load_vocabulary
+
 logger = logging.getLogger("whisper_go.providers.local")
-
-# Vocabulary-Pfad
-VOCABULARY_FILE = Path.home() / ".whisper_go" / "vocabulary.json"
-
-
-def _load_vocabulary() -> dict:
-    """Lädt Custom Vocabulary aus JSON-Datei."""
-    if not VOCABULARY_FILE.exists():
-        return {"keywords": []}
-    try:
-        data = json.loads(VOCABULARY_FILE.read_text())
-        if not isinstance(data.get("keywords"), list):
-            data["keywords"] = []
-        return data
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Vocabulary-Datei fehlerhaft: {e}")
-        return {"keywords": []}
 
 
 def _log_stderr(message: str) -> None:
@@ -271,7 +255,7 @@ class LocalProvider:
 
         # Custom Vocabulary als initial_prompt für bessere Erkennung
         MAX_KEYWORDS = 50
-        vocab = _load_vocabulary()
+        vocab = load_vocabulary()
         keywords = vocab.get("keywords", [])[:MAX_KEYWORDS]
         if keywords:
             options["initial_prompt"] = f"Fachbegriffe: {', '.join(keywords)}"

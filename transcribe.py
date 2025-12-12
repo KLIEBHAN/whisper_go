@@ -82,7 +82,8 @@ _groq_client = None
 
 
 from utils.logging import setup_logging, log, error, get_session_id as _get_session_id
-from utils.timing import format_duration as _format_duration
+from utils.timing import format_duration as _format_duration, log_preview as _shared_log_preview
+from utils.vocabulary import load_vocabulary as _load_vocabulary_shared
 
 
 def load_environment() -> None:
@@ -135,10 +136,11 @@ from audio.recording import record_audio, record_audio_daemon
 
 
 def _log_preview(text: str, max_length: int = 100) -> str:
-    """Kürzt Logtexte, um Logfiles schlank zu halten."""
-    if len(text) <= max_length:
-        return text
-    return text[:max_length] + "..."
+    """Kürzt Logtexte, um Logfiles schlank zu halten.
+
+    Wrapper um utils.timing.log_preview für vereinheitlichte Log-Formatierung.
+    """
+    return _shared_log_preview(text, max_length)
 
 
 # =============================================================================
@@ -147,35 +149,18 @@ def _log_preview(text: str, max_length: int = 100) -> str:
 
 
 def _is_whisper_go_process(pid: int) -> bool:
-    """Prüft, ob PID zu einem laufenden whisper_go Daemon gehört."""
-    import subprocess
+    """Prüft, ob PID zu einem laufenden whisper_go Daemon gehört.
 
-    try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-    except subprocess.TimeoutExpired:
-        return False
-    except Exception:
-        return False
-
-    if result.returncode != 0:
-        return False
-
-    cmdline = (result.stdout or "").strip()
-    if not cmdline:
-        return False
-
-    return "transcribe.py" in cmdline and "--record-daemon" in cmdline
+    Wrapper um utils.daemon.is_whisper_go_process, um Redundanz zu vermeiden.
+    """
+    return _shared_is_whisper_go_process(pid)
 # =============================================================================
 # Daemon-Hilfsfunktionen (Raycast-Integration)
 # =============================================================================
 
 
 from utils import daemonize as _daemonize, cleanup_stale_pid_file as _cleanup_stale_pid_file
+from utils.daemon import is_whisper_go_process as _shared_is_whisper_go_process
 
 
 # =============================================================================
@@ -184,27 +169,12 @@ from utils import daemonize as _daemonize, cleanup_stale_pid_file as _cleanup_st
 
 
 def load_vocabulary() -> dict:
-    """Lädt Custom Vocabulary aus JSON-Datei (~/.whisper_go/vocabulary.json).
+    """Lädt Custom Vocabulary aus JSON-Datei.
 
-    Format:
-        {
-            "keywords": ["Anthropic", "Claude", "Kubernetes"]
-        }
-
-    Returns:
-        Dict mit "keywords" (Liste). Bei Fehler leeres Dict.
+    Wrapper für utils.vocabulary.load_vocabulary(), damit die öffentliche
+    API von transcribe.py stabil bleibt und Tests weiter greifen.
     """
-    if not VOCABULARY_FILE.exists():
-        return {"keywords": []}
-    try:
-        data = json.loads(VOCABULARY_FILE.read_text())
-        # Validierung: keywords muss Liste sein
-        if not isinstance(data.get("keywords"), list):
-            data["keywords"] = []
-        return data
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"[{_get_session_id()}] Vocabulary-Datei fehlerhaft: {e}")
-        return {"keywords": []}
+    return _load_vocabulary_shared(VOCABULARY_FILE)
 
 
 # =============================================================================

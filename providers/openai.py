@@ -5,9 +5,8 @@ Nutzt die OpenAI Transcription API mit gpt-4o-transcribe oder whisper-1.
 
 import logging
 import os
-from contextlib import contextmanager
 from pathlib import Path
-import time
+from utils.timing import timed_operation
 
 logger = logging.getLogger("whisper_go.providers.openai")
 
@@ -23,20 +22,6 @@ def _get_client():
         _client = OpenAI()
         logger.debug("OpenAI-Client initialisiert")
     return _client
-
-
-@contextmanager
-def _timed_operation(name: str):
-    """Kontextmanager für Zeitmessung."""
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        if elapsed_ms >= 1000:
-            logger.info(f"{name}: {elapsed_ms / 1000:.2f}s")
-        else:
-            logger.info(f"{name}: {elapsed_ms:.0f}ms")
 
 
 class OpenAIProvider:
@@ -93,7 +78,7 @@ class OpenAIProvider:
 
         client = _get_client()
 
-        with _timed_operation("OpenAI-Transkription"):
+        with timed_operation("OpenAI-Transkription", logger=logger, include_session=False):
             with audio_path.open("rb") as audio_file:
                 params = {
                     "model": model,
