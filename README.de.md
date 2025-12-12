@@ -310,7 +310,8 @@ python whisper_daemon.py --hotkey cmd+shift+r --debug
 open start_daemon.command
 ```
 
-> **Keine Accessibility-Berechtigung erforderlich!** QuickMacHotKey nutzt die native Carbon-API (`RegisterEventHotKey`).
+> **Für Toggle-Hotkeys ist keine Accessibility-Berechtigung nötig.** QuickMacHotKey nutzt die native Carbon-API (`RegisterEventHotKey`).  
+> **Hold‑Mode nutzt pynput und benötigt Bedienungshilfen** unter macOS.
 
 ### Konfiguration
 
@@ -320,7 +321,9 @@ In `.env` oder als Umgebungsvariable:
 # Hotkey (default: F19)
 WHISPER_GO_HOTKEY=f19
 
-# Modus: toggle (PTT nicht unterstützt mit QuickMacHotKey)
+# Hotkey‑Modus:
+# toggle = Taste drücken = Start/Stop (QuickMacHotKey, keine Accessibility nötig)
+# hold   = Push‑to‑Talk (pynput, benötigt Bedienungshilfen)
 WHISPER_GO_HOTKEY_MODE=toggle
 
 # Dock-Icon (default: true) – auf false setzen für Menubar-only Modus
@@ -341,6 +344,11 @@ WHISPER_GO_DOCK_ICON=true
 
 - F19 drücken → Aufnahme startet
 - F19 nochmal drücken → Transkript wird eingefügt
+
+**Hold‑Mode (Push‑to‑Talk):**
+
+- F19 gedrückt halten → Aufnahme läuft solange gehalten
+- F19 loslassen → Transkript wird eingefügt
 
 ### Visuelles Feedback
 

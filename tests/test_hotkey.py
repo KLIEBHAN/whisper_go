@@ -148,6 +148,32 @@ class TestParseHotkeyWithModifiers:
 
 
 # =============================================================================
+# Tests: WhisperDaemon._parse_pynput_hotkey (Hold Mode)
+# =============================================================================
+
+
+class TestParsePynputHotkey:
+    """Tests für Hold-Mode Hotkey-Parsing via pynput."""
+
+    def test_ctrl_shift_space(self):
+        """ctrl+shift+space wird korrekt geparst."""
+        from pynput import keyboard  # type: ignore[import-not-found]
+        from whisper_daemon import WhisperDaemon
+
+        keys = WhisperDaemon._parse_pynput_hotkey("ctrl+shift+space")
+        assert keyboard.Key.ctrl in keys
+        assert keyboard.Key.shift in keys
+        assert keyboard.Key.space in keys
+
+    def test_unknown_function_key_raises(self):
+        """Unbekannte Funktionstaste wirft ValueError."""
+        from whisper_daemon import WhisperDaemon
+
+        with pytest.raises(ValueError):
+            WhisperDaemon._parse_pynput_hotkey("f99")
+
+
+# =============================================================================
 # Tests: paste_transcript (Auto-Paste)
 # =============================================================================
 

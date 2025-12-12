@@ -31,6 +31,7 @@ REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
 LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
 LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "auto"]
 LOCAL_MODEL_OPTIONS = ["default", "turbo", "large", "medium", "small", "base", "tiny"]
+HOTKEY_MODE_OPTIONS = ["toggle", "hold"]
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -73,6 +74,7 @@ class WelcomeController:
         self._refine_checkbox = None
         self._provider_popup = None
         self._model_field = None
+        self._hotkey_mode_popup = None
         self._local_backend_popup = None
         self._local_model_popup = None
         self._local_backend_label = None
@@ -442,6 +444,22 @@ class WelcomeController:
         self._content_view.addSubview_(mode_popup)
         current_y -= row_height
 
+        # --- Hotkey Mode Dropdown ---
+        self._add_setting_label(base_x, current_y, "Hotkey Mode:")
+        hotkey_mode_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(control_x, current_y, control_width, 22)
+        )
+        hotkey_mode_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for m in HOTKEY_MODE_OPTIONS:
+            hotkey_mode_popup.addItemWithTitle_(m)
+        current_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle"
+        if current_hotkey_mode not in HOTKEY_MODE_OPTIONS:
+            current_hotkey_mode = "toggle"
+        hotkey_mode_popup.selectItemWithTitle_(current_hotkey_mode)
+        self._hotkey_mode_popup = hotkey_mode_popup
+        self._content_view.addSubview_(hotkey_mode_popup)
+        current_y -= row_height
+
         # --- Local Backend Dropdown ---
         self._local_backend_label = self._add_setting_label(
             base_x, current_y, "Local Backend:"
@@ -719,6 +737,14 @@ class WelcomeController:
             mode = self._mode_popup.titleOfSelectedItem()
             if mode:
                 save_env_setting("WHISPER_GO_MODE", mode)
+
+        # Hotkey Mode
+        if self._hotkey_mode_popup:
+            hotkey_mode = self._hotkey_mode_popup.titleOfSelectedItem()
+            if hotkey_mode == "toggle":
+                remove_env_setting("WHISPER_GO_HOTKEY_MODE")
+            elif hotkey_mode:
+                save_env_setting("WHISPER_GO_HOTKEY_MODE", hotkey_mode)
 
         # Local Backend
         if self._local_backend_popup:

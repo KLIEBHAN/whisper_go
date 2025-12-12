@@ -106,6 +106,7 @@ class WhisperDaemon:
         refine_provider: str | None = None,
         context: str | None = None,
         mode: str | None = None,
+        hotkey_mode: str | None = None,
     ):
         self.hotkey = hotkey
         self.language = language
@@ -115,6 +116,7 @@ class WhisperDaemon:
         self.refine_provider = refine_provider
         self.context = context
         self.mode = mode
+        self.hotkey_mode = hotkey_mode or os.getenv("WHISPER_GO_HOTKEY_MODE", "toggle")
 
         # State
         self._recording = False
@@ -142,6 +144,8 @@ class WhisperDaemon:
 
         # Provider-Cache: vermeidet Re-Init (z.B. lokales Modell laden)
         self._provider_cache: dict[str, object] = {}
+        self._hold_listener = None
+        self._hold_active = False
 
     def _get_provider(self, mode: str):
         """Gibt gecachten Provider zurück oder erstellt ihn."""
@@ -239,6 +243,88 @@ class WhisperDaemon:
             self._stop_recording()
         else:
             self._start_recording()
+
+    # =============================================================================
+    # Hold-to-record Hotkey (Push-to-talk)
+    # =============================================================================
+
+    @staticmethod
+    def _parse_pynput_hotkey(hotkey_str: str):
+        """Parst Hotkey-String in pynput-Key-Set."""
+        from pynput import keyboard  # type: ignore[import-not-found]
+
+        parts = [p.strip().lower() for p in hotkey_str.split("+")]
+        keys: set = set()
+
+        special_map = {
+            "space": keyboard.Key.space,
+            "tab": keyboard.Key.tab,
+            "enter": keyboard.Key.enter,
+            "return": keyboard.Key.enter,
+            "esc": keyboard.Key.esc,
+            "escape": keyboard.Key.esc,
+        }
+
+        for part in parts:
+            if part in ("ctrl", "control"):
+                keys.add(keyboard.Key.ctrl)
+            elif part in ("alt", "option"):
+                keys.add(keyboard.Key.alt)
+            elif part == "shift":
+                keys.add(keyboard.Key.shift)
+            elif part in ("cmd", "command", "win"):
+                keys.add(keyboard.Key.cmd)
+            elif part in special_map:
+                keys.add(special_map[part])
+            elif part.startswith("f") and part[1:].isdigit():
+                f_key = getattr(keyboard.Key, part, None)
+                if f_key:
+                    keys.add(f_key)
+                else:
+                    raise ValueError(f"Unbekannte Funktionstaste: {part}")
+            else:
+                # Normale Taste
+                keys.add(keyboard.KeyCode.from_char(part))
+
+        return keys
+
+    def _start_hold_hotkey_listener(self) -> bool:
+        """Startet pynput Listener für Hold-Mode. Gibt True bei Erfolg zurück."""
+        try:
+            from pynput import keyboard  # type: ignore[import-not-found]
+        except ImportError:
+            logger.error("Hold Hotkey Mode benötigt pynput")
+            return False
+
+        try:
+            hotkey_keys = self._parse_pynput_hotkey(self.hotkey)
+        except ValueError as e:
+            logger.error(f"Hotkey Parsing fehlgeschlagen: {e}")
+            return False
+
+        current_keys: set = set()
+
+        def on_press(key):
+            if self._current_state == AppState.ERROR:
+                return
+            current_keys.add(key)
+            if not self._hold_active and hotkey_keys.issubset(current_keys):
+                self._hold_active = True
+                logger.debug("Hotkey hold down")
+                self._start_recording()
+
+        def on_release(key):
+            current_keys.discard(key)
+            if self._hold_active and not hotkey_keys.issubset(current_keys):
+                self._hold_active = False
+                logger.debug("Hotkey hold up")
+                self._stop_recording()
+
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.daemon = True
+        listener.start()
+        self._hold_listener = listener
+        return True
 
     def _start_recording(self) -> None:
         """Startet Streaming-Aufnahme im Worker-Thread."""
@@ -729,6 +815,19 @@ class WhisperDaemon:
         # .env neu laden (override=True um Änderungen zu übernehmen)
         load_environment(override_existing=True)
 
+        # Hotkey / Hotkey-Mode Änderungen erfordern Neustart
+        new_hotkey = get_env_setting("WHISPER_GO_HOTKEY")
+        if new_hotkey and new_hotkey.lower() != (self.hotkey or "").lower():
+            logger.warning(
+                f"Hotkey geändert ({self.hotkey} → {new_hotkey}). Neustart erforderlich."
+            )
+
+        new_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE")
+        if new_hotkey_mode and new_hotkey_mode.lower() != (self.hotkey_mode or "").lower():
+            logger.warning(
+                f"Hotkey-Modus geändert ({self.hotkey_mode} → {new_hotkey_mode}). Neustart erforderlich."
+            )
+
         # Settings aktualisieren (außer Hotkey - erfordert Neustart)
         new_mode = get_env_setting("WHISPER_GO_MODE")
         if new_mode:
@@ -760,7 +859,6 @@ class WhisperDaemon:
 
     def run(self) -> None:
         """Startet Daemon (blockiert)."""
-        from quickmachotkey import quickHotKey
         from AppKit import NSApplication  # type: ignore[import-not-found]
         from Foundation import NSTimer  # type: ignore[import-not-found]
         import signal
@@ -787,7 +885,10 @@ class WhisperDaemon:
         self._show_welcome_if_needed()
 
         # Hotkey parsen
-        virtual_key, modifier_mask = parse_hotkey(self.hotkey)
+        hotkey_mode = (self.hotkey_mode or "toggle").lower()
+        if hotkey_mode not in ("toggle", "hold"):
+            logger.warning(f"Unbekannter Hotkey-Modus '{hotkey_mode}', fallback auf toggle")
+            hotkey_mode = "toggle"
 
         # Berechtigungen prüfen (Mikrofon - blockierend)
         if not check_microphone_permission():
@@ -795,14 +896,18 @@ class WhisperDaemon:
             return
 
         # Accessibility prüfen (nur Warnung, nicht blockierend)
-        check_accessibility_permission()
+        accessibility_ok = check_accessibility_permission()
+        if hotkey_mode == "hold" and not accessibility_ok:
+            logger.warning(
+                "Hold Hotkey Mode benötigt Bedienungshilfen-Zugriff. "
+                "Fallback auf Toggle-Mode bis Berechtigung erteilt ist."
+            )
+            hotkey_mode = "toggle"
 
-        logger.info(
-            f"Daemon gestartet: hotkey={self.hotkey}, "
-            f"virtualKey={virtual_key}, modifierMask={modifier_mask}"
-        )
+        # Logging + Start-Info
         print("🎤 whisper_daemon läuft", file=sys.stderr)
         print(f"   Hotkey: {self.hotkey}", file=sys.stderr)
+        print(f"   Hotkey Mode: {hotkey_mode}", file=sys.stderr)
         if show_dock:
             print("   Beenden: CMD+Q (wenn fokussiert) oder Ctrl+C", file=sys.stderr)
         else:
@@ -811,10 +916,33 @@ class WhisperDaemon:
         # Lokales Modell vorab laden (falls aktiv)
         self._preload_local_model_async()
 
-        # Hotkey registrieren
-        @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
-        def hotkey_handler() -> None:
-            self._on_hotkey()
+        if hotkey_mode == "toggle":
+            from quickmachotkey import quickHotKey
+
+            virtual_key, modifier_mask = parse_hotkey(self.hotkey)
+            logger.info(
+                f"Daemon gestartet: hotkey={self.hotkey}, "
+                f"virtualKey={virtual_key}, modifierMask={modifier_mask}, "
+                f"hotkey_mode=toggle"
+            )
+
+            # Hotkey registrieren (Toggle)
+            @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
+            def hotkey_handler() -> None:
+                self._on_hotkey()
+        else:
+            logger.info(
+                f"Daemon gestartet: hotkey={self.hotkey}, hotkey_mode=hold (pynput)"
+            )
+            if not self._start_hold_hotkey_listener():
+                logger.error("Hold Hotkey Listener konnte nicht gestartet werden, fallback auf toggle")
+                from quickmachotkey import quickHotKey
+
+                virtual_key, modifier_mask = parse_hotkey(self.hotkey)
+
+                @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
+                def hotkey_handler() -> None:
+                    self._on_hotkey()
 
         # FIX: Ctrl+C Support
         # 1. Dummy-Timer, damit der Python-Interpreter regelmäßig läuft und Signale prüft
@@ -901,6 +1029,12 @@ Beispiele:
         help="Hotkey (default: WHISPER_GO_HOTKEY oder 'f19')",
     )
     parser.add_argument(
+        "--hotkey-mode",
+        choices=["toggle", "hold"],
+        default=None,
+        help="Hotkey-Modus: toggle oder hold (default: WHISPER_GO_HOTKEY_MODE)",
+    )
+    parser.add_argument(
         "--language",
         default=None,
         help="Sprachcode z.B. 'de', 'en'",
@@ -951,6 +1085,7 @@ Beispiele:
 
     # Konfiguration: CLI > ENV > Default
     hotkey = args.hotkey or os.getenv("WHISPER_GO_HOTKEY", "f19")
+    hotkey_mode = args.hotkey_mode or os.getenv("WHISPER_GO_HOTKEY_MODE", "toggle")
     language = args.language or os.getenv("WHISPER_GO_LANGUAGE")
     model = args.model or os.getenv("WHISPER_GO_MODEL")
     mode = args.mode or os.getenv("WHISPER_GO_MODE", "deepgram")
@@ -966,6 +1101,7 @@ Beispiele:
             refine_provider=args.refine_provider,
             context=args.context,
             mode=mode,
+            hotkey_mode=hotkey_mode,
         )
         daemon.run()
     except ValueError as e:
