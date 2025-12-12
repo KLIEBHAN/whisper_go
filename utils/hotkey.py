@@ -80,6 +80,18 @@ KEY_CODE_MAP = {
     "7": 26,
     "8": 28,
     "9": 25,
+    # Satzzeichen / Symbole (ANSI)
+    ".": 47,  # kVK_ANSI_Period
+    ",": 43,  # kVK_ANSI_Comma
+    "/": 44,  # kVK_ANSI_Slash
+    "\\": 42,  # kVK_ANSI_Backslash
+    ";": 41,  # kVK_ANSI_Semicolon
+    "'": 39,  # kVK_ANSI_Quote
+    "`": 50,  # kVK_ANSI_Grave
+    "-": 27,  # kVK_ANSI_Minus
+    "=": 24,  # kVK_ANSI_Equal
+    "[": 33,  # kVK_ANSI_LeftBracket
+    "]": 30,  # kVK_ANSI_RightBracket
     # Sondertasten
     "space": 49,
     "return": 36,

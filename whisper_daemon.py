@@ -1089,8 +1089,16 @@ class WhisperDaemon:
         # Hotkeys ermitteln (toggle/hold parallel möglich)
         bindings = self._resolve_hotkey_bindings()
         if not bindings:
-            logger.error("Kein Hotkey konfiguriert")
-            return
+            logger.warning("Kein Hotkey konfiguriert – Daemon startet ohne Hotkey")
+            try:
+                show_error_alert(
+                    "Kein Hotkey konfiguriert",
+                    "Es ist kein Hotkey gesetzt. WhisperGo startet ohne Hotkey.\n"
+                    "Öffne Setup, um einen Hotkey zu wählen.",
+                )
+            except Exception:
+                pass
+            bindings = []
 
         normalized: list[tuple[str, str]] = []
         for mode, hk in bindings:
@@ -1116,9 +1124,11 @@ class WhisperDaemon:
                 print(f"   Toggle Hotkey: {self.toggle_hotkey}", file=sys.stderr)
             if self.hold_hotkey:
                 print(f"   Hold Hotkey: {self.hold_hotkey}", file=sys.stderr)
-        else:
+        elif bindings:
             print(f"   Hotkey: {bindings[0][1]}", file=sys.stderr)
             print(f"   Hotkey Mode: {bindings[0][0]}", file=sys.stderr)
+        else:
+            print("   Hotkey: (none)", file=sys.stderr)
         if show_dock:
             print("   Beenden: CMD+Q (wenn fokussiert) oder Ctrl+C", file=sys.stderr)
         else:
@@ -1130,21 +1140,23 @@ class WhisperDaemon:
         # Hotkeys registrieren
         from quickmachotkey import quickHotKey
 
+        invalid_hotkeys: list[str] = []
+
         for mode, hk in bindings:
             hk_str = hk.strip().lower()
             hk_is_fn = hk_str == "fn"
             hk_is_capslock = hk_str in ("capslock", "caps_lock")
 
             if (hk_is_fn or hk_is_capslock) and not accessibility_ok:
-                logger.warning(
-                    f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
-                )
+                msg = f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
                 continue
 
             if mode == "hold" and not accessibility_ok and not (hk_is_fn or hk_is_capslock):
-                logger.warning(
-                    f"Hold Hotkey '{hk}' benötigt Bedienungshilfen-Zugriff – deaktiviert."
-                )
+                msg = f"Hold Hotkey '{hk}' benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
                 continue
 
             if hk_is_fn:
@@ -1167,7 +1179,9 @@ class WhisperDaemon:
                 try:
                     virtual_key, modifier_mask = parse_hotkey(hk)
                 except ValueError as e:
-                    logger.error(f"Hotkey '{hk}' ungültig: {e}")
+                    msg = f"Hotkey '{hk}' ungültig: {e}"
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
                     continue
 
                 logger.info(
@@ -1183,9 +1197,12 @@ class WhisperDaemon:
             else:
                 logger.info(f"Daemon gestartet: hotkey={hk}, hotkey_mode=hold (pynput)")
                 if not self._start_hold_hotkey_listener(hk):
-                    logger.error(
-                        f"Hold Hotkey Listener für '{hk}' konnte nicht gestartet werden, versuche Toggle-Fallback"
+                    msg = (
+                        f"Hold Hotkey Listener für '{hk}' konnte nicht gestartet werden "
+                        "und wurde deaktiviert."
                     )
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
                     try:
                         virtual_key, modifier_mask = parse_hotkey(hk)
                         decorated = quickHotKey(
@@ -1194,6 +1211,17 @@ class WhisperDaemon:
                         self._toggle_hotkey_handlers.append(decorated)
                     except Exception:
                         pass
+
+        if invalid_hotkeys:
+            try:
+                show_error_alert(
+                    "Ungültige Hotkey‑Konfiguration",
+                    "Ein oder mehrere Hotkeys konnten nicht aktiviert werden:\n\n"
+                    + "\n".join(f"- {m}" for m in invalid_hotkeys)
+                    + "\n\nÖffne Setup, um das zu korrigieren.",
+                )
+            except Exception:
+                pass
 
         # FIX: Ctrl+C Support
         # 1. Dummy-Timer, damit der Python-Interpreter regelmäßig läuft und Signale prüft

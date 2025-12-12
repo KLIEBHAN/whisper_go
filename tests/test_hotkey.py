@@ -124,6 +124,12 @@ class TestParseHotkeyWithModifiers:
         assert virtual_key == 15  # kVK_ANSI_R
         assert modifier_mask == 256 + 512  # cmdKey + shiftKey
 
+    def test_alt_period(self):
+        """alt+. wird korrekt konvertiert."""
+        virtual_key, modifier_mask = utils.hotkey.parse_hotkey("alt+.")
+        assert virtual_key == 47  # kVK_ANSI_Period
+        assert modifier_mask == 2048  # optionKey
+
     def test_modifier_aliases(self):
         """Modifier-Aliase werden korrekt konvertiert."""
         # control = ctrl
