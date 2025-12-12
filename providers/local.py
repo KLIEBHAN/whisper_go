@@ -329,9 +329,18 @@ class LocalProvider:
 
         return options
 
+    def _resolve_model_name(self, model: str | None) -> str:
+        """Ermittelt Modellname aus Arg > WHISPER_GO_LOCAL_MODEL > Default."""
+        if model:
+            return model
+        env_model = os.getenv("WHISPER_GO_LOCAL_MODEL")
+        if env_model:
+            return env_model.strip()
+        return self.default_model
+
     def preload(self, model: str | None = None) -> None:
         """Lädt ein Modell vorab in den Cache."""
-        model_name = model or self.default_model
+        model_name = self._resolve_model_name(model)
         self._ensure_runtime_config()
         if self._backend == "faster":
             self._get_faster_model(model_name)
@@ -345,7 +354,7 @@ class LocalProvider:
         language: str | None = None,
     ) -> str:
         """Transkribiert ein Audio-Array lokal (ohne Dateischreibzugriff)."""
-        model_name = model or self.default_model
+        model_name = self._resolve_model_name(model)
         options = self._build_options(language)
         _log_stderr("Transkribiere audio-buffer...")
         if self._backend == "faster":
@@ -380,7 +389,7 @@ class LocalProvider:
         Returns:
             Transkribierter Text
         """
-        model_name = model or self.default_model
+        model_name = self._resolve_model_name(model)
         _log_stderr(f"Transkribiere {audio_path.name}...")
         options = self._build_options(language)
         if self._backend == "faster":

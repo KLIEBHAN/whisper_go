@@ -156,6 +156,10 @@ export WHISPER_GO_FP16="false"
 # auto    = faster if installed, else whisper
 export WHISPER_GO_LOCAL_BACKEND="whisper"
 
+# Local model override (only for local mode)
+# Default: provider default (turbo)
+# export WHISPER_GO_LOCAL_MODEL="turbo"
+
 # Compute type for faster-whisper (optional)
 # Default: int8 on CPU, float16 on CUDA
 # export WHISPER_GO_LOCAL_COMPUTE_TYPE="int8"

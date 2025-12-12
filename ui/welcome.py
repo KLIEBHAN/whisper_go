@@ -29,6 +29,8 @@ CARD_SPACING = 12
 MODE_OPTIONS = ["deepgram", "openai", "groq", "local"]
 REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
 LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
+LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "auto"]
+LOCAL_MODEL_OPTIONS = ["default", "turbo", "large", "medium", "small", "base", "tiny"]
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -71,6 +73,11 @@ class WelcomeController:
         self._refine_checkbox = None
         self._provider_popup = None
         self._model_field = None
+        self._local_backend_popup = None
+        self._local_model_popup = None
+        self._local_backend_label = None
+        self._local_model_label = None
+        self._mode_changed_handler = None
         self._save_btn = None
         self._restart_handler = None
         # API-Key-Felder werden dynamisch via setattr gesetzt:
@@ -381,8 +388,9 @@ class WelcomeController:
             NSPopUpButton,
             NSTextField,
         )
+        import objc  # type: ignore[import-not-found]
 
-        card_height = 220
+        card_height = 276
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
@@ -423,8 +431,51 @@ class WelcomeController:
         )
         if current_mode in MODE_OPTIONS:
             mode_popup.selectItemWithTitle_(current_mode)
+        # Update visibility when mode changes
+        mode_changed_handler = _ModeChangedHandler.alloc().initWithController_(self)
+        mode_popup.setTarget_(mode_changed_handler)
+        mode_popup.setAction_(
+            objc.selector(mode_changed_handler.modeChanged_, signature=b"v@:@")
+        )
+        self._mode_changed_handler = mode_changed_handler
         self._mode_popup = mode_popup
         self._content_view.addSubview_(mode_popup)
+        current_y -= row_height
+
+        # --- Local Backend Dropdown ---
+        self._local_backend_label = self._add_setting_label(
+            base_x, current_y, "Local Backend:"
+        )
+        local_backend_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(control_x, current_y, control_width, 22)
+        )
+        local_backend_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for backend in LOCAL_BACKEND_OPTIONS:
+            local_backend_popup.addItemWithTitle_(backend)
+        current_backend = get_env_setting("WHISPER_GO_LOCAL_BACKEND") or "whisper"
+        if current_backend not in LOCAL_BACKEND_OPTIONS:
+            current_backend = "whisper"
+        local_backend_popup.selectItemWithTitle_(current_backend)
+        self._local_backend_popup = local_backend_popup
+        self._content_view.addSubview_(local_backend_popup)
+        current_y -= row_height
+
+        # --- Local Model Dropdown ---
+        self._local_model_label = self._add_setting_label(
+            base_x, current_y, "Local Model:"
+        )
+        local_model_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(control_x, current_y, control_width, 22)
+        )
+        local_model_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for m in LOCAL_MODEL_OPTIONS:
+            local_model_popup.addItemWithTitle_(m)
+        current_local_model = get_env_setting("WHISPER_GO_LOCAL_MODEL") or "default"
+        if current_local_model not in LOCAL_MODEL_OPTIONS and current_local_model:
+            local_model_popup.addItemWithTitle_(current_local_model)
+        local_model_popup.selectItemWithTitle_(current_local_model)
+        self._local_model_popup = local_model_popup
+        self._content_view.addSubview_(local_model_popup)
         current_y -= row_height
 
         # --- Language Dropdown ---
@@ -499,9 +550,11 @@ class WelcomeController:
         self._model_field = model_field
         self._content_view.addSubview_(model_field)
 
+        self._update_local_settings_visibility()
+
         return card_y - CARD_SPACING
 
-    def _add_setting_label(self, x: int, y: int, text: str) -> None:
+    def _add_setting_label(self, x: int, y: int, text: str):
         """Erstellt ein Label für eine Einstellung."""
         from AppKit import (  # type: ignore[import-not-found]
             NSColor,
@@ -520,6 +573,21 @@ class WelcomeController:
         label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
         self._content_view.addSubview_(label)
+        return label
+
+    def _update_local_settings_visibility(self) -> None:
+        """Blendet Local-spezifische Einstellungen je nach Mode ein/aus."""
+        if not self._mode_popup:
+            return
+        is_local = self._mode_popup.titleOfSelectedItem() == "local"
+        for view in (
+            self._local_backend_label,
+            self._local_backend_popup,
+            self._local_model_label,
+            self._local_model_popup,
+        ):
+            if view is not None:
+                view.setHidden_(not is_local)
 
     def _build_footer(self) -> None:
         """Erstellt Footer mit Checkbox, Save-Button und Start-Button."""
@@ -651,6 +719,22 @@ class WelcomeController:
             mode = self._mode_popup.titleOfSelectedItem()
             if mode:
                 save_env_setting("WHISPER_GO_MODE", mode)
+
+        # Local Backend
+        if self._local_backend_popup:
+            backend = self._local_backend_popup.titleOfSelectedItem()
+            if backend == "whisper":
+                remove_env_setting("WHISPER_GO_LOCAL_BACKEND")
+            elif backend:
+                save_env_setting("WHISPER_GO_LOCAL_BACKEND", backend)
+
+        # Local Model
+        if self._local_model_popup:
+            local_model = self._local_model_popup.titleOfSelectedItem()
+            if local_model == "default":
+                remove_env_setting("WHISPER_GO_LOCAL_MODEL")
+            elif local_model:
+                save_env_setting("WHISPER_GO_LOCAL_MODEL", local_model)
 
         # Language
         if self._lang_popup:
@@ -821,3 +905,26 @@ def _create_restart_handler_class():
 
 
 _RestartButtonHandler = _create_restart_handler_class()
+
+
+def _create_mode_changed_handler_class():
+    """Erstellt NSObject-Subklasse für Mode-Dropdown-Änderungen."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class ModeChangedHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(ModeChangedHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def modeChanged_(self, _sender) -> None:
+            self._controller._update_local_settings_visibility()
+
+    return ModeChangedHandler
+
+
+_ModeChangedHandler = _create_mode_changed_handler_class()
