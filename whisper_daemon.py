@@ -243,11 +243,16 @@ class WhisperDaemon:
                     if is_down and not is_active:
                         logger.debug(f"Hotkey {name} down")
                         self._active_hold_sources.add(source_id)
-                        self._call_on_main(lambda: self._start_recording_from_hold(source_id))
+                        self._call_on_main(
+                            lambda: self._start_recording_from_hold(source_id)
+                        )
                     elif not is_down and is_active:
                         logger.debug(f"Hotkey {name} up")
                         self._active_hold_sources.discard(source_id)
-                        if not self._active_hold_sources and self._recording_started_by_hold:
+                        if (
+                            not self._active_hold_sources
+                            and self._recording_started_by_hold
+                        ):
                             self._call_on_main(self._stop_recording)
                 else:
                     if toggle_on_down_only:
@@ -270,7 +275,9 @@ class WhisperDaemon:
             None,
         )
         if tap is None:  # pragma: no cover
-            logger.error(f"{name} Hotkey Tap konnte nicht erstellt werden (Input Monitoring?)")
+            logger.error(
+                f"{name} Hotkey Tap konnte nicht erstellt werden (Input Monitoring?)"
+            )
             return False
 
         source = CFMachPortCreateRunLoopSource(None, tap, 0)
@@ -337,6 +344,23 @@ class WhisperDaemon:
             model = self._clean_model_name(getattr(provider, "default_model", None))
         return model
 
+    def _local_backend_for_logging(self, provider) -> str | None:
+        """Ermittelt das tatsächlich verwendete Local-Backend für Logs."""
+        if self.mode != "local":
+            return None
+        backend = getattr(provider, "backend", None)
+        if not backend:
+            backend = getattr(provider, "_backend", None)
+        if not backend:
+            backend = (os.getenv("WHISPER_GO_LOCAL_BACKEND") or "whisper").strip().lower()
+            if backend == "auto":
+                backend = "auto"
+            elif backend in {"faster", "faster-whisper"}:
+                backend = "faster"
+            elif backend in {"whisper", "openai-whisper"}:
+                backend = "whisper"
+        return backend or None
+
     @staticmethod
     def _trim_silence(
         data,
@@ -351,7 +375,7 @@ class WhisperDaemon:
         if mono.ndim != 1:
             mono = mono.reshape(-1)
         window = int(sample_rate * 0.02)  # 20ms
-        hop = int(sample_rate * 0.01)     # 10ms
+        hop = int(sample_rate * 0.01)  # 10ms
         if mono.shape[0] <= window:
             return mono.astype(np.float32, copy=False)
         frame_count = (mono.shape[0] - window) // hop + 1
@@ -857,8 +881,10 @@ class WhisperDaemon:
                 if audio_duration > 0:
                     rtf = t_transcribe / audio_duration
                     model_name = self._model_name_for_logging(provider)
+                    backend_name = self._local_backend_for_logging(provider)
+                    backend_info = f", backend={backend_name}" if backend_name else ""
                     logger.info(
-                        f"Transcription performance: mode={self.mode}, "
+                        f"Transcription performance: mode={self.mode}{backend_info}, "
                         f"model={model_name}, "
                         f"audio={audio_duration:.2f}s, time={t_transcribe:.2f}s, rtf={rtf:.2f}x"
                     )
@@ -883,7 +909,9 @@ class WhisperDaemon:
                         context=self.context,
                     )
                     t_refine = time.perf_counter() - t1
-                    logger.info(f"Refine performance: provider={self.refine_provider}, time={t_refine:.2f}s")
+                    logger.info(
+                        f"Refine performance: provider={self.refine_provider}, time={t_refine:.2f}s"
+                    )
 
                 self._result_queue.put(
                     DaemonMessage(
@@ -1118,19 +1146,28 @@ class WhisperDaemon:
             )
 
         new_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE")
-        if new_hotkey_mode and new_hotkey_mode.lower() != (self.hotkey_mode or "").lower():
+        if (
+            new_hotkey_mode
+            and new_hotkey_mode.lower() != (self.hotkey_mode or "").lower()
+        ):
             logger.warning(
                 f"Hotkey-Modus geändert ({self.hotkey_mode} → {new_hotkey_mode}). Neustart erforderlich."
             )
 
         new_toggle_hotkey = get_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
-        if new_toggle_hotkey and new_toggle_hotkey.lower() != (self.toggle_hotkey or "").lower():
+        if (
+            new_toggle_hotkey
+            and new_toggle_hotkey.lower() != (self.toggle_hotkey or "").lower()
+        ):
             logger.warning(
                 f"Toggle-Hotkey geändert ({self.toggle_hotkey} → {new_toggle_hotkey}). Neustart erforderlich."
             )
 
         new_hold_hotkey = get_env_setting("WHISPER_GO_HOLD_HOTKEY")
-        if new_hold_hotkey and new_hold_hotkey.lower() != (self.hold_hotkey or "").lower():
+        if (
+            new_hold_hotkey
+            and new_hold_hotkey.lower() != (self.hold_hotkey or "").lower()
+        ):
             logger.warning(
                 f"Hold-Hotkey geändert ({self.hold_hotkey} → {new_hold_hotkey}). Neustart erforderlich."
             )
@@ -1154,6 +1191,10 @@ class WhisperDaemon:
         new_refine_model = get_env_setting("WHISPER_GO_REFINE_MODEL")
         if new_refine_model:
             self.refine_model = new_refine_model
+
+        # Local-Provider Cache invalidieren (Backend könnte sich geändert haben)
+        if "local" in self._provider_cache:
+            del self._provider_cache["local"]
 
         logger.info(
             f"Settings reloaded: mode={self.mode}, language={self.language}, "
@@ -1282,8 +1323,7 @@ class WhisperDaemon:
 
         # Input‑Monitoring prüfen wenn nötig (Quartz/pynput globale Listener)
         requires_input_monitoring = any(
-            mode == "hold"
-            or hk.strip().lower() in ("fn", "capslock", "caps_lock")
+            mode == "hold" or hk.strip().lower() in ("fn", "capslock", "caps_lock")
             for mode, hk in bindings
         )
         input_monitoring_ok = (
@@ -1323,21 +1363,27 @@ class WhisperDaemon:
             hk_is_fn = hk_str == "fn"
             hk_is_capslock = hk_str in ("capslock", "caps_lock")
 
-            if not input_monitoring_ok and (mode == "hold" or hk_is_fn or hk_is_capslock):
-                msg = (
-                    f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
-                )
+            if not input_monitoring_ok and (
+                mode == "hold" or hk_is_fn or hk_is_capslock
+            ):
+                msg = f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
                 logger.warning(msg)
                 invalid_hotkeys.append(msg)
                 continue
 
             if (hk_is_fn or hk_is_capslock) and not accessibility_ok:
-                msg = f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                msg = (
+                    f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                )
                 logger.warning(msg)
                 invalid_hotkeys.append(msg)
                 continue
 
-            if mode == "hold" and not accessibility_ok and not (hk_is_fn or hk_is_capslock):
+            if (
+                mode == "hold"
+                and not accessibility_ok
+                and not (hk_is_fn or hk_is_capslock)
+            ):
                 msg = f"Hold Hotkey '{hk}' benötigt Bedienungshilfen-Zugriff – deaktiviert."
                 logger.warning(msg)
                 invalid_hotkeys.append(msg)
@@ -1356,7 +1402,9 @@ class WhisperDaemon:
                     f"Daemon gestartet: hotkey=capslock, hotkey_mode={mode} (Quartz FlagsChanged Tap)"
                 )
                 if not self._start_capslock_hotkey_monitor(mode):
-                    logger.error("CapsLock Hotkey Monitor konnte nicht gestartet werden.")
+                    logger.error(
+                        "CapsLock Hotkey Monitor konnte nicht gestartet werden."
+                    )
                 continue
 
             if mode == "toggle":
@@ -1376,7 +1424,9 @@ class WhisperDaemon:
                 def _handler() -> None:
                     self._on_hotkey()
 
-                decorated = quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)(_handler)  # type: ignore[arg-type]
+                decorated = quickHotKey(
+                    virtualKey=virtual_key, modifierMask=modifier_mask
+                )(_handler)  # type: ignore[arg-type]
                 self._toggle_hotkey_handlers.append(decorated)
             else:
                 logger.info(f"Daemon gestartet: hotkey={hk}, hotkey_mode=hold (pynput)")
