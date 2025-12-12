@@ -315,8 +315,17 @@ class WelcomeController:
         # Toggle + Hold Hotkeys (parallel möglich)
         button_width = 60
         button_spacing = 8
+        label_width = 70
         buttons_total = button_width + button_spacing
-        field_width = card_width - 2 * CARD_PADDING - buttons_total
+        base_x = WELCOME_PADDING + CARD_PADDING
+        field_x = base_x + label_width + 8
+        field_width = (
+            card_width
+            - 2 * CARD_PADDING
+            - label_width
+            - 8
+            - buttons_total
+        )
 
         legacy_hotkey_env = get_env_setting("WHISPER_GO_HOTKEY")
         legacy_hotkey = legacy_hotkey_env or self.hotkey
@@ -337,8 +346,22 @@ class WelcomeController:
 
         # Toggle Hotkey Feld (oben)
         toggle_y = card_y + 76
+        toggle_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, toggle_y + 4, label_width, 16)
+        )
+        toggle_label.setStringValue_("Toggle:")
+        toggle_label.setBezeled_(False)
+        toggle_label.setDrawsBackground_(False)
+        toggle_label.setEditable_(False)
+        toggle_label.setSelectable_(False)
+        toggle_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        toggle_label.setTextColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7)
+        )
+        parent_view.addSubview_(toggle_label)
+
         toggle_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, toggle_y, field_width, 24)
+            NSMakeRect(field_x, toggle_y, field_width, 24)
         )
         toggle_field.setPlaceholderString_("Toggle hotkey")
         toggle_field.setStringValue_((toggle_default or "").upper())
@@ -368,8 +391,20 @@ class WelcomeController:
 
         # Hold Hotkey Feld (unten)
         hold_y = card_y + 44
+        hold_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, hold_y + 4, label_width, 16)
+        )
+        hold_label.setStringValue_("Hold:")
+        hold_label.setBezeled_(False)
+        hold_label.setDrawsBackground_(False)
+        hold_label.setEditable_(False)
+        hold_label.setSelectable_(False)
+        hold_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        hold_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(hold_label)
+
         hold_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, hold_y, field_width, 24)
+            NSMakeRect(field_x, hold_y, field_width, 24)
         )
         hold_field.setPlaceholderString_("Hold hotkey (Push‑to‑Talk)")
         hold_field.setStringValue_((hold_default or "").upper())
