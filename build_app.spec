@@ -23,6 +23,11 @@ block_cipher = None
 # PyInstaller Hook helpers for native libs/data
 from PyInstaller.utils.hooks import collect_all  # type: ignore
 
+
+def _dedupe(items):
+    return list(dict.fromkeys(items))
+
+
 # Pfade zu Modulen und Ressourcen
 binaries = []
 datas = [
@@ -83,7 +88,6 @@ tok_datas, tok_binaries, tok_hidden = collect_all("tokenizers")
 datas += fw_datas + ct_datas + tok_datas
 binaries += fw_binaries + ct_binaries + tok_binaries
 hiddenimports += fw_hidden + ct_hidden + tok_hidden
-hiddenimports = list(dict.fromkeys(hiddenimports))
 
 # === Local backend (mlx-whisper / MLX) ===
 # Optional: only available/needed on Apple Silicon builds.
@@ -100,7 +104,7 @@ except Exception:
 datas += mlxw_datas + mlx_datas + scipy_datas
 binaries += mlxw_binaries + mlx_binaries + scipy_binaries
 hiddenimports += mlxw_hidden + mlx_hidden + scipy_hidden
-hiddenimports = list(dict.fromkeys(hiddenimports))
+hiddenimports = _dedupe(hiddenimports)
 
 # Nicht benötigte Module ausschließen (reduziert App-Größe)
 excludes = [

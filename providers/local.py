@@ -27,6 +27,23 @@ def _mlx_whisper_import_hint() -> str:
     return "Installiere es mit `pip install mlx-whisper` oder setze WHISPER_GO_LOCAL_BACKEND=whisper."
 
 
+def _import_mlx_whisper():
+    """Importiert mlx-whisper mit hilfreicher Fehlermeldung bei Problemen."""
+    try:
+        import mlx_whisper  # type: ignore[import-not-found]
+    except ModuleNotFoundError as e:
+        missing = e.name or "unknown"
+        raise ImportError(
+            "mlx-whisper konnte nicht geladen werden (fehlende Abhängigkeit: "
+            f"{missing}). {_mlx_whisper_import_hint()}"
+        ) from e
+    except ImportError as e:
+        raise ImportError(
+            f"mlx-whisper konnte nicht geladen werden. {_mlx_whisper_import_hint()} Ursache: {e}"
+        ) from e
+    return mlx_whisper
+
+
 def _log_stderr(message: str) -> None:
     """Status-Meldung auf stderr."""
     print(message, file=sys.stderr)
@@ -90,8 +107,8 @@ def _select_device() -> str:
 class LocalProvider:
     """Lokaler Whisper Provider.
 
-    Nutzt openai-whisper für Offline-Transkription.
-    Keine API-Kosten, aber langsamer (~5-10s je nach Modell).
+    Nutzt openai-whisper für Offline-Transkription. Optional kann faster-whisper
+    oder mlx-whisper genutzt werden (Backend-abhängig).
 
     Unterstützte Modelle:
         - tiny: 39M Parameter, ~1GB VRAM, sehr schnell
@@ -300,8 +317,8 @@ class LocalProvider:
     def _build_options(self, language: str | None) -> dict:
         """Baut Options inkl. Vocabulary und Speed-Overrides.
 
-        Rückgabe ist kompatibel zu openai-whisper; für faster-whisper wird
-        ein Subset genutzt.
+        Rückgabe ist kompatibel zu openai-whisper; für faster-whisper/mlx-whisper wird
+        je nach Backend ein Subset genutzt.
         """
         self._ensure_runtime_config()
 
@@ -398,17 +415,7 @@ class LocalProvider:
             self._get_faster_model(model_name)
         elif self._backend == "mlx":
             with self._transcribe_lock:
-                try:
-                    import mlx_whisper  # type: ignore[import-not-found]
-                except ModuleNotFoundError as e:
-                    raise ImportError(
-                        "mlx-whisper konnte nicht geladen werden (fehlende Abhängigkeit: "
-                        f"{e.name}). {_mlx_whisper_import_hint()}"
-                    ) from e
-                except ImportError as e:
-                    raise ImportError(
-                        f"mlx-whisper konnte nicht geladen werden. {_mlx_whisper_import_hint()} Ursache: {e}"
-                    ) from e
+                mlx_whisper = _import_mlx_whisper()
 
                 import numpy as np
 
@@ -465,17 +472,7 @@ class LocalProvider:
 
     def _transcribe_mlx(self, audio, model_name: str, options: dict) -> str:
         """Transkription via mlx-whisper (Apple Silicon / Metal)."""
-        try:
-            import mlx_whisper  # type: ignore[import-not-found]
-        except ModuleNotFoundError as e:
-            raise ImportError(
-                "mlx-whisper konnte nicht geladen werden (fehlende Abhängigkeit: "
-                f"{e.name}). {_mlx_whisper_import_hint()}"
-            ) from e
-        except ImportError as e:
-            raise ImportError(
-                f"mlx-whisper konnte nicht geladen werden. {_mlx_whisper_import_hint()} Ursache: {e}"
-            ) from e
+        mlx_whisper = _import_mlx_whisper()
 
         repo = self._map_mlx_model_name(model_name)
         mlx_opts = dict(options)
@@ -495,7 +492,7 @@ class LocalProvider:
         model: str | None = None,
         language: str | None = None,
     ) -> str:
-        """Transkribiert Audio lokal mit openai-whisper.
+        """Transkribiert Audio lokal (whisper/faster/mlx).
 
         Args:
             audio_path: Pfad zur Audio-Datei
