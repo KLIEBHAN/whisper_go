@@ -20,7 +20,11 @@ Oder mit Developer ID für Distribution:
 
 block_cipher = None
 
+# PyInstaller Hook helpers for native libs/data
+from PyInstaller.utils.hooks import collect_all  # type: ignore
+
 # Pfade zu Modulen und Ressourcen
+binaries = []
 datas = [
     ('config.py', '.'),  # Top-Level Konfiguration
     ('ui', 'ui'),
@@ -69,6 +73,16 @@ hiddenimports = [
     'dotenv',
 ]
 
+# === Local backends (faster-whisper / CTranslate2) ===
+fw_datas, fw_binaries, fw_hidden = collect_all("faster_whisper")
+ct_datas, ct_binaries, ct_hidden = collect_all("ctranslate2")
+tok_datas, tok_binaries, tok_hidden = collect_all("tokenizers")
+
+datas += fw_datas + ct_datas + tok_datas
+binaries += fw_binaries + ct_binaries + tok_binaries
+hiddenimports += fw_hidden + ct_hidden + tok_hidden
+hiddenimports = list(dict.fromkeys(hiddenimports))
+
 # Nicht benötigte Module ausschließen (reduziert App-Größe)
 excludes = [
     # GUI Frameworks (wir nutzen PyObjC direkt)
@@ -100,7 +114,7 @@ excludes = [
 a = Analysis(
     ['whisper_daemon.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
