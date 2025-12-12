@@ -16,6 +16,7 @@ from utils.preferences import (
     set_onboarding_seen,
     set_show_welcome_on_startup,
 )
+from utils.hotkey import KEY_CODE_MAP
 
 # Window-Konfiguration
 WELCOME_WIDTH = 500
@@ -69,6 +70,7 @@ class WelcomeController:
         # UI-Referenzen (werden in _build_* Methoden gesetzt)
         self._startup_checkbox = None
         self._hotkey_field = None
+        self._record_btn = None
         self._mode_popup = None
         self._lang_popup = None
         self._refine_checkbox = None
@@ -82,6 +84,9 @@ class WelcomeController:
         self._mode_changed_handler = None
         self._save_btn = None
         self._restart_handler = None
+        self._record_handler = None
+        self._hotkey_recording = False
+        self._hotkey_monitor = None
         # API-Key-Felder werden dynamisch via setattr gesetzt:
         # _{provider}_field, _{provider}_status für deepgram, groq, openai, openrouter
 
@@ -230,8 +235,11 @@ class WelcomeController:
         desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
         self._content_view.addSubview_(desc)
 
-        # Hotkey-Eingabefeld (mit Platz für Restart-Button)
-        field_width = card_width - 2 * CARD_PADDING - 70
+        # Hotkey-Eingabefeld (mit Platz für Record + Restart Button)
+        button_width = 60
+        button_spacing = 8
+        buttons_total = button_width * 2 + button_spacing
+        field_width = card_width - 2 * CARD_PADDING - buttons_total
         field_y = card_y + 42
         field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(WELCOME_PADDING + CARD_PADDING, field_y, field_width, 24)
@@ -243,14 +251,33 @@ class WelcomeController:
         self._content_view.addSubview_(field)
         self._hotkey_field = field
 
+        # Record-Button
+        record_x = (
+            WELCOME_WIDTH
+            - WELCOME_PADDING
+            - CARD_PADDING
+            - (button_width * 2 + button_spacing)
+        )
+        record_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(record_x, field_y, button_width, 24)
+        )
+        record_btn.setTitle_("Record")
+        record_btn.setBezelStyle_(NSBezelStyleRounded)
+        record_btn.setFont_(NSFont.systemFontOfSize_(11))
+
+        record_handler = _RecordHotkeyHandler.alloc().initWithController_(self)
+        record_btn.setTarget_(record_handler)
+        record_btn.setAction_(
+            objc.selector(record_handler.recordHotkey_, signature=b"v@:@")
+        )
+        self._record_handler = record_handler
+        self._record_btn = record_btn
+        self._content_view.addSubview_(record_btn)
+
         # Restart-Button
+        restart_x = record_x + button_width + button_spacing
         restart_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(
-                WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - 60,
-                field_y,
-                60,
-                24,
-            )
+            NSMakeRect(restart_x, field_y, button_width, 24)
         )
         restart_btn.setTitle_("Restart")
         restart_btn.setBezelStyle_(NSBezelStyleRounded)
@@ -851,6 +878,99 @@ class WelcomeController:
             0.5, False, lambda _: do_restart()
         )
 
+    # =============================================================================
+    # Hotkey Recording
+    # =============================================================================
+
+    def _toggle_hotkey_recording(self) -> None:
+        """Startet/stoppt Hotkey-Aufnahme im Setup-Panel."""
+        if self._hotkey_recording:
+            self._stop_hotkey_recording()
+        else:
+            self._start_hotkey_recording()
+
+    def _start_hotkey_recording(self) -> None:
+        from AppKit import (  # type: ignore[import-not-found]
+            NSEvent,
+            NSEventMaskKeyDown,
+            NSEventMaskFlagsChanged,
+            NSEventTypeFlagsChanged,
+        )
+
+        if not self._hotkey_field or not self._record_btn:
+            return
+        self._hotkey_recording = True
+        self._record_btn.setTitle_("Press…")
+        self._hotkey_field.setStringValue_("")
+        self._hotkey_field.setPlaceholderString_("Press desired hotkey…")
+
+        reverse_map = {v: k for k, v in KEY_CODE_MAP.items()}
+
+        def event_to_hotkey_string(event):
+            from AppKit import (  # type: ignore[import-not-found]
+                NSEventModifierFlagCommand,
+                NSEventModifierFlagShift,
+                NSEventModifierFlagOption,
+                NSEventModifierFlagControl,
+            )
+
+            keycode = int(event.keyCode())
+
+            # Ignore pure modifier flag changes (except Fn)
+            if event.type() == NSEventTypeFlagsChanged and keycode != 63:
+                return None
+
+            key = reverse_map.get(keycode)
+            if not key:
+                chars = event.charactersIgnoringModifiers()
+                if chars:
+                    key = chars.lower()
+            if not key:
+                return None
+
+            flags = int(event.modifierFlags())
+            mods = []
+            if flags & NSEventModifierFlagControl:
+                mods.append("ctrl")
+            if flags & NSEventModifierFlagOption:
+                mods.append("alt")
+            if flags & NSEventModifierFlagShift:
+                mods.append("shift")
+            if flags & NSEventModifierFlagCommand:
+                mods.append("cmd")
+
+            return "+".join(mods + [key]) if mods else key
+
+        def handler(event):
+            if not self._hotkey_recording:
+                return event
+            hotkey_str = event_to_hotkey_string(event)
+            if hotkey_str:
+                self._hotkey_field.setStringValue_(hotkey_str.upper())
+                self._stop_hotkey_recording()
+                return None
+            return event
+
+        mask = NSEventMaskKeyDown | NSEventMaskFlagsChanged
+        self._hotkey_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            mask, handler
+        )
+
+    def _stop_hotkey_recording(self) -> None:
+        from AppKit import NSEvent  # type: ignore[import-not-found]
+
+        self._hotkey_recording = False
+        if self._record_btn:
+            self._record_btn.setTitle_("Record")
+        if self._hotkey_field:
+            self._hotkey_field.setPlaceholderString_(None)
+        if self._hotkey_monitor is not None:
+            try:
+                NSEvent.removeMonitor_(self._hotkey_monitor)
+            except Exception:
+                pass
+            self._hotkey_monitor = None
+
 
 # =============================================================================
 # Objective-C Handler Klassen
@@ -938,6 +1058,29 @@ def _create_restart_handler_class():
 
 
 _RestartButtonHandler = _create_restart_handler_class()
+
+
+def _create_record_hotkey_handler_class():
+    """Erstellt NSObject-Subklasse für Record-Hotkey Button."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class RecordHotkeyHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(RecordHotkeyHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def recordHotkey_(self, _sender) -> None:
+            self._controller._toggle_hotkey_recording()
+
+    return RecordHotkeyHandler
+
+
+_RecordHotkeyHandler = _create_record_hotkey_handler_class()
 
 
 def _create_mode_changed_handler_class():

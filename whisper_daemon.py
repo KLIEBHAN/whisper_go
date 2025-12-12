@@ -282,6 +282,9 @@ class WhisperDaemon:
                     keys.add(f_key)
                 else:
                     raise ValueError(f"Unbekannte Funktionstaste: {part}")
+            elif part == "fn":
+                # Fn/Globe key: pynput has no Key.fn, use virtual keycode
+                keys.add(keyboard.KeyCode.from_vk(63))
             else:
                 # Normale Taste
                 keys.add(keyboard.KeyCode.from_char(part))

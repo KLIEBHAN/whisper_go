@@ -51,6 +51,12 @@ class TestParseHotkey:
         assert virtual_key == 53  # kVK_Escape
         assert modifier_mask == 0
 
+    def test_fn_key(self):
+        """Fn/Globe wird korrekt geparst."""
+        virtual_key, modifier_mask = utils.hotkey.parse_hotkey("fn")
+        assert virtual_key == 63  # kVK_Function
+        assert modifier_mask == 0
+
     def test_special_key_escape_alias(self):
         """Escape (Alias für esc) wird korrekt geparst."""
         result_esc = utils.hotkey.parse_hotkey("esc")

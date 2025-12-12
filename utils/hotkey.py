@@ -40,6 +40,8 @@ KEY_CODE_MAP = {
     "f18": 79,
     "f19": 80,
     "f20": 90,
+    # Fn / Globe key (macOS)
+    "fn": 63,  # kVK_Function
     # Buchstaben
     "a": 0,
     "b": 11,
