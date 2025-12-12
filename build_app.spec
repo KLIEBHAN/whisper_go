@@ -71,6 +71,8 @@ hiddenimports = [
     # === Utils ===
     'pyperclip',
     'dotenv',
+    # Some runtime deps (e.g. SciPy via numpy.testing) rely on stdlib unittest.
+    'unittest',
 ]
 
 # === Local backends (faster-whisper / CTranslate2) ===
