@@ -18,7 +18,7 @@ Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). 
 | **Deepgram** | ~300ms ⚡ | WebSocket | Echtzeit-Streaming, empfohlen |
 | **Groq**     | ~1s       | REST      | Whisper auf LPU, sehr schnell |
 | **OpenAI**   | ~2-3s     | REST      | GPT-4o, höchste Qualität      |
-| **Lokal**    | ~5-10s    | Whisper   | Offline, keine API-Kosten     |
+| **Lokal**    | ~5-10s    | Whisper   | Offline, keine API-Kosten (optional schnelleres Backend) |
 
 ## Schnellstart
 
@@ -141,6 +141,41 @@ export WHISPER_GO_MODE="deepgram"
 
 # Transkriptions-Modell (überschreibt Provider-Default)
 export WHISPER_GO_MODEL="nova-3"
+
+# Device für lokales Whisper (auto, mps, cpu, cuda)
+# Standard: auto → nutzt MPS auf Apple Silicon, sonst CPU/CUDA
+export WHISPER_GO_DEVICE="auto"
+
+# FP16 für lokales Whisper erzwingen (true/false)
+# Standard: CPU/MPS → false (stabil), CUDA → true
+export WHISPER_GO_FP16="false"
+
+# Backend für lokales Whisper (whisper, faster, auto)
+# whisper = openai-whisper (PyTorch, nutzt MPS/GPU)
+# faster  = faster-whisper (CTranslate2, sehr schnell auf CPU)
+# auto    = faster falls installiert, sonst whisper
+export WHISPER_GO_LOCAL_BACKEND="whisper"
+
+# Compute-Type für faster-whisper (optional)
+# Default: int8 auf CPU, float16 auf CUDA
+# export WHISPER_GO_LOCAL_COMPUTE_TYPE="int8"
+
+# Faster-whisper Threads (optional)
+# 0 Threads = auto (alle Kerne)
+# export WHISPER_GO_LOCAL_CPU_THREADS=0
+# export WHISPER_GO_LOCAL_NUM_WORKERS=1
+
+# Faster-whisper Optionen (optional)
+# Standard bei faster: without_timestamps=true, vad_filter=false
+# export WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS="true"
+# export WHISPER_GO_LOCAL_VAD_FILTER="false"
+
+# Optional: schnelleres lokales Decoding (mehr Speed, leicht weniger Robustheit)
+export WHISPER_GO_LOCAL_FAST="false"  # setzt beam_size=1, best_of=1, temperature=0.0
+# Feintuning:
+# export WHISPER_GO_LOCAL_BEAM_SIZE=1
+# export WHISPER_GO_LOCAL_BEST_OF=1
+# export WHISPER_GO_LOCAL_TEMPERATURE=0.0
 
 # WebSocket-Streaming für Deepgram (default: true)
 export WHISPER_GO_STREAMING="true"
@@ -325,7 +360,7 @@ Beides ist integriert und startet automatisch mit dem Daemon.
 | `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Echtzeit-Streaming (empfohlen)      |
 | `groq`     | Groq     | REST      | ~1s       | Whisper auf LPU, sehr schnell       |
 | `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, höchste Qualität |
-| `local`    | Whisper  | Lokal     | ~5-10s    | Offline, keine API-Kosten           |
+| `local`    | Whisper  | Lokal     | ~5-10s    | Offline, keine API-Kosten (optional schnelleres Backend) |
 
 > **Empfehlung:** `--mode deepgram` für den täglichen Gebrauch. Die Streaming-Architektur sorgt für minimale Wartezeit zwischen Aufnahme-Stopp und Text-Einfügen.
 
@@ -377,6 +412,17 @@ Groq nutzt LPU-Chips (Language Processing Units) für besonders schnelle Inferen
 
 ### Lokale Modelle
 
+Der lokale Modus unterstützt jetzt zwei Backends:
+
+- **`whisper` (Standard):** openai‑whisper auf PyTorch. Nutzt auf M‑Series Macs automatisch MPS (`WHISPER_GO_DEVICE=auto`). Beste Kompatibilität/Qualität.
+- **`faster`:** faster‑whisper (CTranslate2). Sehr schnell auf CPU (oft 2–4× schneller) und mit weniger Speicherbedarf. Default‑`compute_type` ist `int8` auf CPU und `float16` auf CUDA. Aktivieren mit `WHISPER_GO_LOCAL_BACKEND=faster`.
+
+Hinweise:
+
+- Modellname `turbo` wird bei faster‑whisper zu `large-v3-turbo` gemappt.
+- Für maximale Geschwindigkeit (mit leicht weniger Robustheit) `WHISPER_GO_LOCAL_FAST=true` oder kleinere `BEAM_SIZE`/`BEST_OF` wählen.
+- Für längere Aufnahmen unter `faster` kannst du Durchsatz via `WHISPER_GO_LOCAL_CPU_THREADS` und `WHISPER_GO_LOCAL_NUM_WORKERS` tunen.
+
 | Modell | Parameter | VRAM   | Geschwindigkeit  |
 | ------ | --------- | ------ | ---------------- |
 | tiny   | 39M       | ~1 GB  | Sehr schnell     |
@@ -397,7 +443,7 @@ Groq nutzt LPU-Chips (Language Processing Units) für besonders schnelle Inferen
 | Mikrofon geht nicht (macOS)                | `brew install portaudio && pip install --force-reinstall sounddevice`      |
 | Mikrofon-Berechtigung                      | Zugriff erlauben unter Systemeinstellungen → Datenschutz → Mikrofon        |
 | ffmpeg fehlt                               | `brew install ffmpeg` (macOS) oder `sudo apt install ffmpeg` (Ubuntu)      |
-| Transkription langsam                      | Wechsel zu `--mode groq` oder `--mode deepgram` statt `local`              |
+| Transkription langsam                      | Wechsel zu `--mode groq`/`deepgram` oder lokal `WHISPER_GO_LOCAL_BACKEND=faster`, `WHISPER_GO_LOCAL_FAST=true` bzw. kleineres Modell |
 | Daemon startet nicht                       | Prüfe `~/.whisper_go/startup.log` für Emergency-Logs                       |
 | Auto-Paste funktioniert nicht (App Bundle) | Siehe [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle) |
 

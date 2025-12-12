@@ -1,12 +1,16 @@
 """Lokaler Whisper Provider.
 
-Nutzt openai-whisper für Offline-Transkription.
+Standardmäßig nutzt er openai-whisper (PyTorch). Optional kann über
+`WHISPER_GO_LOCAL_BACKEND=faster` der deutlich schnellere faster-whisper
+(CTranslate2) genutzt werden.
 """
 
 import json
 import logging
-from pathlib import Path
+import os
 import sys
+import threading
+from pathlib import Path
 
 logger = logging.getLogger("whisper_go.providers.local")
 
@@ -33,6 +37,61 @@ def _log_stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_bool(name: str) -> bool | None:
+    """Parst boolsche ENV-Flags."""
+    val = os.getenv(name)
+    if val is None:
+        return None
+    val = val.strip().lower()
+    if val in _TRUE_VALUES:
+        return True
+    if val in _FALSE_VALUES:
+        return False
+    logger.warning(f"Ungültiger {name}={val!r}, ignoriere")
+    return None
+
+
+def _env_int(name: str) -> int | None:
+    """Parst int ENV-Values."""
+    val = os.getenv(name)
+    if val is None:
+        return None
+    try:
+        return int(val.strip())
+    except ValueError:
+        logger.warning(f"Ungültiger {name}={val!r}, ignoriere")
+        return None
+
+
+def _select_device() -> str:
+    """Wählt ein sinnvolles Torch-Device für lokales Whisper.
+
+    Priorität:
+      1) WHISPER_GO_DEVICE Env-Override (z.B. "cpu", "mps", "cuda")
+      2) Apple Silicon GPU via MPS
+      3) CUDA (falls verfügbar)
+      4) CPU
+    """
+    env_device = (os.getenv("WHISPER_GO_DEVICE") or "").strip().lower()
+    if env_device and env_device != "auto":
+        return env_device
+    try:
+        import torch
+
+        if getattr(torch.backends, "mps", None) is not None:
+            if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception as e:
+        logger.debug(f"Device-Detection fehlgeschlagen, fallback CPU: {e}")
+    return "cpu"
+
+
 class LocalProvider:
     """Lokaler Whisper Provider.
 
@@ -53,6 +112,257 @@ class LocalProvider:
 
     def __init__(self) -> None:
         self._model_cache: dict = {}
+        self._device: str | None = None
+        self._fp16_override: bool | None = None
+        self._fast_mode: bool | None = None
+        self._backend: str | None = None
+        self._compute_type: str | None = None
+        self._load_lock = threading.Lock()
+
+    def _ensure_runtime_config(self) -> None:
+        if self._backend is None:
+            backend_env = (
+                os.getenv("WHISPER_GO_LOCAL_BACKEND") or "whisper"
+            ).strip().lower()
+            if backend_env in {"faster", "faster-whisper"}:
+                self._backend = "faster"
+            elif backend_env == "auto":
+                try:
+                    import faster_whisper  # noqa: F401
+
+                    self._backend = "faster"
+                except Exception:
+                    self._backend = "whisper"
+            elif backend_env in {"whisper", "openai-whisper"}:
+                self._backend = "whisper"
+            else:
+                logger.warning(
+                    f"Unbekannter WHISPER_GO_LOCAL_BACKEND='{backend_env}', nutze whisper"
+                )
+                self._backend = "whisper"
+            _log_stderr(f"Lokales Whisper Backend: {self._backend}")
+
+        if self._device is None:
+            self._device = _select_device()
+            _log_stderr(f"Lokales Whisper Device: {self._device}")
+
+        if self._fp16_override is None:
+            self._fp16_override = _env_bool("WHISPER_GO_FP16")
+
+        if self._fast_mode is None:
+            self._fast_mode = _env_bool("WHISPER_GO_LOCAL_FAST") or False
+
+        if self._compute_type is None:
+            compute_env = os.getenv("WHISPER_GO_LOCAL_COMPUTE_TYPE")
+            if compute_env:
+                self._compute_type = compute_env.strip()
+
+    def _map_faster_model_name(self, model_name: str) -> str:
+        """Mappt openai-whisper Namen auf faster-whisper Konventionen."""
+        mapping = {
+            "turbo": "large-v3-turbo",
+            "large": "large-v3",
+        }
+        return mapping.get(model_name, model_name)
+
+    def _get_whisper_model(self, model_name: str):
+        """Lädt openai-whisper Modell auf dem richtigen Device (mit Caching)."""
+        import whisper
+
+        self._ensure_runtime_config()
+
+        cache_key = f"whisper:{model_name}:{self._device}"
+        if cache_key in self._model_cache:
+            return self._model_cache[cache_key]
+
+        with self._load_lock:
+            # Double-check nach Lock (Race vermeiden)
+            if cache_key in self._model_cache:
+                return self._model_cache[cache_key]
+
+            _log_stderr(f"Lade Modell '{model_name}' ({self._device})...")
+            try:
+                if self._device == "mps":
+                    # MPS kann sparse alignment_heads nicht bewegen → CPU load,
+                    # sparse Buffer temporär entfernen, dann Model auf MPS schieben.
+                    cpu_model = whisper.load_model(model_name, device="cpu")
+                    heads = None
+                    if (
+                        getattr(cpu_model, "alignment_heads", None) is not None
+                        and getattr(cpu_model.alignment_heads, "is_sparse", False)
+                    ):
+                        heads = cpu_model.alignment_heads
+                        cpu_model._buffers["alignment_heads"] = None
+                    try:
+                        cpu_model = cpu_model.to("mps")
+                    finally:
+                        if heads is not None:
+                            cpu_model._buffers["alignment_heads"] = heads
+                    self._model_cache[cache_key] = cpu_model
+                else:
+                    self._model_cache[cache_key] = whisper.load_model(
+                        model_name, device=self._device
+                    )
+            except Exception as e:
+                if self._device != "cpu":
+                    logger.warning(
+                        f"Whisper Load auf {self._device} fehlgeschlagen, fallback CPU: {e}"
+                    )
+                    self._device = "cpu"
+                    cache_key = f"whisper:{model_name}:cpu"
+                    if cache_key not in self._model_cache:
+                        self._model_cache[cache_key] = whisper.load_model(
+                            model_name, device="cpu"
+                        )
+                else:
+                    raise
+
+            return self._model_cache[cache_key]
+
+    def _get_faster_model(self, model_name: str):
+        """Lädt faster-whisper Modell (CTranslate2) mit Caching."""
+        self._ensure_runtime_config()
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as e:
+            raise ImportError(
+                "faster-whisper ist nicht installiert. Installiere es mit "
+                "`pip install faster-whisper` oder setze WHISPER_GO_LOCAL_BACKEND=whisper."
+            ) from e
+
+        faster_name = self._map_faster_model_name(model_name)
+        device = "cuda" if self._device == "cuda" else "cpu"
+        compute_type = self._compute_type or ("float16" if device == "cuda" else "int8")
+
+        cpu_threads = _env_int("WHISPER_GO_LOCAL_CPU_THREADS") or 0
+        num_workers = _env_int("WHISPER_GO_LOCAL_NUM_WORKERS") or 1
+
+        cache_key = f"faster:{faster_name}:{device}:{compute_type}:{cpu_threads}:{num_workers}"
+        if cache_key in self._model_cache:
+            return self._model_cache[cache_key]
+
+        with self._load_lock:
+            if cache_key in self._model_cache:
+                return self._model_cache[cache_key]
+            _log_stderr(
+                f"Lade faster-whisper Modell '{faster_name}' ({device}, {compute_type}, "
+                f"threads={cpu_threads}, workers={num_workers})..."
+            )
+            self._model_cache[cache_key] = WhisperModel(
+                faster_name,
+                device=device,
+                compute_type=compute_type,
+                cpu_threads=cpu_threads,
+                num_workers=num_workers,
+            )
+            return self._model_cache[cache_key]
+
+    def _build_options(self, language: str | None) -> dict:
+        """Baut Options inkl. Vocabulary und Speed-Overrides.
+
+        Rückgabe ist kompatibel zu openai-whisper; für faster-whisper wird
+        ein Subset genutzt.
+        """
+        self._ensure_runtime_config()
+
+        options: dict = {}
+        if language:
+            options["language"] = language
+
+        # Custom Vocabulary als initial_prompt für bessere Erkennung
+        MAX_KEYWORDS = 50
+        vocab = _load_vocabulary()
+        keywords = vocab.get("keywords", [])[:MAX_KEYWORDS]
+        if keywords:
+            options["initial_prompt"] = f"Fachbegriffe: {', '.join(keywords)}"
+            logger.debug(f"Lokales Whisper mit {len(keywords)} Keywords")
+
+        if self._backend == "whisper":
+            # FP16: auf CPU nicht verfügbar; auf MPS derzeit oft instabil → default FP32.
+            # Override via WHISPER_GO_FP16=true möglich.
+            if self._device == "cpu":
+                options["fp16"] = False
+            elif self._device == "mps":
+                options["fp16"] = (
+                    self._fp16_override if self._fp16_override is not None else False
+                )
+            else:
+                options["fp16"] = (
+                    self._fp16_override if self._fp16_override is not None else True
+                )
+        elif self._backend == "faster":
+            # faster-whisper: standardmäßig keine Timestamps berechnen (spart Zeit)
+            wt_env = _env_bool("WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS")
+            options["without_timestamps"] = True if wt_env is None else wt_env
+
+            vad_env = _env_bool("WHISPER_GO_LOCAL_VAD_FILTER")
+            if vad_env:
+                options["vad_filter"] = True
+
+        # Fast-Mode: schnellere Decoding Defaults (kann via ENV überschrieben werden)
+        if self._fast_mode:
+            options.setdefault("temperature", 0.0)
+            options.setdefault("beam_size", 1)
+            options.setdefault("best_of", 1)
+            options.setdefault("condition_on_previous_text", False)
+
+        # Explizite Decode-Overrides
+        beam_size = _env_int("WHISPER_GO_LOCAL_BEAM_SIZE")
+        if beam_size is not None:
+            options["beam_size"] = beam_size
+
+        best_of = _env_int("WHISPER_GO_LOCAL_BEST_OF")
+        if best_of is not None:
+            options["best_of"] = best_of
+
+        temp_env = os.getenv("WHISPER_GO_LOCAL_TEMPERATURE")
+        if temp_env:
+            try:
+                if "," in temp_env:
+                    options["temperature"] = tuple(
+                        float(t.strip()) for t in temp_env.split(",") if t.strip()
+                    )
+                else:
+                    options["temperature"] = float(temp_env.strip())
+            except ValueError:
+                logger.warning(f"Ungültiger WHISPER_GO_LOCAL_TEMPERATURE: {temp_env}")
+
+        return options
+
+    def preload(self, model: str | None = None) -> None:
+        """Lädt ein Modell vorab in den Cache."""
+        model_name = model or self.default_model
+        self._ensure_runtime_config()
+        if self._backend == "faster":
+            self._get_faster_model(model_name)
+        else:
+            self._get_whisper_model(model_name)
+
+    def transcribe_audio(
+        self,
+        audio,
+        model: str | None = None,
+        language: str | None = None,
+    ) -> str:
+        """Transkribiert ein Audio-Array lokal (ohne Dateischreibzugriff)."""
+        model_name = model or self.default_model
+        options = self._build_options(language)
+        _log_stderr("Transkribiere audio-buffer...")
+        if self._backend == "faster":
+            return self._transcribe_faster(audio, model_name, options)
+        whisper_model = self._get_whisper_model(model_name)
+        result = whisper_model.transcribe(audio, **options)
+        return result["text"]
+
+    def _transcribe_faster(self, audio, model_name: str, options: dict) -> str:
+        model = self._get_faster_model(model_name)
+        faster_opts = {k: v for k, v in options.items() if k != "fp16"}
+        # faster-whisper erwartet float temperature; Tuple → erstes Element
+        temp = faster_opts.get("temperature")
+        if isinstance(temp, tuple):
+            faster_opts["temperature"] = float(temp[0])
+        segments, _info = model.transcribe(audio, **faster_opts)
+        return "".join(seg.text for seg in segments)
 
     def transcribe(
         self,
@@ -70,33 +380,13 @@ class LocalProvider:
         Returns:
             Transkribierter Text
         """
-        import whisper
-
         model_name = model or self.default_model
-
-        # Modell laden (mit Caching für wiederholte Aufrufe)
-        if model_name not in self._model_cache:
-            _log_stderr(f"Lade Modell '{model_name}'...")
-            self._model_cache[model_name] = whisper.load_model(model_name)
-
-        whisper_model = self._model_cache[model_name]
-
         _log_stderr(f"Transkribiere {audio_path.name}...")
-
-        options: dict = {}
-        if language:
-            options["language"] = language
-
-        # Custom Vocabulary als initial_prompt für bessere Erkennung
-        MAX_KEYWORDS = 50
-        vocab = _load_vocabulary()
-        keywords = vocab.get("keywords", [])[:MAX_KEYWORDS]
-        if keywords:
-            options["initial_prompt"] = f"Fachbegriffe: {', '.join(keywords)}"
-            logger.debug(f"Lokales Whisper mit {len(keywords)} Keywords")
-
+        options = self._build_options(language)
+        if self._backend == "faster":
+            return self._transcribe_faster(str(audio_path), model_name, options)
+        whisper_model = self._get_whisper_model(model_name)
         result = whisper_model.transcribe(str(audio_path), **options)
-
         return result["text"]
 
     def supports_streaming(self) -> bool:

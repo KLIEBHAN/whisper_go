@@ -1,5 +1,7 @@
 openai>=1.0.0
 openai-whisper
+# Optional: faster local backend (CTranslate2)
+faster-whisper
 deepgram-sdk>=3.0.0
 groq>=0.4.0
 sounddevice

@@ -45,7 +45,7 @@ def emergency_log(msg: str):
 emergency_log("=== Booting Whisper Daemon ===")
 
 try:
-    from config import INTERIM_FILE, VAD_THRESHOLD
+    from config import INTERIM_FILE, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
     from utils import setup_logging, show_error_alert
     from config import DEFAULT_DEEPGRAM_MODEL
     from providers.deepgram_stream import deepgram_stream_core
@@ -139,6 +139,68 @@ class WhisperDaemon:
         # UI-Controller (werden in run() initialisiert)
         self._menubar: MenuBarController | None = None
         self._overlay: OverlayController | None = None
+
+        # Provider-Cache: vermeidet Re-Init (z.B. lokales Modell laden)
+        self._provider_cache: dict[str, object] = {}
+
+    def _get_provider(self, mode: str):
+        """Gibt gecachten Provider zurück oder erstellt ihn."""
+        provider = self._provider_cache.get(mode)
+        if provider is None:
+            provider = get_provider(mode)
+            self._provider_cache[mode] = provider
+        return provider
+
+    @staticmethod
+    def _trim_silence(
+        data,
+        threshold: float,
+        sample_rate: int,
+        pad_s: float = 0.15,
+    ):
+        """Schneidet Stille am Anfang/Ende ab (RMS über kurze Fenster)."""
+        import numpy as np
+
+        mono = data.squeeze()
+        if mono.ndim != 1:
+            mono = mono.reshape(-1)
+        window = int(sample_rate * 0.02)  # 20ms
+        hop = int(sample_rate * 0.01)     # 10ms
+        if mono.shape[0] <= window:
+            return mono.astype(np.float32, copy=False)
+        frame_count = (mono.shape[0] - window) // hop + 1
+        if frame_count <= 0:
+            return mono.astype(np.float32, copy=False)
+        strides = (mono.strides[0] * hop, mono.strides[0])
+        frames = np.lib.stride_tricks.as_strided(
+            mono, shape=(frame_count, window), strides=strides
+        )
+        rms = np.sqrt(np.mean(frames**2, axis=1))
+        active = rms > threshold
+        if not np.any(active):
+            return mono.astype(np.float32, copy=False)
+        first = int(np.argmax(active))
+        last = int(len(active) - np.argmax(active[::-1]) - 1)
+        start = max(0, first * hop - int(pad_s * sample_rate))
+        end = min(mono.shape[0], last * hop + window + int(pad_s * sample_rate))
+        return mono[start:end].astype(np.float32, copy=False)
+
+    def _preload_local_model_async(self) -> None:
+        """Lädt lokales Modell im Hintergrund vor (reduziert erste Latenz)."""
+        if self.mode != "local":
+            return
+        provider = self._get_provider("local")
+        if not hasattr(provider, "preload"):
+            return
+
+        def _preload():
+            try:
+                provider.preload(self.model)
+                logger.debug("Lokales Modell vorab geladen")
+            except Exception as e:
+                logger.warning(f"Preload lokales Modell fehlgeschlagen: {e}")
+
+        threading.Thread(target=_preload, daemon=True, name="LocalPreload").start()
 
     def _update_state(self, state: AppState, text: str | None = None) -> None:
         """Aktualisiert State und benachrichtigt UI-Controller."""
@@ -362,7 +424,10 @@ class WhisperDaemon:
                     pass
 
             with sd.InputStream(
-                samplerate=16000, channels=1, dtype="float32", callback=callback
+                samplerate=WHISPER_SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                callback=callback,
             ):
                 while not self._stop_event.is_set():
                     sd.sleep(50)
@@ -377,21 +442,56 @@ class WhisperDaemon:
 
             audio_data = np.concatenate(recorded_chunks)
 
+            # Silence-Trimming (reduziert Zeit/Kosten bei allen Providern)
+            raw_duration = 0.0
+            audio_duration = 0.0
+            if hasattr(audio_data, "shape"):
+                raw_duration = float(audio_data.shape[0]) / WHISPER_SAMPLE_RATE
+                trimmed_audio = self._trim_silence(
+                    audio_data, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
+                )
+                trimmed_duration = float(trimmed_audio.shape[0]) / WHISPER_SAMPLE_RATE
+                if trimmed_duration < raw_duration - 0.05:
+                    logger.info(
+                        f"Trimmed silence: raw={raw_duration:.2f}s -> trimmed={trimmed_duration:.2f}s"
+                    )
+
+                audio_duration = trimmed_duration
+                audio_data = trimmed_audio
+
             # Temp-File erstellen
             fd, temp_path = tempfile.mkstemp(suffix=".wav")
             os.close(fd)
 
             try:
-                sf.write(temp_path, audio_data, 16000)
-
                 # Update State: Transcribing
                 # (via Queue nicht direkt möglich, aber _stop_recording setzt es im Main-Thread)
 
                 # Transkribieren via Provider
-                provider = get_provider(self.mode)
-                transcript = provider.transcribe(
-                    Path(temp_path), model=self.model, language=self.language
-                )
+                provider = self._get_provider(self.mode)
+                t0 = time.perf_counter()
+                if self.mode == "local" and hasattr(provider, "transcribe_audio"):
+                    transcript = provider.transcribe_audio(
+                        audio_data, model=self.model, language=self.language
+                    )
+                else:
+                    sf.write(temp_path, audio_data, WHISPER_SAMPLE_RATE)
+                    transcript = provider.transcribe(
+                        Path(temp_path), model=self.model, language=self.language
+                    )
+                t_transcribe = time.perf_counter() - t0
+                if audio_duration > 0:
+                    rtf = t_transcribe / audio_duration
+                    logger.info(
+                        f"Transcription performance: mode={self.mode}, "
+                        f"model={self.model or getattr(provider, 'default_model', None)}, "
+                        f"audio={audio_duration:.2f}s, time={t_transcribe:.2f}s, rtf={rtf:.2f}x"
+                    )
+                else:
+                    logger.info(
+                        f"Transcription performance: mode={self.mode}, "
+                        f"time={t_transcribe:.2f}s (audio duration unknown)"
+                    )
 
                 # LLM-Refine
                 if self.refine and transcript:
@@ -400,12 +500,15 @@ class WhisperDaemon:
                             type=MessageType.STATUS_UPDATE, payload=AppState.REFINING
                         )
                     )
+                    t1 = time.perf_counter()
                     transcript = refine_transcript(
                         transcript,
                         model=self.refine_model,
                         provider=self.refine_provider,
                         context=self.context,
                     )
+                    t_refine = time.perf_counter() - t1
+                    logger.info(f"Refine performance: provider={self.refine_provider}, time={t_refine:.2f}s")
 
                 self._result_queue.put(
                     DaemonMessage(
@@ -623,8 +726,8 @@ class WhisperDaemon:
         """Lädt Settings aus .env neu und wendet sie an (außer Hotkey)."""
         from utils.preferences import get_env_setting
 
-        # .env neu laden
-        load_environment()
+        # .env neu laden (override=True um Änderungen zu übernehmen)
+        load_environment(override_existing=True)
 
         # Settings aktualisieren (außer Hotkey - erfordert Neustart)
         new_mode = get_env_setting("WHISPER_GO_MODE")
@@ -651,6 +754,9 @@ class WhisperDaemon:
             f"refine={self.refine}, refine_provider={self.refine_provider}, "
             f"refine_model={self.refine_model}"
         )
+
+        # Falls lokal aktiviert, Modell im Hintergrund vorladen
+        self._preload_local_model_async()
 
     def run(self) -> None:
         """Startet Daemon (blockiert)."""
@@ -702,6 +808,9 @@ class WhisperDaemon:
         else:
             print("   Beenden: Menubar-Icon → Quit oder Ctrl+C", file=sys.stderr)
 
+        # Lokales Modell vorab laden (falls aktiv)
+        self._preload_local_model_async()
+
         # Hotkey registrieren
         @quickHotKey(virtualKey=virtual_key, modifierMask=modifier_mask)  # type: ignore[arg-type]
         def hotkey_handler() -> None:
@@ -725,22 +834,25 @@ class WhisperDaemon:
 # =============================================================================
 
 
-def load_environment() -> None:
-    """Lädt .env-Datei aus dem User-Config-Verzeichnis."""
+def load_environment(override_existing: bool = False) -> None:
+    """Lädt .env-Datei aus dem User-Config-Verzeichnis.
+
+    `override_existing=False` respektiert bereits gesetzte Umgebungsvariablen
+    (ENV > .env). Beim Reload wird mit override=True geladen.
+    """
     try:
         from dotenv import load_dotenv
         from config import USER_CONFIG_DIR
 
         # Priorität 1: .env im User-Verzeichnis ~/.whisper_go/.env
-        # override=True damit geänderte Werte auch wirksam werden
         user_env = USER_CONFIG_DIR / ".env"
         if user_env.exists():
-            load_dotenv(user_env, override=True)
+            load_dotenv(user_env, override=override_existing)
 
         # Priorität 2: .env im aktuellen Verzeichnis (für Dev)
         local_env = Path(".env")
         if local_env.exists():
-            load_dotenv(local_env, override=True)
+            load_dotenv(local_env, override=override_existing)
 
     except ImportError:
         pass
