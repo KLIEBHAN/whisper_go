@@ -186,8 +186,9 @@ class WhisperDaemon:
             return
         if self._recording:
             return
-        self._recording_started_by_hold = True
         self._start_recording()
+        if self._recording:
+            self._recording_started_by_hold = True
 
     def _start_modifier_hotkey_tap(
         self,
@@ -642,17 +643,16 @@ class WhisperDaemon:
 
     def _start_recording(self) -> None:
         """Startet Streaming-Aufnahme im Worker-Thread."""
-        # Sicherstellen, dass kein alter Worker noch läuft
+        # Sicherstellen, dass kein alter Worker noch läuft.
+        #
+        # WICHTIG: Nicht im Main-Thread blocken (join), sonst friert UI/Overlay ein.
+        # Wenn ein Worker noch läuft, sind wir "busy" (z.B. Deepgram finalize/close).
+        # In dem Fall starten wir keinen neuen Recording-Run.
         if self._worker_thread is not None and self._worker_thread.is_alive():
-            logger.warning("Alter Worker-Thread läuft noch, warte auf Beendigung...")
+            logger.warning("Worker-Thread läuft noch – Recording wird nicht neu gestartet")
             if self._stop_event is not None:
                 self._stop_event.set()
-            self._worker_thread.join(timeout=2.0)
-            if self._worker_thread.is_alive():
-                logger.error("Worker-Thread konnte nicht beendet werden!")
-
-            self._worker_thread = None
-            self._stop_event = None
+            return
 
         self._recording = True
         self._update_state(AppState.LISTENING)
@@ -969,7 +969,7 @@ class WhisperDaemon:
             self._result_queue.put(e)
 
     def _stop_recording(self) -> None:
-        """Stoppt Aufnahme und wartet auf Worker-Beendigung."""
+        """Stoppt Aufnahme (non-blocking) und lässt Worker im Hintergrund auslaufen."""
         if not self._recording:
             return
 
@@ -981,12 +981,9 @@ class WhisperDaemon:
         if self._stop_event:
             self._stop_event.set()
 
-        # Worker-Thread muss beendet sein, bevor neuer starten kann
-        # Verhindert parallele Mikrofon-Zugriffe
-        if self._worker_thread is not None and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=2.0)
-            if self._worker_thread.is_alive():
-                logger.warning("Worker-Thread noch aktiv nach Timeout")
+        # Wichtig: Nicht join() im Main-Thread, sonst blockiert der UI-RunLoop.
+        # Deepgram-Streaming hat beim Shutdown typischerweise ~2s Close-Latenz.
+        self._start_worker_joiner()
 
         self._recording = False
         self._recording_started_by_hold = False
@@ -997,6 +994,34 @@ class WhisperDaemon:
             self._update_state(AppState.TRANSCRIBING)
 
         # Polling läuft bereits seit Start
+
+    def _start_worker_joiner(self) -> None:
+        """Joint den aktiven Worker in einem Background-Thread und räumt Referenzen auf."""
+        worker = self._worker_thread
+        if worker is None or not worker.is_alive():
+            return
+
+        def _join_and_cleanup() -> None:
+            try:
+                worker.join()
+            except Exception as e:  # pragma: no cover
+                logger.debug(f"Worker join failed: {e}")
+            self._call_on_main(lambda: self._cleanup_finished_worker(worker))
+
+        threading.Thread(
+            target=_join_and_cleanup,
+            daemon=True,
+            name="WorkerJoiner",
+        ).start()
+
+    def _cleanup_finished_worker(self, worker: threading.Thread) -> None:
+        """Räumt Worker-Referenzen auf, falls es noch der aktuelle Worker ist."""
+        if self._worker_thread is not worker:
+            return
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            return
+        self._worker_thread = None
+        self._stop_event = None
 
     def _start_result_polling(self) -> None:
         """Startet NSTimer für Result-Polling."""
