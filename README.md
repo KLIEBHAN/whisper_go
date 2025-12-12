@@ -318,12 +318,15 @@ open start_daemon.command
 In `.env` or as environment variable:
 
 ```bash
-# Hotkey (default: F19)
+# Hotkeys (default: F19)
+#
+# Optional: toggle + hold in parallel.
+# If set, these override WHISPER_GO_HOTKEY / WHISPER_GO_HOTKEY_MODE.
+# WHISPER_GO_TOGGLE_HOTKEY=capslock
+# WHISPER_GO_HOLD_HOTKEY=fn
+#
+# Legacy (single hotkey):
 WHISPER_GO_HOTKEY=f19
-
-# Hotkey mode:
-# toggle = press once to start/stop (QuickMacHotKey, no Accessibility needed)
-# hold   = push-to-talk while held (pynput, requires Accessibility)
 WHISPER_GO_HOTKEY_MODE=toggle
 
 # Dock Icon (default: true) – set to false for menubar-only mode

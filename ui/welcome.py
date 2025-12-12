@@ -32,7 +32,6 @@ REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
 LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
 LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "auto"]
 LOCAL_MODEL_OPTIONS = ["default", "turbo", "large", "medium", "small", "base", "tiny"]
-HOTKEY_MODE_OPTIONS = ["toggle", "hold"]
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -69,14 +68,15 @@ class WelcomeController:
 
         # UI-Referenzen (werden in _build_* Methoden gesetzt)
         self._startup_checkbox = None
-        self._hotkey_field = None
-        self._record_btn = None
+        self._toggle_hotkey_field = None
+        self._hold_hotkey_field = None
+        self._toggle_record_btn = None
+        self._hold_record_btn = None
         self._mode_popup = None
         self._lang_popup = None
         self._refine_checkbox = None
         self._provider_popup = None
         self._model_field = None
-        self._hotkey_mode_popup = None
         self._local_backend_popup = None
         self._local_model_popup = None
         self._local_backend_label = None
@@ -84,8 +84,12 @@ class WelcomeController:
         self._mode_changed_handler = None
         self._save_btn = None
         self._restart_handler = None
-        self._record_handler = None
+        self._toggle_record_handler = None
+        self._hold_record_handler = None
         self._hotkey_recording = False
+        self._hotkey_recording_kind = None
+        self._record_target_field = None
+        self._record_target_btn = None
         self._hotkey_monitor = None
         # API-Key-Felder werden dynamisch via setattr gesetzt:
         # _{provider}_field, _{provider}_status für deepgram, groq, openai, openrouter
@@ -191,7 +195,6 @@ class WelcomeController:
             NSFontWeightMedium,
             NSFontWeightSemibold,
             NSMakeRect,
-            NSPopUpButton,
             NSTextAlignmentCenter,
             NSTextField,
         )
@@ -235,49 +238,64 @@ class WelcomeController:
         desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
         self._content_view.addSubview_(desc)
 
-        # Hotkey-Eingabefeld (mit Platz für Record + Restart Button)
+        # Toggle + Hold Hotkeys (parallel möglich)
         button_width = 60
         button_spacing = 8
         buttons_total = button_width * 2 + button_spacing
         field_width = card_width - 2 * CARD_PADDING - buttons_total
-        field_y = card_y + 42
-        field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, field_y, field_width, 24)
-        )
-        current_hotkey = get_env_setting("WHISPER_GO_HOTKEY") or self.hotkey
-        field.setStringValue_(current_hotkey.upper())
-        field.setFont_(NSFont.systemFontOfSize_(13))
-        field.setAlignment_(NSTextAlignmentCenter)
-        self._content_view.addSubview_(field)
-        self._hotkey_field = field
 
-        # Record-Button
+        legacy_hotkey = get_env_setting("WHISPER_GO_HOTKEY") or self.hotkey
+        legacy_mode = (get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle").lower()
+        toggle_default = get_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
+        hold_default = get_env_setting("WHISPER_GO_HOLD_HOTKEY")
+        if toggle_default is None and hold_default is None:
+            if legacy_mode == "hold":
+                hold_default = legacy_hotkey
+                toggle_default = ""
+            else:
+                toggle_default = legacy_hotkey
+                hold_default = ""
+
+        # Toggle Hotkey Feld (oben)
+        toggle_y = card_y + 42
+        toggle_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(WELCOME_PADDING + CARD_PADDING, toggle_y, field_width, 24)
+        )
+        toggle_field.setPlaceholderString_("Toggle hotkey")
+        toggle_field.setStringValue_((toggle_default or "").upper())
+        toggle_field.setFont_(NSFont.systemFontOfSize_(13))
+        toggle_field.setAlignment_(NSTextAlignmentCenter)
+        self._content_view.addSubview_(toggle_field)
+        self._toggle_hotkey_field = toggle_field
+
         record_x = (
             WELCOME_WIDTH
             - WELCOME_PADDING
             - CARD_PADDING
             - (button_width * 2 + button_spacing)
         )
-        record_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(record_x, field_y, button_width, 24)
-        )
-        record_btn.setTitle_("Record")
-        record_btn.setBezelStyle_(NSBezelStyleRounded)
-        record_btn.setFont_(NSFont.systemFontOfSize_(11))
 
-        record_handler = _RecordHotkeyHandler.alloc().initWithController_(self)
-        record_btn.setTarget_(record_handler)
-        record_btn.setAction_(
-            objc.selector(record_handler.recordHotkey_, signature=b"v@:@")
+        toggle_record_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(record_x, toggle_y, button_width, 24)
         )
-        self._record_handler = record_handler
-        self._record_btn = record_btn
-        self._content_view.addSubview_(record_btn)
+        toggle_record_btn.setTitle_("Record")
+        toggle_record_btn.setBezelStyle_(NSBezelStyleRounded)
+        toggle_record_btn.setFont_(NSFont.systemFontOfSize_(11))
+        toggle_record_handler = _RecordHotkeyHandler.alloc().initWithController_kind_(
+            self, "toggle"
+        )
+        toggle_record_btn.setTarget_(toggle_record_handler)
+        toggle_record_btn.setAction_(
+            objc.selector(toggle_record_handler.recordHotkey_, signature=b"v@:@")
+        )
+        self._toggle_record_handler = toggle_record_handler
+        self._toggle_record_btn = toggle_record_btn
+        self._content_view.addSubview_(toggle_record_btn)
 
-        # Restart-Button
+        # Restart-Button (nur oben)
         restart_x = record_x + button_width + button_spacing
         restart_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(restart_x, field_y, button_width, 24)
+            NSMakeRect(restart_x, toggle_y, button_width, 24)
         )
         restart_btn.setTitle_("Restart")
         restart_btn.setBezelStyle_(NSBezelStyleRounded)
@@ -291,25 +309,34 @@ class WelcomeController:
         self._restart_handler = restart_handler
         self._content_view.addSubview_(restart_btn)
 
-        # Hotkey Mode Dropdown (unter Hotkey)
-        base_x = WELCOME_PADDING + CARD_PADDING
-        label_width = 110
-        control_x = base_x + label_width + 8
-        control_width = card_width - 2 * CARD_PADDING - label_width - 8
-
-        self._add_setting_label(base_x, card_y + 12, "Hotkey Mode:")
-        hotkey_mode_popup = NSPopUpButton.alloc().initWithFrame_(
-            NSMakeRect(control_x, card_y + 10, control_width, 22)
+        # Hold Hotkey Feld (unten)
+        hold_y = card_y + 12
+        hold_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(WELCOME_PADDING + CARD_PADDING, hold_y, field_width, 24)
         )
-        hotkey_mode_popup.setFont_(NSFont.systemFontOfSize_(11))
-        for m in HOTKEY_MODE_OPTIONS:
-            hotkey_mode_popup.addItemWithTitle_(m)
-        current_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle"
-        if current_hotkey_mode not in HOTKEY_MODE_OPTIONS:
-            current_hotkey_mode = "toggle"
-        hotkey_mode_popup.selectItemWithTitle_(current_hotkey_mode)
-        self._hotkey_mode_popup = hotkey_mode_popup
-        self._content_view.addSubview_(hotkey_mode_popup)
+        hold_field.setPlaceholderString_("Hold hotkey (Push‑to‑Talk)")
+        hold_field.setStringValue_((hold_default or "").upper())
+        hold_field.setFont_(NSFont.systemFontOfSize_(13))
+        hold_field.setAlignment_(NSTextAlignmentCenter)
+        self._content_view.addSubview_(hold_field)
+        self._hold_hotkey_field = hold_field
+
+        hold_record_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(record_x, hold_y, button_width, 24)
+        )
+        hold_record_btn.setTitle_("Record")
+        hold_record_btn.setBezelStyle_(NSBezelStyleRounded)
+        hold_record_btn.setFont_(NSFont.systemFontOfSize_(11))
+        hold_record_handler = _RecordHotkeyHandler.alloc().initWithController_kind_(
+            self, "hold"
+        )
+        hold_record_btn.setTarget_(hold_record_handler)
+        hold_record_btn.setAction_(
+            objc.selector(hold_record_handler.recordHotkey_, signature=b"v@:@")
+        )
+        self._hold_record_handler = hold_record_handler
+        self._hold_record_btn = hold_record_btn
+        self._content_view.addSubview_(hold_record_btn)
 
         return card_y - CARD_SPACING
 
@@ -740,11 +767,21 @@ class WelcomeController:
 
         log = logging.getLogger(__name__)
 
-        # Hotkey
-        if self._hotkey_field:
-            hotkey = self._hotkey_field.stringValue().strip()
+        # Toggle Hotkey
+        if self._toggle_hotkey_field:
+            hotkey = self._toggle_hotkey_field.stringValue().strip().lower()
             if hotkey:
-                save_env_setting("WHISPER_GO_HOTKEY", hotkey.lower())
+                save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", hotkey)
+            else:
+                remove_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
+
+        # Hold Hotkey
+        if self._hold_hotkey_field:
+            hotkey = self._hold_hotkey_field.stringValue().strip().lower()
+            if hotkey:
+                save_env_setting("WHISPER_GO_HOLD_HOTKEY", hotkey)
+            else:
+                remove_env_setting("WHISPER_GO_HOLD_HOTKEY")
 
         # API Keys (alle 4 Provider)
         api_keys = [
@@ -771,14 +808,6 @@ class WelcomeController:
             mode = self._mode_popup.titleOfSelectedItem()
             if mode:
                 save_env_setting("WHISPER_GO_MODE", mode)
-
-        # Hotkey Mode
-        if self._hotkey_mode_popup:
-            hotkey_mode = self._hotkey_mode_popup.titleOfSelectedItem()
-            if hotkey_mode == "toggle":
-                remove_env_setting("WHISPER_GO_HOTKEY_MODE")
-            elif hotkey_mode:
-                save_env_setting("WHISPER_GO_HOTKEY_MODE", hotkey_mode)
 
         # Local Backend
         if self._local_backend_popup:
@@ -882,14 +911,14 @@ class WelcomeController:
     # Hotkey Recording
     # =============================================================================
 
-    def _toggle_hotkey_recording(self) -> None:
-        """Startet/stoppt Hotkey-Aufnahme im Setup-Panel."""
+    def _toggle_hotkey_recording(self, kind: str) -> None:
+        """Startet/stoppt Hotkey-Aufnahme für Toggle/Hold Feld."""
         if self._hotkey_recording:
             self._stop_hotkey_recording()
         else:
-            self._start_hotkey_recording()
+            self._start_hotkey_recording(kind)
 
-    def _start_hotkey_recording(self) -> None:
+    def _start_hotkey_recording(self, kind: str) -> None:
         from AppKit import (  # type: ignore[import-not-found]
             NSEvent,
             NSEventMaskKeyDown,
@@ -897,12 +926,29 @@ class WelcomeController:
             NSEventTypeFlagsChanged,
         )
 
-        if not self._hotkey_field or not self._record_btn:
+        if kind == "toggle":
+            field = self._toggle_hotkey_field
+            btn = self._toggle_record_btn
+        elif kind == "hold":
+            field = self._hold_hotkey_field
+            btn = self._hold_record_btn
+        else:
             return
+
+        if not field or not btn:
+            return
+
+        self._record_target_field = field
+        self._record_target_btn = btn
+        self._hotkey_recording_kind = kind
         self._hotkey_recording = True
-        self._record_btn.setTitle_("Press…")
-        self._hotkey_field.setStringValue_("")
-        self._hotkey_field.setPlaceholderString_("Press desired hotkey…")
+        if self._toggle_record_btn:
+            self._toggle_record_btn.setTitle_("Record")
+        if self._hold_record_btn:
+            self._hold_record_btn.setTitle_("Record")
+        btn.setTitle_("Press…")
+        field.setStringValue_("")
+        field.setPlaceholderString_("Press desired hotkey…")
 
         reverse_map = {v: k for k, v in KEY_CODE_MAP.items()}
 
@@ -951,7 +997,8 @@ class WelcomeController:
                 return event
             hotkey_str = event_to_hotkey_string(event)
             if hotkey_str:
-                self._hotkey_field.setStringValue_(hotkey_str.upper())
+                if self._record_target_field:
+                    self._record_target_field.setStringValue_(hotkey_str.upper())
                 self._stop_hotkey_recording()
                 return None
             return event
@@ -965,10 +1012,15 @@ class WelcomeController:
         from AppKit import NSEvent  # type: ignore[import-not-found]
 
         self._hotkey_recording = False
-        if self._record_btn:
-            self._record_btn.setTitle_("Record")
-        if self._hotkey_field:
-            self._hotkey_field.setPlaceholderString_(None)
+        if self._toggle_record_btn:
+            self._toggle_record_btn.setTitle_("Record")
+        if self._hold_record_btn:
+            self._hold_record_btn.setTitle_("Record")
+        if self._record_target_field:
+            self._record_target_field.setPlaceholderString_(None)
+        self._record_target_field = None
+        self._record_target_btn = None
+        self._hotkey_recording_kind = None
         if self._hotkey_monitor is not None:
             try:
                 NSEvent.removeMonitor_(self._hotkey_monitor)
@@ -1071,16 +1123,17 @@ def _create_record_hotkey_handler_class():
     import objc  # type: ignore[import-not-found]
 
     class RecordHotkeyHandler(NSObject):
-        def initWithController_(self, controller):
+        def initWithController_kind_(self, controller, kind):
             self = objc.super(RecordHotkeyHandler, self).init()
             if self is None:
                 return None
             self._controller = controller
+            self._kind = kind
             return self
 
         @objc.signature(b"v@:@")
         def recordHotkey_(self, _sender) -> None:
-            self._controller._toggle_hotkey_recording()
+            self._controller._toggle_hotkey_recording(self._kind)
 
     return RecordHotkeyHandler
 
