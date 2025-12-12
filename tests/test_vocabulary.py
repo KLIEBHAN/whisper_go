@@ -3,6 +3,7 @@
 import json
 
 from transcribe import load_vocabulary
+from utils.vocabulary import save_vocabulary
 
 
 class TestLoadVocabulary:
@@ -69,3 +70,27 @@ class TestLoadVocabulary:
 
         assert result["keywords"] == ["test"]
         assert result.get("extra") == "preserved"
+
+
+class TestSaveVocabulary:
+    """Tests für save_vocabulary() - Custom Vocabulary persistieren."""
+
+    def test_save_creates_file(self, temp_files):
+        vocab_file = temp_files / "vocab.json"
+        save_vocabulary(["alpha", "beta"], path=vocab_file)
+
+        data = json.loads(vocab_file.read_text())
+        assert data["keywords"] == ["alpha", "beta"]
+
+        # Wrapper-Load sollte die neuen Keywords sehen
+        assert load_vocabulary()["keywords"] == ["alpha", "beta"]
+
+    def test_save_preserves_extra_fields(self, temp_files):
+        vocab_file = temp_files / "vocab.json"
+        vocab_file.write_text(json.dumps({"keywords": ["old"], "extra": "keep"}))
+
+        save_vocabulary(["new"], path=vocab_file)
+
+        data = json.loads(vocab_file.read_text())
+        assert data["keywords"] == ["new"]
+        assert data["extra"] == "keep"

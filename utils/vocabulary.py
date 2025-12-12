@@ -56,5 +56,39 @@ def load_vocabulary(path: Path | None = None) -> dict:
     return data
 
 
-__all__ = ["load_vocabulary"]
+def save_vocabulary(keywords: list[str], path: Path | None = None) -> None:
+    """Speichert Custom Vocabulary als JSON.
 
+    Args:
+        keywords: Liste der Keywords.
+        path: Optionaler Pfad-Override (Tests).
+    """
+    vocab_file = path or _DEFAULT_VOCAB_FILE
+    vocab_file.parent.mkdir(parents=True, exist_ok=True)
+
+    data: dict = {}
+    if vocab_file.exists():
+        try:
+            existing = json.loads(vocab_file.read_text())
+            if isinstance(existing, dict):
+                data = existing
+        except (json.JSONDecodeError, OSError):
+            data = {}
+
+    data["keywords"] = list(keywords)
+
+    try:
+        vocab_file.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    except OSError as e:
+        logger.warning(f"Vocabulary-Datei nicht schreibbar: {e}")
+        raise
+
+    # Cache direkt aktualisieren, damit Änderungen sofort wirken.
+    try:
+        mtime = vocab_file.stat().st_mtime
+        _cache[vocab_file] = (mtime, data)
+    except OSError:
+        _cache.pop(vocab_file, None)
+
+
+__all__ = ["load_vocabulary", "save_vocabulary"]
