@@ -322,8 +322,11 @@ In `.env` or as environment variable:
 #
 # Optional: toggle + hold in parallel.
 # If set, these override WHISPER_GO_HOTKEY / WHISPER_GO_HOTKEY_MODE.
-# WHISPER_GO_TOGGLE_HOTKEY=capslock
+#
+# Recommended default: use Fn/Globe as Push‑to‑Talk (hold).
 # WHISPER_GO_HOLD_HOTKEY=fn
+# Optional: add a separate toggle hotkey (e.g. F19).
+# WHISPER_GO_TOGGLE_HOTKEY=f19
 #
 # Legacy (single hotkey):
 WHISPER_GO_HOTKEY=f19
@@ -340,6 +343,13 @@ WHISPER_GO_DOCK_ICON=true
 | Function Keys   | `f19`, `f1`, `f12`    |
 | Single Key      | `fn`, `capslock`, `space`, `tab`, `esc` |
 | Key Combination | `cmd+shift+r`         |
+
+**Recommended hotkey setup (macOS):**
+
+- **Fn/Globe as Hold‑to‑Record:** set `WHISPER_GO_HOLD_HOTKEY=fn`.  
+  This gives a fast, one‑finger Push‑to‑Talk workflow. Requires Accessibility/Input Monitoring.
+- **CapsLock alternative:** CapsLock can be used directly as a toggle hotkey, but macOS often toggles capitalization.  
+  For a conflict‑free “single key toggle”, map CapsLock → `F19` via **Karabiner‑Elements** and set `WHISPER_GO_TOGGLE_HOTKEY=f19`.
 
 ### Usage
 
