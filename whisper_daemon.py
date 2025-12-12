@@ -154,6 +154,9 @@ class WhisperDaemon:
         self._fn_active = False
         self._caps_active = False
         self._modifier_taps: list[tuple[object, object, object]] = []
+        # Track active hold hotkeys to avoid race conditions
+        self._active_hold_sources: set[str] = set()
+        self._recording_started_by_hold = False
 
     # =============================================================================
     # Modifier Hotkeys (Fn/Globe, CapsLock)
@@ -176,6 +179,15 @@ class WhisperDaemon:
             AppHelper.callAfter(fn)
         except Exception:  # pragma: no cover
             fn()
+
+    def _start_recording_from_hold(self, source_id: str) -> None:
+        """Startet Recording nur, wenn der Hold-Hotkey noch aktiv ist."""
+        if source_id not in self._active_hold_sources:
+            return
+        if self._recording:
+            return
+        self._recording_started_by_hold = True
+        self._start_recording()
 
     def _start_modifier_hotkey_tap(
         self,
@@ -227,12 +239,16 @@ class WhisperDaemon:
                 setattr(self, active_attr, is_down)
 
                 if hotkey_mode == "hold":
+                    source_id = f"modifier:{name}"
                     if is_down and not is_active:
                         logger.debug(f"Hotkey {name} down")
-                        self._call_on_main(self._start_recording)
+                        self._active_hold_sources.add(source_id)
+                        self._call_on_main(lambda: self._start_recording_from_hold(source_id))
                     elif not is_down and is_active:
                         logger.debug(f"Hotkey {name} up")
-                        self._call_on_main(self._stop_recording)
+                        self._active_hold_sources.discard(source_id)
+                        if not self._active_hold_sources and self._recording_started_by_hold:
+                            self._call_on_main(self._stop_recording)
                 else:
                     if toggle_on_down_only:
                         if is_down and not is_active:
@@ -462,7 +478,7 @@ class WhisperDaemon:
 
         current_keys: set = set()
         active = False
-        started_by_this = False
+        source_id = f"hold:{target_hotkey.lower()}"
 
         # Normalize left/right modifier keys to generic ones
         ctrl_variants = tuple(
@@ -512,29 +528,26 @@ class WhisperDaemon:
             return key
 
         def on_press(key):
-            nonlocal active, started_by_this
+            nonlocal active
             if self._current_state == AppState.ERROR:
                 return
             nk = normalize_key(key)
             current_keys.add(nk)
             if not active and hotkey_keys.issubset(current_keys):
                 active = True
-                if not self._recording:
-                    started_by_this = True
-                    logger.debug("Hotkey hold down")
-                    self._call_on_main(self._start_recording)
-                else:
-                    started_by_this = False
+                logger.debug("Hotkey hold down")
+                self._active_hold_sources.add(source_id)
+                self._call_on_main(lambda: self._start_recording_from_hold(source_id))
 
         def on_release(key):
-            nonlocal active, started_by_this
+            nonlocal active
             nk = normalize_key(key)
             current_keys.discard(nk)
             if active and not hotkey_keys.issubset(current_keys):
                 active = False
-                if started_by_this:
-                    started_by_this = False
-                    logger.debug("Hotkey hold up")
+                logger.debug("Hotkey hold up")
+                self._active_hold_sources.discard(source_id)
+                if not self._active_hold_sources and self._recording_started_by_hold:
                     self._call_on_main(self._stop_recording)
 
         listener = keyboard.Listener(on_press=on_press, on_release=on_release)
@@ -848,6 +861,7 @@ class WhisperDaemon:
                 logger.warning("Worker-Thread noch aktiv nach Timeout")
 
         self._recording = False
+        self._recording_started_by_hold = False
         self._update_state(AppState.TRANSCRIBING)
 
         # Polling läuft bereits seit Start
