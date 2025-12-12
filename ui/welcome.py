@@ -6,6 +6,7 @@ Erscheint beim ersten Start und kann über Menubar aufgerufen werden.
 
 import os
 
+from config import LOG_FILE
 from utils.preferences import (
     get_api_key,
     get_env_setting,
@@ -17,11 +18,13 @@ from utils.preferences import (
     set_show_welcome_on_startup,
 )
 from utils.hotkey import KEY_CODE_MAP
+from utils.vocabulary import load_vocabulary, save_vocabulary
 
 # Window-Konfiguration
 WELCOME_WIDTH = 500
-WELCOME_HEIGHT = 825  # Erhöht für 4 API-Key-Felder
+WELCOME_HEIGHT = 825  # Höhe für Tabbed Setup
 WELCOME_PADDING = 20
+FOOTER_HEIGHT = 60
 CARD_PADDING = 16
 CARD_CORNER_RADIUS = 12
 CARD_SPACING = 12
@@ -81,6 +84,11 @@ class WelcomeController:
         self._local_model_popup = None
         self._local_backend_label = None
         self._local_model_label = None
+        self._tab_view = None
+        self._vocab_text_view = None
+        self._vocab_warning_label = None
+        self._logs_text_view = None
+        self._logs_refresh_handler = None
         self._mode_changed_handler = None
         self._save_btn = None
         self._restart_handler = None
@@ -134,13 +142,10 @@ class WelcomeController:
         self._window.setContentView_(visual_effect)
         self._content_view = visual_effect
 
-        # Sections von oben nach unten
+        # Header + Tabs
         y_pos = WELCOME_HEIGHT - WELCOME_PADDING
-
-        y_pos = self._build_header(y_pos)
-        y_pos = self._build_hotkey_card(y_pos)
-        y_pos = self._build_api_card(y_pos)
-        y_pos = self._build_settings_card(y_pos)
+        header_bottom = self._build_header(y_pos)
+        self._build_tabs(header_bottom)
         self._build_footer()
 
     def _build_header(self, y: int) -> int:
@@ -185,7 +190,83 @@ class WelcomeController:
 
         return y - 72
 
-    def _build_hotkey_card(self, y: int) -> int:
+    # =============================================================================
+    # Tabs
+    # =============================================================================
+
+    def _build_tabs(self, header_bottom: int) -> None:
+        """Erstellt Tab-View und baut alle Tab-Inhalte."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSFont,
+            NSTabView,
+        )
+        from Foundation import NSMakeRect  # type: ignore[import-not-found]
+
+        tab_y = WELCOME_PADDING + FOOTER_HEIGHT
+        tab_height = max(200, header_bottom - tab_y - CARD_SPACING)
+
+        tab_view = NSTabView.alloc().initWithFrame_(
+            NSMakeRect(0, tab_y, WELCOME_WIDTH, tab_height)
+        )
+        try:
+            tab_view.setDrawsBackground_(False)
+        except Exception:
+            pass
+        tab_view.setFont_(NSFont.systemFontOfSize_(12))
+        self._content_view.addSubview_(tab_view)
+        self._tab_view = tab_view
+        # Content-Rect berücksichtigt die Tab-Bar Höhe/Insets
+        try:
+            content_height = tab_view.contentRect().size.height
+        except Exception:
+            content_height = tab_height
+
+        self._add_tab(tab_view, "General", self._build_general_tab, content_height)
+        self._add_tab(tab_view, "Providers", self._build_providers_tab, content_height)
+        self._add_tab(tab_view, "Refine", self._build_refine_tab, content_height)
+        self._add_tab(tab_view, "Vocabulary", self._build_vocabulary_tab, content_height)
+        self._add_tab(tab_view, "Logs", self._build_logs_tab, content_height)
+        self._add_tab(tab_view, "About", self._build_about_tab, content_height)
+
+    def _add_tab(self, tab_view, label: str, builder, tab_height: int) -> None:
+        from AppKit import NSTabViewItem, NSView  # type: ignore[import-not-found]
+        from Foundation import NSMakeRect  # type: ignore[import-not-found]
+
+        item = NSTabViewItem.alloc().initWithIdentifier_(label)
+        item.setLabel_(label)
+        content = NSView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, WELCOME_WIDTH, tab_height)
+        )
+        item.setView_(content)
+        tab_view.addTabViewItem_(item)
+        builder(content, tab_height)
+
+    def _build_general_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_hotkey_card(y_pos, parent_view)
+
+    def _build_providers_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        y_pos = self._build_settings_card(y_pos, parent_view)
+        self._build_api_card(y_pos, parent_view)
+
+    def _build_refine_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_refine_card(y_pos, parent_view)
+
+    def _build_vocabulary_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_vocabulary_card(y_pos, parent_view, tab_height)
+
+    def _build_logs_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_logs_card(y_pos, parent_view, tab_height)
+
+    def _build_about_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_about_card(y_pos, parent_view)
+
+    def _build_hotkey_card(self, y: int, parent_view=None) -> int:
         """Erstellt Hotkey-Karte mit Eingabefeld und Restart-Button."""
         from AppKit import (  # type: ignore[import-not-found]
             NSBezelStyleRounded,
@@ -200,13 +281,14 @@ class WelcomeController:
         )
         import objc  # type: ignore[import-not-found]
 
-        # 2 Zeilen: Hotkey + Hotkey Mode
-        card_height = 113
+        # 3 Zeilen: Toggle + Hold + Restart
+        card_height = 150
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height - CARD_SPACING
 
+        parent_view = parent_view or self._content_view
         card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
-        self._content_view.addSubview_(card)
+        parent_view.addSubview_(card)
 
         # Section-Titel
         title = NSTextField.alloc().initWithFrame_(
@@ -221,7 +303,7 @@ class WelcomeController:
         title.setSelectable_(False)
         title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
         title.setTextColor_(NSColor.whiteColor())
-        self._content_view.addSubview_(title)
+        parent_view.addSubview_(title)
 
         # Beschreibung
         desc = NSTextField.alloc().initWithFrame_(
@@ -236,13 +318,22 @@ class WelcomeController:
         desc.setSelectable_(False)
         desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
-        self._content_view.addSubview_(desc)
+        parent_view.addSubview_(desc)
 
         # Toggle + Hold Hotkeys (parallel möglich)
         button_width = 60
         button_spacing = 8
-        buttons_total = button_width * 2 + button_spacing
-        field_width = card_width - 2 * CARD_PADDING - buttons_total
+        label_width = 70
+        buttons_total = button_width + button_spacing
+        base_x = WELCOME_PADDING + CARD_PADDING
+        field_x = base_x + label_width + 8
+        field_width = (
+            card_width
+            - 2 * CARD_PADDING
+            - label_width
+            - 8
+            - buttons_total
+        )
 
         legacy_hotkey_env = get_env_setting("WHISPER_GO_HOTKEY")
         legacy_hotkey = legacy_hotkey_env or self.hotkey
@@ -262,23 +353,32 @@ class WelcomeController:
                 hold_default = ""
 
         # Toggle Hotkey Feld (oben)
-        toggle_y = card_y + 42
+        toggle_y = card_y + 76
+        toggle_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, toggle_y + 4, label_width, 16)
+        )
+        toggle_label.setStringValue_("Toggle:")
+        toggle_label.setBezeled_(False)
+        toggle_label.setDrawsBackground_(False)
+        toggle_label.setEditable_(False)
+        toggle_label.setSelectable_(False)
+        toggle_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        toggle_label.setTextColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7)
+        )
+        parent_view.addSubview_(toggle_label)
+
         toggle_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, toggle_y, field_width, 24)
+            NSMakeRect(field_x, toggle_y, field_width, 24)
         )
         toggle_field.setPlaceholderString_("Toggle hotkey")
         toggle_field.setStringValue_((toggle_default or "").upper())
         toggle_field.setFont_(NSFont.systemFontOfSize_(13))
         toggle_field.setAlignment_(NSTextAlignmentCenter)
-        self._content_view.addSubview_(toggle_field)
+        parent_view.addSubview_(toggle_field)
         self._toggle_hotkey_field = toggle_field
 
-        record_x = (
-            WELCOME_WIDTH
-            - WELCOME_PADDING
-            - CARD_PADDING
-            - (button_width * 2 + button_spacing)
-        )
+        record_x = WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - button_width
 
         toggle_record_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(record_x, toggle_y, button_width, 24)
@@ -295,35 +395,30 @@ class WelcomeController:
         )
         self._toggle_record_handler = toggle_record_handler
         self._toggle_record_btn = toggle_record_btn
-        self._content_view.addSubview_(toggle_record_btn)
-
-        # Restart-Button (nur oben)
-        restart_x = record_x + button_width + button_spacing
-        restart_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(restart_x, toggle_y, button_width, 24)
-        )
-        restart_btn.setTitle_("Restart")
-        restart_btn.setBezelStyle_(NSBezelStyleRounded)
-        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
-
-        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
-        restart_btn.setTarget_(restart_handler)
-        restart_btn.setAction_(
-            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
-        )
-        self._restart_handler = restart_handler
-        self._content_view.addSubview_(restart_btn)
+        parent_view.addSubview_(toggle_record_btn)
 
         # Hold Hotkey Feld (unten)
-        hold_y = card_y + 12
+        hold_y = card_y + 44
+        hold_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, hold_y + 4, label_width, 16)
+        )
+        hold_label.setStringValue_("Hold:")
+        hold_label.setBezeled_(False)
+        hold_label.setDrawsBackground_(False)
+        hold_label.setEditable_(False)
+        hold_label.setSelectable_(False)
+        hold_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        hold_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(hold_label)
+
         hold_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, hold_y, field_width, 24)
+            NSMakeRect(field_x, hold_y, field_width, 24)
         )
         hold_field.setPlaceholderString_("Hold hotkey (Push‑to‑Talk)")
         hold_field.setStringValue_((hold_default or "").upper())
         hold_field.setFont_(NSFont.systemFontOfSize_(13))
         hold_field.setAlignment_(NSTextAlignmentCenter)
-        self._content_view.addSubview_(hold_field)
+        parent_view.addSubview_(hold_field)
         self._hold_hotkey_field = hold_field
 
         hold_record_btn = NSButton.alloc().initWithFrame_(
@@ -341,11 +436,30 @@ class WelcomeController:
         )
         self._hold_record_handler = hold_record_handler
         self._hold_record_btn = hold_record_btn
-        self._content_view.addSubview_(hold_record_btn)
+        parent_view.addSubview_(hold_record_btn)
+
+        # Restart-Button (gilt für beide Hotkeys)
+        restart_width = button_width * 2 + button_spacing
+        restart_x = record_x - button_width - button_spacing
+        restart_y = card_y + 12
+        restart_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(restart_x, restart_y, restart_width, 24)
+        )
+        restart_btn.setTitle_("Restart")
+        restart_btn.setBezelStyle_(NSBezelStyleRounded)
+        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
+
+        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
+        restart_btn.setTarget_(restart_handler)
+        restart_btn.setAction_(
+            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
+        )
+        self._restart_handler = restart_handler
+        parent_view.addSubview_(restart_btn)
 
         return card_y - CARD_SPACING
 
-    def _build_api_card(self, y: int) -> int:
+    def _build_api_card(self, y: int, parent_view=None) -> int:
         """Erstellt API-Konfigurationskarte."""
         from AppKit import (  # type: ignore[import-not-found]
             NSColor,
@@ -355,13 +469,15 @@ class WelcomeController:
             NSTextField,
         )
 
+        parent_view = parent_view or self._content_view
+
         # 4 API Keys: Deepgram, Groq, OpenAI, OpenRouter
         card_height = 265
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
         card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
-        self._content_view.addSubview_(card)
+        parent_view.addSubview_(card)
 
         # Section-Titel
         title = NSTextField.alloc().initWithFrame_(
@@ -376,33 +492,39 @@ class WelcomeController:
         title.setSelectable_(False)
         title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
         title.setTextColor_(NSColor.whiteColor())
-        self._content_view.addSubview_(title)
+        parent_view.addSubview_(title)
 
         # API Key Zeilen (von oben nach unten)
         row_y = card_y + card_height - 70
         row_spacing = 54
 
         # Deepgram (required for transcription)
-        self._build_api_row_compact(row_y, "Deepgram", "DEEPGRAM_API_KEY", "deepgram")
+        self._build_api_row_compact(
+            row_y, "Deepgram", "DEEPGRAM_API_KEY", "deepgram", parent_view
+        )
         row_y -= row_spacing
 
         # Groq (for refine)
-        self._build_api_row_compact(row_y, "Groq", "GROQ_API_KEY", "groq")
+        self._build_api_row_compact(
+            row_y, "Groq", "GROQ_API_KEY", "groq", parent_view
+        )
         row_y -= row_spacing
 
         # OpenAI (for refine)
-        self._build_api_row_compact(row_y, "OpenAI", "OPENAI_API_KEY", "openai")
+        self._build_api_row_compact(
+            row_y, "OpenAI", "OPENAI_API_KEY", "openai", parent_view
+        )
         row_y -= row_spacing
 
         # OpenRouter (for refine)
         self._build_api_row_compact(
-            row_y, "OpenRouter", "OPENROUTER_API_KEY", "openrouter"
+            row_y, "OpenRouter", "OPENROUTER_API_KEY", "openrouter", parent_view
         )
 
         return card_y - CARD_SPACING
 
     def _build_api_row_compact(
-        self, y: int, label_text: str, key_name: str, provider: str
+        self, y: int, label_text: str, key_name: str, provider: str, parent_view=None
     ) -> None:
         """Erstellt kompakte API-Key-Zeile (ohne Save-Button, mit Copy/Paste)."""
         from AppKit import (  # type: ignore[import-not-found]
@@ -412,6 +534,8 @@ class WelcomeController:
             NSMakeRect,
             NSTextField,
         )
+
+        parent_view = parent_view or self._content_view
 
         base_x = WELCOME_PADDING + CARD_PADDING
 
@@ -424,7 +548,7 @@ class WelcomeController:
         label.setSelectable_(False)
         label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
-        self._content_view.addSubview_(label)
+        parent_view.addSubview_(label)
 
         # Textfeld (normales NSTextField für Copy/Paste Support)
         field_width = WELCOME_WIDTH - 2 * WELCOME_PADDING - 2 * CARD_PADDING - 24
@@ -438,7 +562,7 @@ class WelcomeController:
         if existing_key:
             field.setStringValue_(existing_key)
 
-        self._content_view.addSubview_(field)
+        parent_view.addSubview_(field)
 
         # Status-Indicator
         has_key = bool(existing_key) or self.config.get(f"{provider}_key", False)
@@ -454,17 +578,15 @@ class WelcomeController:
         status.setTextColor_(
             _get_color(51, 217, 178) if has_key else _get_color(255, 82, 82, 0.7)
         )
-        self._content_view.addSubview_(status)
+        parent_view.addSubview_(status)
 
         # Referenzen speichern für Save
         setattr(self, f"_{provider}_field", field)
         setattr(self, f"_{provider}_status", status)
 
-    def _build_settings_card(self, y: int) -> int:
-        """Erstellt Settings-Karte mit konfigurierbaren Optionen."""
+    def _build_settings_card(self, y: int, parent_view=None) -> int:
+        """Erstellt Provider-Einstellungen (Mode/Local/Language)."""
         from AppKit import (  # type: ignore[import-not-found]
-            NSButton,
-            NSButtonTypeSwitch,
             NSColor,
             NSFont,
             NSFontWeightSemibold,
@@ -474,12 +596,14 @@ class WelcomeController:
         )
         import objc  # type: ignore[import-not-found]
 
-        card_height = 248
+        parent_view = parent_view or self._content_view
+
+        card_height = 170
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
         card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
-        self._content_view.addSubview_(card)
+        parent_view.addSubview_(card)
 
         base_x = WELCOME_PADDING + CARD_PADDING
         label_width = 110
@@ -490,20 +614,20 @@ class WelcomeController:
         title = NSTextField.alloc().initWithFrame_(
             NSMakeRect(base_x, card_y + card_height - 28, 200, 18)
         )
-        title.setStringValue_("⚙️ Settings")
+        title.setStringValue_("🧩 Providers")
         title.setBezeled_(False)
         title.setDrawsBackground_(False)
         title.setEditable_(False)
         title.setSelectable_(False)
         title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
         title.setTextColor_(NSColor.whiteColor())
-        self._content_view.addSubview_(title)
+        parent_view.addSubview_(title)
 
         row_height = 28
         current_y = card_y + card_height - 58
 
         # --- Mode Dropdown ---
-        self._add_setting_label(base_x, current_y, "Mode:")
+        self._add_setting_label(base_x, current_y, "Mode:", parent_view)
         mode_popup = NSPopUpButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
         )
@@ -523,12 +647,12 @@ class WelcomeController:
         )
         self._mode_changed_handler = mode_changed_handler
         self._mode_popup = mode_popup
-        self._content_view.addSubview_(mode_popup)
+        parent_view.addSubview_(mode_popup)
         current_y -= row_height
 
         # --- Local Backend Dropdown ---
         self._local_backend_label = self._add_setting_label(
-            base_x, current_y, "Local Backend:"
+            base_x, current_y, "Local Backend:", parent_view
         )
         local_backend_popup = NSPopUpButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
@@ -541,12 +665,12 @@ class WelcomeController:
             current_backend = "whisper"
         local_backend_popup.selectItemWithTitle_(current_backend)
         self._local_backend_popup = local_backend_popup
-        self._content_view.addSubview_(local_backend_popup)
+        parent_view.addSubview_(local_backend_popup)
         current_y -= row_height
 
         # --- Local Model Dropdown ---
         self._local_model_label = self._add_setting_label(
-            base_x, current_y, "Local Model:"
+            base_x, current_y, "Local Model:", parent_view
         )
         local_model_popup = NSPopUpButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
@@ -559,11 +683,11 @@ class WelcomeController:
             local_model_popup.addItemWithTitle_(current_local_model)
         local_model_popup.selectItemWithTitle_(current_local_model)
         self._local_model_popup = local_model_popup
-        self._content_view.addSubview_(local_model_popup)
+        parent_view.addSubview_(local_model_popup)
         current_y -= row_height
 
         # --- Language Dropdown ---
-        self._add_setting_label(base_x, current_y, "Language:")
+        self._add_setting_label(base_x, current_y, "Language:", parent_view)
         lang_popup = NSPopUpButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
         )
@@ -578,11 +702,56 @@ class WelcomeController:
         if current_lang in LANGUAGE_OPTIONS:
             lang_popup.selectItemWithTitle_(current_lang)
         self._lang_popup = lang_popup
-        self._content_view.addSubview_(lang_popup)
-        current_y -= row_height
+        parent_view.addSubview_(lang_popup)
 
-        # --- Refine Checkbox ---
-        self._add_setting_label(base_x, current_y, "Refine:")
+        self._update_local_settings_visibility()
+
+        return card_y - CARD_SPACING
+
+    def _build_refine_card(self, y: int, parent_view=None) -> int:
+        """Erstellt Refine-Einstellungen."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSButton,
+            NSButtonTypeSwitch,
+            NSColor,
+            NSFont,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSPopUpButton,
+            NSTextField,
+        )
+
+        parent_view = parent_view or self._content_view
+
+        card_height = 170
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_y = y - card_height
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        label_width = 110
+        control_x = base_x + label_width + 8
+        control_width = card_width - 2 * CARD_PADDING - label_width - 8
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 200, 18)
+        )
+        title.setStringValue_("✨ Refine")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        row_height = 28
+        current_y = card_y + card_height - 58
+
+        # Refine Checkbox
+        self._add_setting_label(base_x, current_y, "Refine:", parent_view)
         refine_checkbox = NSButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
         )
@@ -596,11 +765,11 @@ class WelcomeController:
             refine_enabled = refine_enabled.lower() == "true"
         refine_checkbox.setState_(1 if refine_enabled else 0)
         self._refine_checkbox = refine_checkbox
-        self._content_view.addSubview_(refine_checkbox)
+        parent_view.addSubview_(refine_checkbox)
         current_y -= row_height
 
-        # --- Refine Provider Dropdown ---
-        self._add_setting_label(base_x, current_y, "Refine Provider:")
+        # Refine Provider
+        self._add_setting_label(base_x, current_y, "Refine Provider:", parent_view)
         provider_popup = NSPopUpButton.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
         )
@@ -615,11 +784,11 @@ class WelcomeController:
         if current_provider in REFINE_PROVIDER_OPTIONS:
             provider_popup.selectItemWithTitle_(current_provider)
         self._provider_popup = provider_popup
-        self._content_view.addSubview_(provider_popup)
+        parent_view.addSubview_(provider_popup)
         current_y -= row_height
 
-        # --- Refine Model Textfeld (volle Breite ohne Save-Button) ---
-        self._add_setting_label(base_x, current_y, "Refine Model:")
+        # Refine Model
+        self._add_setting_label(base_x, current_y, "Refine Model:", parent_view)
         model_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(control_x, current_y, control_width, 22)
         )
@@ -628,17 +797,345 @@ class WelcomeController:
         current_model = (
             get_env_setting("WHISPER_GO_REFINE_MODEL")
             or self.config.get("refine_model")
-            or "openai/gpt-oss-120b"  # Default Model
+            or "openai/gpt-oss-120b"
         )
         model_field.setStringValue_(current_model)
         self._model_field = model_field
-        self._content_view.addSubview_(model_field)
-
-        self._update_local_settings_visibility()
+        parent_view.addSubview_(model_field)
 
         return card_y - CARD_SPACING
 
-    def _add_setting_label(self, x: int, y: int, text: str):
+    def _build_vocabulary_card(
+        self, y: int, parent_view=None, tab_height: int | None = None
+    ) -> int:
+        """Erstellt Vocabulary/Keywords Editor."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelBorder,
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSScrollView,
+            NSTextField,
+            NSTextView,
+        )
+
+        parent_view = parent_view or self._content_view
+
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        max_height = (tab_height - 2 * WELCOME_PADDING) if tab_height else 420
+        card_height = min(420, max_height)
+        card_y = y - card_height
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        content_width = card_width - 2 * CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 260, 18)
+        )
+        title.setStringValue_("📚 Vocabulary / Keywords")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        desc = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 46, content_width, 14)
+        )
+        desc.setStringValue_(
+            "One keyword per line (or comma-separated). Used by Local and Deepgram."
+        )
+        desc.setBezeled_(False)
+        desc.setDrawsBackground_(False)
+        desc.setEditable_(False)
+        desc.setSelectable_(False)
+        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(desc)
+
+        scroll_y = card_y + 48
+        scroll_height = card_height - 96
+        scroll = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(base_x, scroll_y, content_width, scroll_height)
+        )
+        scroll.setBorderType_(NSBezelBorder)
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(False)
+        try:
+            scroll.setDrawsBackground_(False)
+        except Exception:
+            pass
+
+        text_view = NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_width, scroll_height)
+        )
+        text_view.setFont_(NSFont.systemFontOfSize_(12))
+        text_view.setTextColor_(NSColor.whiteColor())
+        try:
+            text_view.setDrawsBackground_(False)
+        except Exception:
+            pass
+        text_view.setVerticallyResizable_(True)
+        text_view.setHorizontallyResizable_(False)
+        tc = text_view.textContainer()
+        if tc is not None:
+            tc.setWidthTracksTextView_(True)
+
+        keywords = load_vocabulary().get("keywords", [])
+        text_view.setString_("\n".join(str(k) for k in keywords))
+        scroll.setDocumentView_(text_view)
+        parent_view.addSubview_(scroll)
+
+        self._vocab_text_view = text_view
+
+        warning = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 16, content_width, 16)
+        )
+        warning.setBezeled_(False)
+        warning.setDrawsBackground_(False)
+        warning.setEditable_(False)
+        warning.setSelectable_(False)
+        warning.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        warning.setTextColor_(_get_color(255, 193, 7, 0.9))
+        parent_view.addSubview_(warning)
+        self._vocab_warning_label = warning
+        self._update_vocabulary_warning()
+
+        return card_y - CARD_SPACING
+
+    def _build_logs_card(
+        self, y: int, parent_view=None, tab_height: int | None = None
+    ) -> int:
+        """Erstellt Logs Tab mit aktuellem Log-Auszug."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelBorder,
+            NSBezelStyleRounded,
+            NSButton,
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSScrollView,
+            NSTextField,
+            NSTextView,
+        )
+        import objc  # type: ignore[import-not-found]
+
+        parent_view = parent_view or self._content_view
+
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        max_height = (tab_height - 2 * WELCOME_PADDING) if tab_height else 420
+        card_height = min(420, max_height)
+        card_y = y - card_height
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        content_width = card_width - 2 * CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 120, 18)
+        )
+        title.setStringValue_("🪵 Logs")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        refresh_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                base_x + content_width - 70, card_y + card_height - 32, 70, 22
+            )
+        )
+        refresh_btn.setTitle_("Refresh")
+        refresh_btn.setBezelStyle_(NSBezelStyleRounded)
+        refresh_btn.setFont_(NSFont.systemFontOfSize_(11))
+        refresh_handler = _RefreshLogsHandler.alloc().initWithController_(self)
+        refresh_btn.setTarget_(refresh_handler)
+        refresh_btn.setAction_(
+            objc.selector(refresh_handler.refreshLogs_, signature=b"v@:@")
+        )
+        self._logs_refresh_handler = refresh_handler
+        parent_view.addSubview_(refresh_btn)
+
+        scroll_y = card_y + 16
+        scroll_height = card_height - 56
+        scroll = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(base_x, scroll_y, content_width, scroll_height)
+        )
+        scroll.setBorderType_(NSBezelBorder)
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(False)
+        try:
+            scroll.setDrawsBackground_(False)
+        except Exception:
+            pass
+
+        text_view = NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_width, scroll_height)
+        )
+        text_view.setFont_(NSFont.userFixedPitchFontOfSize_(11))
+        text_view.setTextColor_(NSColor.whiteColor())
+        try:
+            text_view.setDrawsBackground_(False)
+        except Exception:
+            pass
+        text_view.setEditable_(False)
+        text_view.setSelectable_(True)
+        text_view.setVerticallyResizable_(True)
+        text_view.setHorizontallyResizable_(False)
+        tc = text_view.textContainer()
+        if tc is not None:
+            tc.setWidthTracksTextView_(True)
+
+        text_view.setString_(self._get_logs_text())
+        scroll.setDocumentView_(text_view)
+        parent_view.addSubview_(scroll)
+
+        self._logs_text_view = text_view
+
+        return card_y - CARD_SPACING
+
+    def _get_logs_text(self, max_chars: int = 12000) -> str:
+        """Liest einen Ausschnitt der aktuellen Log-Datei."""
+        try:
+            if not LOG_FILE.exists():
+                return "No logs yet."
+            text = LOG_FILE.read_text(encoding="utf-8", errors="ignore")
+            if len(text) > max_chars:
+                return text[-max_chars:]
+            return text
+        except Exception as e:
+            return f"Could not read logs: {e}"
+
+    def _refresh_logs(self) -> None:
+        if self._logs_text_view:
+            try:
+                self._logs_text_view.setString_(self._get_logs_text())
+            except Exception:
+                pass
+
+    def _build_about_card(self, y: int, parent_view=None) -> int:
+        """Erstellt About Tab."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSTextField,
+        )
+
+        parent_view = parent_view or self._content_view
+
+        card_height = 220
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_y = y - card_height
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        content_width = card_width - 2 * CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 200, 18)
+        )
+        title.setStringValue_("About WhisperGo")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        body = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 64, content_width, 96)
+        )
+        body.setStringValue_(
+            "WhisperGo runs in the menu bar and transcribes via Local Whisper or "
+            "Deepgram. Custom vocabulary improves recognition for names and terms."
+        )
+        body.setBezeled_(False)
+        body.setDrawsBackground_(False)
+        body.setEditable_(False)
+        body.setSelectable_(False)
+        body.setFont_(NSFont.systemFontOfSize_weight_(12, NSFontWeightMedium))
+        body.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.8))
+        try:
+            body.setLineBreakMode_(0)
+            body.setUsesSingleLineMode_(False)
+        except Exception:
+            pass
+        parent_view.addSubview_(body)
+
+        hint = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 32, content_width, 16)
+        )
+        hint.setStringValue_("Docs: README.md  •  Config: ~/.whisper_go/")
+        hint.setBezeled_(False)
+        hint.setDrawsBackground_(False)
+        hint.setEditable_(False)
+        hint.setSelectable_(False)
+        hint.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(hint)
+
+        return card_y - CARD_SPACING
+
+    def _parse_keywords_text(self, raw: str) -> list[str]:
+        """Parst Keywords aus Multiline/Comma Input."""
+        parts: list[str] = []
+        for line in raw.splitlines():
+            for chunk in line.split(","):
+                kw = chunk.strip()
+                if kw:
+                    parts.append(kw)
+        seen: set[str] = set()
+        result: list[str] = []
+        for kw in parts:
+            if kw not in seen:
+                seen.add(kw)
+                result.append(kw)
+        return result
+
+    def _get_current_keywords(self) -> list[str]:
+        if not self._vocab_text_view:
+            return []
+        try:
+            raw = str(self._vocab_text_view.string() or "")
+        except Exception:
+            raw = ""
+        return self._parse_keywords_text(raw)
+
+    def _update_vocabulary_warning(self) -> None:
+        if not self._vocab_warning_label:
+            return
+        count = len(self._get_current_keywords())
+        if count > 100:
+            msg = (
+                f"Warning: {count} keywords. Deepgram uses first 100, Local uses first 50."
+            )
+        elif count > 50:
+            msg = f"Note: {count} keywords. Local uses first 50; Deepgram first 100."
+        else:
+            msg = f"{count} keywords"
+        self._vocab_warning_label.setStringValue_(msg)
+
+    def _add_setting_label(self, x: int, y: int, text: str, parent_view=None):
         """Erstellt ein Label für eine Einstellung."""
         from AppKit import (  # type: ignore[import-not-found]
             NSColor,
@@ -648,6 +1145,7 @@ class WelcomeController:
             NSTextField,
         )
 
+        parent_view = parent_view or self._content_view
         label = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y + 2, 110, 16))
         label.setStringValue_(text)
         label.setBezeled_(False)
@@ -656,7 +1154,7 @@ class WelcomeController:
         label.setSelectable_(False)
         label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
-        self._content_view.addSubview_(label)
+        parent_view.addSubview_(label)
         return label
 
     def _update_local_settings_visibility(self) -> None:
@@ -725,7 +1223,7 @@ class WelcomeController:
         start_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(WELCOME_WIDTH - WELCOME_PADDING - 140, footer_y, 140, 32)
         )
-        start_btn.setTitle_("Start WhisperGo")
+        start_btn.setTitle_("Close")
         start_btn.setBezelStyle_(NSBezelStyleRounded)
         start_btn.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
 
@@ -856,6 +1354,18 @@ class WelcomeController:
                 save_env_setting("WHISPER_GO_REFINE_MODEL", model)
             else:
                 remove_env_setting("WHISPER_GO_REFINE_MODEL")
+
+        # Vocabulary / Keywords
+        if self._vocab_text_view:
+            keywords = self._get_current_keywords()
+            existing_keywords = load_vocabulary().get("keywords", [])
+            if keywords != existing_keywords:
+                try:
+                    save_vocabulary(keywords)
+                    log.info(f"Saved {len(keywords)} vocabulary keywords")
+                except Exception as e:
+                    log.warning(f"Could not save vocabulary: {e}")
+            self._update_vocabulary_warning()
 
         log.info("All settings saved to .env file")
 
@@ -1097,6 +1607,29 @@ def _create_save_all_handler_class():
 
 
 _SaveAllHandler = _create_save_all_handler_class()
+
+
+def _create_refresh_logs_handler_class():
+    """Erstellt NSObject-Subklasse für Logs-Refresh Button."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class RefreshLogsHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(RefreshLogsHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def refreshLogs_(self, _sender) -> None:
+            self._controller._refresh_logs()
+
+    return RefreshLogsHandler
+
+
+_RefreshLogsHandler = _create_refresh_logs_handler_class()
 
 
 def _create_restart_handler_class():
