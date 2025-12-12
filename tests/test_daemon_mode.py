@@ -280,5 +280,63 @@ class TestDaemonMode(unittest.TestCase):
         self.assertIsNotNone(result_msg)
         self.assertEqual(result_msg.payload, "")
 
+    def test_recording_worker_local_keeps_trailing_audio_and_pads_tail(self):
+        """Local mode: Trimming darf leise Enden nicht abschneiden; zusätzlich wird Tail-Padding angehängt."""
+        import numpy as np
+
+        sample_rate = 16000
+        loud = (np.ones((int(sample_rate * 1.0), 1), dtype=np.float32) * 0.03)
+        quiet_tail = np.concatenate(
+            [
+                np.ones((int(sample_rate * 0.5), 1), dtype=np.float32) * 0.01,
+                np.zeros((int(sample_rate * 0.1), 1), dtype=np.float32),
+            ],
+            axis=0,
+        )
+
+        daemon = WhisperDaemon(mode="local", language="en")
+        daemon._stop_event = threading.Event()
+
+        mock_sd = MagicMock()
+        mock_sd.InputStream.return_value.__enter__.return_value = MagicMock()
+
+        chunks = [loud, quiet_tail]
+
+        def side_effect_sleep(*_args):
+            call_args = mock_sd.InputStream.call_args
+            callback = call_args[1].get("callback") if call_args else None
+            if callback and chunks:
+                callback(chunks.pop(0), 0, None, None)
+            if not chunks:
+                daemon._stop_event.set()
+
+        mock_sd.sleep.side_effect = side_effect_sleep
+
+        mock_provider = MagicMock()
+        mock_provider.transcribe_audio.return_value = "ok"
+        mock_player = MagicMock()
+
+        with patch.dict(
+            sys.modules,
+            {"sounddevice": mock_sd, "soundfile": MagicMock()},
+        ), patch(
+            "whisper_daemon.get_provider", MagicMock(return_value=mock_provider)
+        ), patch(
+            "whisper_daemon.get_sound_player", MagicMock(return_value=mock_player)
+        ), patch(
+            "whisper_daemon.tempfile.mkstemp", return_value=(123, "/tmp/fake.wav")
+        ), patch(
+            "whisper_daemon.os.close"
+        ), patch(
+            "whisper_daemon.os.path.exists", return_value=True
+        ), patch(
+            "whisper_daemon.os.unlink"
+        ):
+            daemon._recording_worker()
+
+        # audio = 1.0s loud + 0.5s quiet + 0.1s silence + 0.2s tail padding
+        audio_arg = mock_provider.transcribe_audio.call_args[0][0]
+        self.assertEqual(int(audio_arg.shape[0]), int(sample_rate * 1.8))
+
 if __name__ == "__main__":
     unittest.main()

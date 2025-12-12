@@ -362,7 +362,9 @@ class WhisperDaemon:
             mono, shape=(frame_count, window), strides=strides
         )
         rms = np.sqrt(np.mean(frames**2, axis=1))
-        active = rms > threshold
+        # Für Trimming ist ein "inklusive" Threshold sinnvoller, um leise
+        # Auskling-Phoneme nicht abzuschneiden (>= statt >).
+        active = rms >= threshold
         if not np.any(active):
             return mono.astype(np.float32, copy=False)
         first = int(np.argmax(active))
@@ -799,8 +801,17 @@ class WhisperDaemon:
             audio_duration = 0.0
             if hasattr(audio_data, "shape"):
                 raw_duration = float(audio_data.shape[0]) / WHISPER_SAMPLE_RATE
+                # Wichtig: VAD_THRESHOLD ist fürs Triggern optimiert und kann am Ende
+                # zu aggressiv sein (leise Ausklinger). Für Trimming nehmen wir
+                # einen konservativeren, dynamischen Threshold basierend auf max_rms.
+                trim_threshold = VAD_THRESHOLD * 0.5
+                if max_rms > 0:
+                    trim_threshold = min(trim_threshold, max_rms * 0.03)
                 trimmed_audio = self._trim_silence(
-                    audio_data, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
+                    audio_data,
+                    trim_threshold,
+                    WHISPER_SAMPLE_RATE,
+                    pad_s=0.25,
                 )
                 trimmed_duration = float(trimmed_audio.shape[0]) / WHISPER_SAMPLE_RATE
                 if trimmed_duration < raw_duration - 0.05:
@@ -810,6 +821,17 @@ class WhisperDaemon:
 
                 audio_duration = trimmed_duration
                 audio_data = trimmed_audio
+
+                # Lokales Whisper profitiert oft von etwas künstlicher "End-Silence",
+                # damit letzte Wörter stabiler dekodiert werden.
+                if self.mode == "local":
+                    tail_s = 0.2
+                    tail_samples = int(WHISPER_SAMPLE_RATE * tail_s)
+                    if tail_samples > 0:
+                        audio_data = np.concatenate(
+                            [audio_data, np.zeros(tail_samples, dtype=np.float32)]
+                        )
+                        audio_duration += tail_s
 
             # Temp-File erstellen
             fd, temp_path = tempfile.mkstemp(suffix=".wav")
