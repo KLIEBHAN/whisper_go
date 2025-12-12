@@ -111,6 +111,15 @@ class TestDaemonMode(unittest.TestCase):
         _, kwargs = mock_daemon_cls.call_args
         self.assertEqual(kwargs.get("mode"), "deepgram")
 
+    def test_model_name_for_logging_local_uses_local_env(self):
+        """Im local-Mode soll für Logs WHISPER_GO_LOCAL_MODEL genutzt werden."""
+        daemon = WhisperDaemon(mode="local", model=None)
+        mock_provider = MagicMock()
+        mock_provider.default_model = "turbo"
+
+        with patch.dict(os.environ, {"WHISPER_GO_LOCAL_MODEL": "large"}):
+            self.assertEqual(daemon._model_name_for_logging(mock_provider), "large")
+
 
 
     def test_recording_worker_execution(self):

@@ -321,6 +321,23 @@ class WhisperDaemon:
         return provider
 
     @staticmethod
+    def _clean_model_name(model: str | None) -> str | None:
+        """Normalisiert Modellnamen (None/Whitespace → None)."""
+        if not model:
+            return None
+        cleaned = model.strip()
+        return cleaned or None
+
+    def _model_name_for_logging(self, provider) -> str | None:
+        """Ermittelt den tatsächlich erwarteten Modellnamen für Logs."""
+        model = self._clean_model_name(self.model)
+        if self.mode == "local" and model is None:
+            model = self._clean_model_name(os.getenv("WHISPER_GO_LOCAL_MODEL"))
+        if model is None:
+            model = self._clean_model_name(getattr(provider, "default_model", None))
+        return model
+
+    @staticmethod
     def _trim_silence(
         data,
         threshold: float,
@@ -817,9 +834,10 @@ class WhisperDaemon:
                 t_transcribe = time.perf_counter() - t0
                 if audio_duration > 0:
                     rtf = t_transcribe / audio_duration
+                    model_name = self._model_name_for_logging(provider)
                     logger.info(
                         f"Transcription performance: mode={self.mode}, "
-                        f"model={self.model or getattr(provider, 'default_model', None)}, "
+                        f"model={model_name}, "
                         f"audio={audio_duration:.2f}s, time={t_transcribe:.2f}s, rtf={rtf:.2f}x"
                     )
                 else:
