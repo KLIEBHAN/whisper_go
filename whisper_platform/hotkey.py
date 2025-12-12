@@ -26,6 +26,8 @@ VIRTUAL_KEY_CODES = {
     "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
     "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79,
     "f19": 80, "f20": 90,
+    # Fn / Globe key
+    "fn": 63,  # kVK_Function
     # Buchstaben
     "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
     "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31,
@@ -36,7 +38,12 @@ VIRTUAL_KEY_CODES = {
     "7": 26, "8": 28, "9": 25,
     # Sondertasten
     "space": 49, "tab": 48, "return": 36, "enter": 36, "escape": 53,
-    "esc": 53, "delete": 51, "backspace": 51,
+    "esc": 53, "delete": 51, "backspace": 51, "forwarddelete": 117,
+    # CapsLock
+    "capslock": 57, "caps_lock": 57,
+    # Satzzeichen / Symbole (ANSI)
+    ".": 47, ",": 43, "/": 44, "\\": 42, ";": 41, "'": 39, "`": 50,
+    "-": 27, "=": 24, "[": 33, "]": 30,
 }
 
 # Modifier Masks (Carbon)

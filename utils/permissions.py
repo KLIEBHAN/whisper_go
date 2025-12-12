@@ -78,6 +78,51 @@ def check_accessibility_permission() -> bool:
     return False
 
 
+def check_input_monitoring_permission(show_alert: bool = True, request: bool = False) -> bool:
+    """
+    Prüft Input‑Monitoring/Eingabemonitoring‑Berechtigung (für globale Key‑Listener).
+
+    macOS verlangt diese Berechtigung für Quartz Event Taps und pynput Listener.
+
+    Args:
+        show_alert: Wenn True, zeigt einen Hinweis‑Alert bei fehlender Berechtigung.
+        request: Wenn True, fordert der Prozess die Berechtigung aktiv an.
+
+    Returns:
+        True wenn Zugriff erlaubt, False wenn nicht.
+    """
+    try:
+        from Quartz import CGPreflightListenEventAccess, CGRequestListenEventAccess  # type: ignore[import-not-found]
+    except Exception:
+        return True
+
+    try:
+        ok = bool(CGPreflightListenEventAccess())
+    except Exception:
+        ok = False
+
+    if ok:
+        return True
+
+    logger.warning("Input‑Monitoring‑Berechtigung fehlt – globale Hotkeys funktionieren nicht")
+    if show_alert:
+        _show_permission_alert(
+            "Eingabemonitoring‑Zugriff empfohlen",
+            "Whisper Go benötigt Eingabemonitoring‑Zugriff für systemweite Hotkeys "
+            "(Fn/CapsLock/Hold‑Mode).\n\n"
+            "Aktiviere es unter:\n"
+            "Systemeinstellungen → Datenschutz & Sicherheit → Eingabemonitoring",
+        )
+
+    if request:
+        try:
+            CGRequestListenEventAccess()
+        except Exception:
+            pass
+
+    return False
+
+
 def _show_permission_alert(title: str, message: str) -> None:
     """Zeigt modalen Fehler-Dialog."""
     alert = NSAlert.alloc().init()

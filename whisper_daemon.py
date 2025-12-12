@@ -57,6 +57,7 @@ try:
     from utils.permissions import (
         check_microphone_permission,
         check_accessibility_permission,
+        check_input_monitoring_permission,
     )
     from ui import MenuBarController, OverlayController
 except Exception as e:
@@ -463,11 +464,59 @@ class WhisperDaemon:
         active = False
         started_by_this = False
 
+        # Normalize left/right modifier keys to generic ones
+        ctrl_variants = tuple(
+            k
+            for k in (
+                getattr(keyboard.Key, "ctrl_l", None),
+                getattr(keyboard.Key, "ctrl_r", None),
+            )
+            if k is not None
+        )
+        alt_variants = tuple(
+            k
+            for k in (
+                getattr(keyboard.Key, "alt_l", None),
+                getattr(keyboard.Key, "alt_r", None),
+                getattr(keyboard.Key, "alt_gr", None),
+            )
+            if k is not None
+        )
+        shift_variants = tuple(
+            k
+            for k in (
+                getattr(keyboard.Key, "shift_l", None),
+                getattr(keyboard.Key, "shift_r", None),
+            )
+            if k is not None
+        )
+        cmd_variants = tuple(
+            k
+            for k in (
+                getattr(keyboard.Key, "cmd_l", None),
+                getattr(keyboard.Key, "cmd_r", None),
+                getattr(keyboard.Key, "cmd", None),
+            )
+            if k is not None
+        )
+
+        def normalize_key(key):
+            if key in ctrl_variants:
+                return keyboard.Key.ctrl
+            if key in alt_variants:
+                return keyboard.Key.alt
+            if key in shift_variants:
+                return keyboard.Key.shift
+            if key in cmd_variants and key != keyboard.Key.cmd:
+                return keyboard.Key.cmd
+            return key
+
         def on_press(key):
             nonlocal active, started_by_this
             if self._current_state == AppState.ERROR:
                 return
-            current_keys.add(key)
+            nk = normalize_key(key)
+            current_keys.add(nk)
             if not active and hotkey_keys.issubset(current_keys):
                 active = True
                 if not self._recording:
@@ -479,7 +528,8 @@ class WhisperDaemon:
 
         def on_release(key):
             nonlocal active, started_by_this
-            current_keys.discard(key)
+            nk = normalize_key(key)
+            current_keys.discard(nk)
             if active and not hotkey_keys.issubset(current_keys):
                 active = False
                 if started_by_this:
@@ -1107,7 +1157,25 @@ class WhisperDaemon:
                 logger.warning(f"Unbekannter Hotkey-Modus '{m}', fallback auf toggle")
                 m = "toggle"
             normalized.append((m, hk))
-        bindings = normalized
+        # Doppelte Hotkeys entfernen (z.B. gleicher Key für Toggle und Hold)
+        deduped: list[tuple[str, str]] = []
+        seen_keys: dict[str, str] = {}
+        duplicate_msgs: list[str] = []
+        for m, hk in normalized:
+            key_norm = hk.strip().lower()
+            if not key_norm:
+                continue
+            if key_norm in seen_keys:
+                msg = (
+                    f"Hotkey '{hk}' ist doppelt konfiguriert "
+                    f"({seen_keys[key_norm]} + {m}). Nur der erste wird verwendet."
+                )
+                logger.warning(msg)
+                duplicate_msgs.append(msg)
+                continue
+            seen_keys[key_norm] = m
+            deduped.append((m, hk))
+        bindings = deduped
 
         # Berechtigungen prüfen (Mikrofon - blockierend)
         if not check_microphone_permission():
@@ -1116,6 +1184,18 @@ class WhisperDaemon:
 
         # Accessibility prüfen (nur Warnung, nicht blockierend)
         accessibility_ok = check_accessibility_permission()
+
+        # Input‑Monitoring prüfen wenn nötig (Quartz/pynput globale Listener)
+        requires_input_monitoring = any(
+            mode == "hold"
+            or hk.strip().lower() in ("fn", "capslock", "caps_lock")
+            for mode, hk in bindings
+        )
+        input_monitoring_ok = (
+            check_input_monitoring_permission(show_alert=False)
+            if requires_input_monitoring
+            else True
+        )
 
         # Logging + Start-Info
         print("🎤 whisper_daemon läuft", file=sys.stderr)
@@ -1141,11 +1221,20 @@ class WhisperDaemon:
         from quickmachotkey import quickHotKey
 
         invalid_hotkeys: list[str] = []
+        invalid_hotkeys.extend(duplicate_msgs)
 
         for mode, hk in bindings:
             hk_str = hk.strip().lower()
             hk_is_fn = hk_str == "fn"
             hk_is_capslock = hk_str in ("capslock", "caps_lock")
+
+            if not input_monitoring_ok and (mode == "hold" or hk_is_fn or hk_is_capslock):
+                msg = (
+                    f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
+                )
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
+                continue
 
             if (hk_is_fn or hk_is_capslock) and not accessibility_ok:
                 msg = f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
