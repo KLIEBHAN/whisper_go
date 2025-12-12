@@ -83,6 +83,20 @@ binaries += fw_binaries + ct_binaries + tok_binaries
 hiddenimports += fw_hidden + ct_hidden + tok_hidden
 hiddenimports = list(dict.fromkeys(hiddenimports))
 
+# === Local backend (mlx-whisper / MLX) ===
+# Optional: only available/needed on Apple Silicon builds.
+try:
+    mlxw_datas, mlxw_binaries, mlxw_hidden = collect_all("mlx_whisper")
+    mlx_datas, mlx_binaries, mlx_hidden = collect_all("mlx")
+except Exception:
+    mlxw_datas, mlxw_binaries, mlxw_hidden = [], [], []
+    mlx_datas, mlx_binaries, mlx_hidden = [], [], []
+
+datas += mlxw_datas + mlx_datas
+binaries += mlxw_binaries + mlx_binaries
+hiddenimports += mlxw_hidden + mlx_hidden
+hiddenimports = list(dict.fromkeys(hiddenimports))
+
 # Nicht benötigte Module ausschließen (reduziert App-Größe)
 excludes = [
     # GUI Frameworks (wir nutzen PyObjC direkt)
