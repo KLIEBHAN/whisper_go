@@ -186,12 +186,14 @@ class WelcomeController:
             NSFontWeightMedium,
             NSFontWeightSemibold,
             NSMakeRect,
+            NSPopUpButton,
             NSTextAlignmentCenter,
             NSTextField,
         )
         import objc  # type: ignore[import-not-found]
 
-        card_height = 85
+        # 2 Zeilen: Hotkey + Hotkey Mode
+        card_height = 113
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height - CARD_SPACING
 
@@ -230,8 +232,9 @@ class WelcomeController:
 
         # Hotkey-Eingabefeld (mit Platz für Restart-Button)
         field_width = card_width - 2 * CARD_PADDING - 70
+        field_y = card_y + 42
         field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(WELCOME_PADDING + CARD_PADDING, card_y + 12, field_width, 24)
+            NSMakeRect(WELCOME_PADDING + CARD_PADDING, field_y, field_width, 24)
         )
         current_hotkey = get_env_setting("WHISPER_GO_HOTKEY") or self.hotkey
         field.setStringValue_(current_hotkey.upper())
@@ -244,7 +247,7 @@ class WelcomeController:
         restart_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(
                 WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - 60,
-                card_y + 12,
+                field_y,
                 60,
                 24,
             )
@@ -260,6 +263,26 @@ class WelcomeController:
         )
         self._restart_handler = restart_handler
         self._content_view.addSubview_(restart_btn)
+
+        # Hotkey Mode Dropdown (unter Hotkey)
+        base_x = WELCOME_PADDING + CARD_PADDING
+        label_width = 110
+        control_x = base_x + label_width + 8
+        control_width = card_width - 2 * CARD_PADDING - label_width - 8
+
+        self._add_setting_label(base_x, card_y + 12, "Hotkey Mode:")
+        hotkey_mode_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(control_x, card_y + 10, control_width, 22)
+        )
+        hotkey_mode_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for m in HOTKEY_MODE_OPTIONS:
+            hotkey_mode_popup.addItemWithTitle_(m)
+        current_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle"
+        if current_hotkey_mode not in HOTKEY_MODE_OPTIONS:
+            current_hotkey_mode = "toggle"
+        hotkey_mode_popup.selectItemWithTitle_(current_hotkey_mode)
+        self._hotkey_mode_popup = hotkey_mode_popup
+        self._content_view.addSubview_(hotkey_mode_popup)
 
         return card_y - CARD_SPACING
 
@@ -392,7 +415,7 @@ class WelcomeController:
         )
         import objc  # type: ignore[import-not-found]
 
-        card_height = 276
+        card_height = 248
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
@@ -442,22 +465,6 @@ class WelcomeController:
         self._mode_changed_handler = mode_changed_handler
         self._mode_popup = mode_popup
         self._content_view.addSubview_(mode_popup)
-        current_y -= row_height
-
-        # --- Hotkey Mode Dropdown ---
-        self._add_setting_label(base_x, current_y, "Hotkey Mode:")
-        hotkey_mode_popup = NSPopUpButton.alloc().initWithFrame_(
-            NSMakeRect(control_x, current_y, control_width, 22)
-        )
-        hotkey_mode_popup.setFont_(NSFont.systemFontOfSize_(11))
-        for m in HOTKEY_MODE_OPTIONS:
-            hotkey_mode_popup.addItemWithTitle_(m)
-        current_hotkey_mode = get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle"
-        if current_hotkey_mode not in HOTKEY_MODE_OPTIONS:
-            current_hotkey_mode = "toggle"
-        hotkey_mode_popup.selectItemWithTitle_(current_hotkey_mode)
-        self._hotkey_mode_popup = hotkey_mode_popup
-        self._content_view.addSubview_(hotkey_mode_popup)
         current_y -= row_height
 
         # --- Local Backend Dropdown ---

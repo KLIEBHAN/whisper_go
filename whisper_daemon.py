@@ -304,6 +304,18 @@ class WhisperDaemon:
 
         current_keys: set = set()
 
+        # UI/Recording-Start/Stop muss auf dem Main-Thread passieren (AppKit ist nicht thread-safe).
+        try:
+            from PyObjCTools import AppHelper  # type: ignore[import-not-found]
+        except Exception:  # pragma: no cover
+            AppHelper = None
+
+        def call_on_main(fn):
+            if AppHelper is not None:
+                AppHelper.callAfter(fn)
+            else:
+                fn()
+
         def on_press(key):
             if self._current_state == AppState.ERROR:
                 return
@@ -311,14 +323,14 @@ class WhisperDaemon:
             if not self._hold_active and hotkey_keys.issubset(current_keys):
                 self._hold_active = True
                 logger.debug("Hotkey hold down")
-                self._start_recording()
+                call_on_main(self._start_recording)
 
         def on_release(key):
             current_keys.discard(key)
             if self._hold_active and not hotkey_keys.issubset(current_keys):
                 self._hold_active = False
                 logger.debug("Hotkey hold up")
-                self._stop_recording()
+                call_on_main(self._stop_recording)
 
         listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         listener.daemon = True
