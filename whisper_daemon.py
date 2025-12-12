@@ -405,10 +405,51 @@ class WhisperDaemon:
         if not hasattr(provider, "preload"):
             return
 
+        def _parse_optional_bool(name: str) -> bool | None:
+            val = os.getenv(name)
+            if val is None:
+                return None
+            val = val.strip().lower()
+            if val in {"1", "true", "yes", "on"}:
+                return True
+            if val in {"0", "false", "no", "off"}:
+                return False
+            logger.warning(f"Ungültiger {name}={val!r}, ignoriere")
+            return None
+
         def _preload():
             try:
                 provider.preload(self.model)
                 logger.debug("Lokales Modell vorab geladen")
+                warmup_flag = _parse_optional_bool("WHISPER_GO_LOCAL_WARMUP")
+                backend = getattr(provider, "backend", None) or getattr(
+                    provider, "_backend", None
+                )
+                device = getattr(provider, "device", None) or getattr(
+                    provider, "_device", None
+                )
+                # Default: nur Warmup für openai-whisper auf MPS (größter "cold start" Effekt).
+                should_warmup = (
+                    warmup_flag
+                    if warmup_flag is not None
+                    else (backend == "whisper" and device == "mps")
+                )
+                if should_warmup and hasattr(provider, "transcribe_audio"):
+                    import numpy as np
+
+                    warmup_s = 0.5
+                    warmup_samples = int(WHISPER_SAMPLE_RATE * warmup_s)
+                    warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
+                    warmup_language = self.language or "en"
+                    try:
+                        provider.transcribe_audio(
+                            warmup_audio,
+                            model=self.model,
+                            language=warmup_language,
+                        )
+                        logger.debug("Lokales Modell warmup abgeschlossen")
+                    except Exception as e:
+                        logger.debug(f"Lokales Modell warmup fehlgeschlagen: {e}")
             except Exception as e:
                 logger.warning(f"Preload lokales Modell fehlgeschlagen: {e}")
 
@@ -1207,9 +1248,21 @@ class WhisperDaemon:
         if new_refine_model:
             self.refine_model = new_refine_model
 
-        # Local-Provider Cache invalidieren (Backend könnte sich geändert haben)
-        if "local" in self._provider_cache:
-            del self._provider_cache["local"]
+        # Lokalen Provider nicht wegwerfen (Modell-Load ist teuer).
+        # Stattdessen Runtime-Konfig invalidieren, damit ENV-Änderungen greifen.
+        local_provider = self._provider_cache.get("local")
+        if local_provider is not None:
+            invalidate = getattr(local_provider, "invalidate_runtime_config", None)
+            if callable(invalidate):
+                try:
+                    invalidate()
+                except Exception as e:
+                    logger.warning(
+                        f"LocalProvider invalidate_runtime_config fehlgeschlagen: {e}"
+                    )
+            else:
+                # Fallback: alte Implementierung (sicher, aber langsamer)
+                del self._provider_cache["local"]
 
         logger.info(
             f"Settings reloaded: mode={self.mode}, language={self.language}, "

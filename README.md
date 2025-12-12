@@ -182,6 +182,10 @@ export WHISPER_GO_LOCAL_BACKEND="whisper"
 # export WHISPER_GO_LOCAL_BEST_OF=1
 # export WHISPER_GO_LOCAL_TEMPERATURE=0.0
 
+# Optional: Local Warmup (reduces "cold start" on first local call)
+# Default: auto (warmup only for openai-whisper on MPS). Values: true/false
+# export WHISPER_GO_LOCAL_WARMUP="true"
+
 # WebSocket Streaming for Deepgram (default: true)
 export WHISPER_GO_STREAMING="true"
 

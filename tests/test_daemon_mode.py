@@ -123,14 +123,17 @@ class TestDaemonMode(unittest.TestCase):
     def test_reload_settings_unsets_removed_local_backend_env(self):
         """Wenn Settings ein Key entfernen, muss ENV ebenfalls bereinigt werden (sonst bleibt z.B. faster aktiv)."""
         daemon = WhisperDaemon(mode="openai")
-        daemon._provider_cache["local"] = MagicMock()
+        local_provider = MagicMock()
+        daemon._provider_cache["local"] = local_provider
 
         with patch.dict(os.environ, {"WHISPER_GO_LOCAL_BACKEND": "faster"}), \
              patch("whisper_daemon.load_environment"), \
              patch("utils.preferences.get_env_setting", return_value=None):
             daemon._reload_settings()
             self.assertNotIn("WHISPER_GO_LOCAL_BACKEND", os.environ)
-            self.assertNotIn("local", daemon._provider_cache)
+            # Provider bleibt gecached, aber muss Runtime-Config neu evaluieren.
+            self.assertIn("local", daemon._provider_cache)
+            local_provider.invalidate_runtime_config.assert_called_once()
 
 
 

@@ -102,6 +102,21 @@ class LocalProvider:
         self._backend: str | None = None
         self._compute_type: str | None = None
         self._load_lock = threading.Lock()
+        self._transcribe_lock = threading.Lock()
+
+    def invalidate_runtime_config(self) -> None:
+        """Invalidiert ENV-basierte Runtime-Konfiguration ohne Model-Cache zu löschen.
+
+        Wichtig: python-dotenv kann beim Reload Werte überschreiben, entfernt Keys
+        aber nicht automatisch. Diese Methode erlaubt es dem Daemon, nach einem
+        Settings-Reload die aktuellen ENV-Werte neu zu evaluieren, ohne teure
+        Modelle erneut laden zu müssen.
+        """
+        self._backend = None
+        self._device = None
+        self._fp16_override = None
+        self._fast_mode = None
+        self._compute_type = None
 
     def _ensure_runtime_config(self) -> None:
         if self._backend is None:
@@ -346,11 +361,12 @@ class LocalProvider:
         model_name = self._resolve_model_name(model)
         options = self._build_options(language)
         _log_stderr("Transkribiere audio-buffer...")
-        if self._backend == "faster":
-            return self._transcribe_faster(audio, model_name, options)
-        whisper_model = self._get_whisper_model(model_name)
-        result = whisper_model.transcribe(audio, **options)
-        return result["text"]
+        with self._transcribe_lock:
+            if self._backend == "faster":
+                return self._transcribe_faster(audio, model_name, options)
+            whisper_model = self._get_whisper_model(model_name)
+            result = whisper_model.transcribe(audio, **options)
+            return result["text"]
 
     def _transcribe_faster(self, audio, model_name: str, options: dict) -> str:
         model = self._get_faster_model(model_name)
@@ -381,11 +397,12 @@ class LocalProvider:
         model_name = self._resolve_model_name(model)
         _log_stderr(f"Transkribiere {audio_path.name}...")
         options = self._build_options(language)
-        if self._backend == "faster":
-            return self._transcribe_faster(str(audio_path), model_name, options)
-        whisper_model = self._get_whisper_model(model_name)
-        result = whisper_model.transcribe(str(audio_path), **options)
-        return result["text"]
+        with self._transcribe_lock:
+            if self._backend == "faster":
+                return self._transcribe_faster(str(audio_path), model_name, options)
+            whisper_model = self._get_whisper_model(model_name)
+            result = whisper_model.transcribe(str(audio_path), **options)
+            return result["text"]
 
     def supports_streaming(self) -> bool:
         """Lokales Whisper unterstützt kein Streaming."""
