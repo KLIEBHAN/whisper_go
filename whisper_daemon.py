@@ -721,6 +721,8 @@ class WhisperDaemon:
         import soundfile as sf
 
         recorded_chunks = []
+        max_rms = 0.0
+        had_speech = False
         player = get_sound_player()
 
         try:
@@ -729,9 +731,14 @@ class WhisperDaemon:
 
             # Aufnahme-Loop
             def callback(indata, frames, time, status):
+                nonlocal max_rms, had_speech
                 recorded_chunks.append(indata.copy())
                 # RMS Berechnung und Queueing
                 rms = float(np.sqrt(np.mean(indata**2)))
+                if rms > max_rms:
+                    max_rms = rms
+                if rms > VAD_THRESHOLD:
+                    had_speech = True
                 try:
                     self._result_queue.put_nowait(
                         DaemonMessage(type=MessageType.AUDIO_LEVEL, payload=rms)
@@ -755,6 +762,14 @@ class WhisperDaemon:
             if not recorded_chunks:
                 logger.warning("Keine Audiodaten aufgenommen")
                 # Leeres Ergebnis signalisieren, damit Result-Polling sauber endet.
+                self._result_queue.put(
+                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload="")
+                )
+                return
+            if not had_speech:
+                logger.info(
+                    f"Keine Sprache erkannt (max_rms={max_rms:.4f}) – Transkription übersprungen"
+                )
                 self._result_queue.put(
                     DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload="")
                 )

@@ -222,5 +222,54 @@ class TestDaemonMode(unittest.TestCase):
 
         self.assertEqual(daemon._current_state, AppState.IDLE)
 
+    def test_recording_worker_silent_skips_transcription(self):
+        """Wenn keine Sprache erkannt wird, wird nicht transkribiert."""
+        daemon = WhisperDaemon(mode="openai")
+        daemon._stop_event = threading.Event()
+
+        mock_sd = MagicMock()
+        mock_sf = MagicMock()
+        mock_np = MagicMock()
+
+        mock_stream = MagicMock()
+        mock_sd.InputStream.return_value.__enter__.return_value = mock_stream
+
+        def side_effect_sleep(*_args):
+            call_args = mock_sd.InputStream.call_args
+            if call_args:
+                callback = call_args[1].get("callback")
+                if callback:
+                    callback(MagicMock(), 100, None, None)
+            daemon._stop_event.set()
+
+        mock_sd.sleep.side_effect = side_effect_sleep
+
+        mock_get_provider = MagicMock()
+        mock_player = MagicMock()
+        mock_get_player = MagicMock(return_value=mock_player)
+
+        with patch.dict(
+            sys.modules,
+            {"sounddevice": mock_sd, "soundfile": mock_sf, "numpy": mock_np},
+        ), patch(
+            "whisper_daemon.get_provider", mock_get_provider
+        ), patch(
+            "whisper_daemon.get_sound_player", mock_get_player
+        ), patch(
+            "whisper_daemon.VAD_THRESHOLD", 9999.0
+        ):
+            daemon._recording_worker()
+
+        mock_get_provider.assert_not_called()
+        result_msg = None
+        while not daemon._result_queue.empty():
+            msg = daemon._result_queue.get_nowait()
+            if isinstance(msg, DaemonMessage) and msg.type == MessageType.TRANSCRIPT_RESULT:
+                result_msg = msg
+                break
+
+        self.assertIsNotNone(result_msg)
+        self.assertEqual(result_msg.payload, "")
+
 if __name__ == "__main__":
     unittest.main()
