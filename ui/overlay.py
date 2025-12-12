@@ -175,12 +175,16 @@ class SoundWaveView:
             self.current_animation = "recording"
             self.set_bar_color(self._color_recording)
         
-        # Noise Gate für Visualisierung: Sehr leise Pegel ignorieren
-        if level < VISUAL_NOISE_GATE:
+        # Noise Gate + Normalisierung: sehr leise Pegel ignorieren,
+        # darüber jedoch auf 0..1 skaliert, damit leise Sprache sichtbar bleibt.
+        if level <= VISUAL_NOISE_GATE:
             level = 0.0
+        else:
+            level = (level - VISUAL_NOISE_GATE) / (1.0 - VISUAL_NOISE_GATE)
+            level = max(0.0, min(1.0, level))
 
         # Verstärkung für visuelle Sichtbarkeit mit nicht-linearer Kurve
-        # sqrt(level) sorgt dafür, dass leise Töne stärker angehoben werden als laute
+        # sqrt(level) hebt leise Töne stärker an als laute.
         amplified = min(math.sqrt(level) * VISUAL_GAIN, 1.0)
         
         # Balken-Mapping (symmetrisch von außen nach innen)

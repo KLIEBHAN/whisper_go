@@ -43,8 +43,9 @@ DEFAULT_GROQ_REFINE_MODEL = "llama-3.3-70b-versatile"
 # =============================================================================
 
 VAD_THRESHOLD = 0.015      # Trigger recording (RMS)
-VISUAL_NOISE_GATE = 0.01   # UI silence floor (RMS)
-VISUAL_GAIN = 5.0          # Sqrt scaling factor
+# Visualisierung ist etwas empfindlicher als VAD, damit auch leise Sprache sichtbar ist.
+VISUAL_NOISE_GATE = 0.005  # UI silence floor (RMS)
+VISUAL_GAIN = 7.0          # Sqrt scaling factor
 
 # =============================================================================
 # IPC-Dateipfade
