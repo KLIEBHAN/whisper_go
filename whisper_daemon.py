@@ -754,6 +754,10 @@ class WhisperDaemon:
             # Speichern
             if not recorded_chunks:
                 logger.warning("Keine Audiodaten aufgenommen")
+                # Leeres Ergebnis signalisieren, damit Result-Polling sauber endet.
+                self._result_queue.put(
+                    DaemonMessage(type=MessageType.TRANSCRIPT_RESULT, payload="")
+                )
                 return
 
             audio_data = np.concatenate(recorded_chunks)
@@ -862,7 +866,11 @@ class WhisperDaemon:
 
         self._recording = False
         self._recording_started_by_hold = False
-        self._update_state(AppState.TRANSCRIBING)
+        # Nur wenn wir noch im Aufnahme-Flow sind, auf TRANSCRIBING wechseln.
+        # Bei sehr kurzen Hold-Taps kann der Worker bereits ein leeres Ergebnis geliefert
+        # und den State auf IDLE gesetzt haben.
+        if self._current_state in (AppState.LISTENING, AppState.RECORDING):
+            self._update_state(AppState.TRANSCRIBING)
 
         # Polling läuft bereits seit Start
 

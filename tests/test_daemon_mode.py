@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from whisper_daemon import WhisperDaemon
+from utils.state import DaemonMessage, MessageType
 
 class TestDaemonMode(unittest.TestCase):
     def setUp(self):
@@ -177,6 +178,38 @@ class TestDaemonMode(unittest.TestCase):
             
             # Verify result put in queue
             self.assertFalse(daemon._result_queue.empty())
+
+    def test_recording_worker_no_audio_puts_empty_result(self):
+        """Sehr kurzer Hold-Tap ohne Callback darf nicht im TRANSCRIBING hängen bleiben."""
+        daemon = WhisperDaemon(mode="openai")
+        daemon._stop_event = threading.Event()
+        daemon._stop_event.set()  # Aufnahme sofort beenden, keine Chunks
+
+        mock_sd = MagicMock()
+        mock_sf = MagicMock()
+        mock_np = MagicMock()
+
+        # Mock context manager for InputStream (kein Callback wird aufgerufen)
+        mock_stream = MagicMock()
+        mock_sd.InputStream.return_value.__enter__.return_value = mock_stream
+
+        mock_player = MagicMock()
+        mock_get_player = MagicMock(return_value=mock_player)
+
+        with patch.dict(sys.modules, {
+                "sounddevice": mock_sd,
+                "soundfile": mock_sf,
+                "numpy": mock_np
+            }), \
+             patch("whisper_daemon.get_sound_player", mock_get_player):
+
+            daemon._recording_worker()
+
+            self.assertFalse(daemon._result_queue.empty())
+            msg = daemon._result_queue.get_nowait()
+            self.assertIsInstance(msg, DaemonMessage)
+            self.assertEqual(msg.type, MessageType.TRANSCRIPT_RESULT)
+            self.assertEqual(msg.payload, "")
 
 if __name__ == "__main__":
     unittest.main()
