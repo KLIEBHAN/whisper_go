@@ -273,8 +273,8 @@ class WelcomeController:
         )
         import objc  # type: ignore[import-not-found]
 
-        # 2 Zeilen: Hotkey + Hotkey Mode
-        card_height = 113
+        # 3 Zeilen: Toggle + Hold + Restart
+        card_height = 150
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height - CARD_SPACING
 
@@ -315,7 +315,7 @@ class WelcomeController:
         # Toggle + Hold Hotkeys (parallel möglich)
         button_width = 60
         button_spacing = 8
-        buttons_total = button_width * 2 + button_spacing
+        buttons_total = button_width + button_spacing
         field_width = card_width - 2 * CARD_PADDING - buttons_total
 
         legacy_hotkey_env = get_env_setting("WHISPER_GO_HOTKEY")
@@ -336,7 +336,7 @@ class WelcomeController:
                 hold_default = ""
 
         # Toggle Hotkey Feld (oben)
-        toggle_y = card_y + 42
+        toggle_y = card_y + 76
         toggle_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(WELCOME_PADDING + CARD_PADDING, toggle_y, field_width, 24)
         )
@@ -347,12 +347,7 @@ class WelcomeController:
         parent_view.addSubview_(toggle_field)
         self._toggle_hotkey_field = toggle_field
 
-        record_x = (
-            WELCOME_WIDTH
-            - WELCOME_PADDING
-            - CARD_PADDING
-            - (button_width * 2 + button_spacing)
-        )
+        record_x = WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - button_width
 
         toggle_record_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(record_x, toggle_y, button_width, 24)
@@ -371,25 +366,8 @@ class WelcomeController:
         self._toggle_record_btn = toggle_record_btn
         parent_view.addSubview_(toggle_record_btn)
 
-        # Restart-Button (nur oben)
-        restart_x = record_x + button_width + button_spacing
-        restart_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(restart_x, toggle_y, button_width, 24)
-        )
-        restart_btn.setTitle_("Restart")
-        restart_btn.setBezelStyle_(NSBezelStyleRounded)
-        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
-
-        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
-        restart_btn.setTarget_(restart_handler)
-        restart_btn.setAction_(
-            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
-        )
-        self._restart_handler = restart_handler
-        parent_view.addSubview_(restart_btn)
-
         # Hold Hotkey Feld (unten)
-        hold_y = card_y + 12
+        hold_y = card_y + 44
         hold_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(WELCOME_PADDING + CARD_PADDING, hold_y, field_width, 24)
         )
@@ -416,6 +394,25 @@ class WelcomeController:
         self._hold_record_handler = hold_record_handler
         self._hold_record_btn = hold_record_btn
         parent_view.addSubview_(hold_record_btn)
+
+        # Restart-Button (gilt für beide Hotkeys)
+        restart_width = button_width * 2 + button_spacing
+        restart_x = record_x - button_width - button_spacing
+        restart_y = card_y + 12
+        restart_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(restart_x, restart_y, restart_width, 24)
+        )
+        restart_btn.setTitle_("Restart")
+        restart_btn.setBezelStyle_(NSBezelStyleRounded)
+        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
+
+        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
+        restart_btn.setTarget_(restart_handler)
+        restart_btn.setAction_(
+            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
+        )
+        self._restart_handler = restart_handler
+        parent_view.addSubview_(restart_btn)
 
         return card_y - CARD_SPACING
 
