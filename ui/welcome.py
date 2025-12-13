@@ -441,7 +441,7 @@ class WelcomeController:
             description=(
                 "Microphone is required. Accessibility improves auto‑paste.\n"
                 "Input Monitoring enables Hold + some global hotkeys.\n"
-                "💡 Not working? Remove & re‑add the app in System Settings."
+                "💡 Accessibility/Input Monitoring not working? Remove & re‑add the app."
             ),
             bind_action=bind_action,
         )
