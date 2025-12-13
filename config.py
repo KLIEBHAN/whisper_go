@@ -70,11 +70,6 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Lokale Pfade
 # =============================================================================
 
-from utils.paths import get_resource_path  # noqa: E402 (after constants to avoid circular import)
-
-# Basis-Verzeichnis für Ressourcen (Code, Assets)
-SCRIPT_DIR = Path(get_resource_path("."))
-
 # User-Verzeichnis für Konfiguration und Logs
 USER_CONFIG_DIR = Path.home() / ".whisper_go"
 USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,6 +80,13 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "whisper_go.log"
 
 VOCABULARY_FILE = USER_CONFIG_DIR / "vocabulary.json"
+
+# Resource path helper import must happen after core constants to avoid circular imports
+# (utils imports config for IPC paths and config dir).
+from utils.paths import get_resource_path  # noqa: E402 (after constants to avoid circular import)
+
+# Basis-Verzeichnis für Ressourcen (Code, Assets)
+SCRIPT_DIR = Path(get_resource_path("."))
 
 
 __all__ = [
