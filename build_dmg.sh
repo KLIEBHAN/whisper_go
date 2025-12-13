@@ -2,89 +2,274 @@
 # =============================================================================
 # WhisperGo DMG Builder
 # =============================================================================
-# Erstellt eine signierte DMG-Datei für die Distribution
+# Erstellt eine DMG-Datei für die Distribution.
+#
+# Dev/Debug:
+#   - ad-hoc Signatur (kein Notarization) für schnelle lokale Tests.
+#
+# Release:
+#   - Developer ID Signing + Notarization + Stapling für "Install → läuft".
 #
 # Voraussetzungen:
-#   - PyInstaller Build muss existieren: dist/WhisperGo.app
-#   - create-dmg (optional, für schöneres DMG): brew install create-dmg
+#   - PyInstaller Build existiert: dist/WhisperGo.app
+#   - Xcode Command Line Tools (für xcrun/notarytool): xcode-select --install
+#
+# Setup (einmalig) für Notarization:
+#   xcrun notarytool store-credentials "whispergo-notary" \
+#     --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
 #
 # Usage:
-#   ./build_dmg.sh [version]
-#   ./build_dmg.sh 1.0.0
+#   ./build_dmg.sh                       # version aus pyproject.toml, ad-hoc signed
+#   ./build_dmg.sh 1.0.0                 # ad-hoc signed
+#
+#   CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+#   NOTARY_PROFILE="whispergo-notary" \
+#   ./build_dmg.sh 1.0.0 --notarize
 # =============================================================================
 
-set -e  # Exit on error
+set -euo pipefail
 
-# === Konfiguration ===
 APP_NAME="WhisperGo"
 APP_PATH="dist/${APP_NAME}.app"
-VERSION="${1:-1.0.0}"
-DMG_NAME="${APP_NAME}-${VERSION}"
-DMG_PATH="dist/${DMG_NAME}.dmg"
-VOLUME_NAME="${APP_NAME} ${VERSION}"
 
-# Farben für Output
+VERSION=""
+NOTARIZE="false"
+
+# Override via env (recommended for CI/local)
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-${WHISPERGO_CODESIGN_IDENTITY:-"-"}}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-${WHISPERGO_NOTARY_PROFILE:-""}}"
+ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-${WHISPERGO_ENTITLEMENTS_PATH:-"macos/entitlements.plist"}}"
+
+DMG_NAME=""
+DMG_PATH=""
+VOLUME_NAME=""
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
+
+usage() {
+    cat <<'EOF'
+WhisperGo DMG Builder
+
+Usage:
+  ./build_dmg.sh [version] [--notarize] [--identity "Developer ID Application: ..."] [--profile PROFILE]
+
+Options:
+  --version VERSION        Version für DMG-Dateiname (Default: aus pyproject.toml)
+  --notarize               Notarize + staple (erfordert Developer ID Signing + NOTARY_PROFILE)
+  --identity IDENTITY      Codesign Identity (Default: $CODESIGN_IDENTITY, '-' = ad-hoc)
+  --profile PROFILE        notarytool Keychain Profile (Default: $NOTARY_PROFILE)
+  --entitlements PATH      Entitlements file (Default: macos/entitlements.plist)
+  -h, --help               Hilfe anzeigen
+EOF
+}
+
+die() {
+    echo -e "${RED}❌ Fehler: $*${NC}" >&2
+    exit 1
+}
+
+have_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+read_version_from_pyproject() {
+    python3 - <<'PY'
+from __future__ import annotations
+
+import pathlib
+import sys
+
+try:
+    import tomllib  # py3.11+
+except Exception:  # pragma: no cover
+    tomllib = None  # type: ignore
+
+pyproject = pathlib.Path("pyproject.toml")
+if not pyproject.exists() or tomllib is None:
+    print("1.0.0")
+    sys.exit(0)
+
+data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+print(data.get("project", {}).get("version", "1.0.0"))
+PY
+}
+
+notarize_file() {
+    local file_path="$1"
+    xcrun notarytool submit "$file_path" --keychain-profile "$NOTARY_PROFILE" --wait
+}
+
+sign_app() {
+    local identity="$1"
+    if [ "$identity" = "-" ]; then
+        echo -e "${YELLOW}🔐 Signiere App (ad-hoc)...${NC}"
+        codesign --force --deep --sign - "$APP_PATH"
+        return
+    fi
+
+    echo -e "${YELLOW}🔐 Signiere App (Developer ID, hardened runtime)...${NC}"
+    local args=(--force --deep --options runtime --sign "$identity")
+    if [ -f "$ENTITLEMENTS_PATH" ]; then
+        args+=(--entitlements "$ENTITLEMENTS_PATH")
+    fi
+    codesign "${args[@]}" "$APP_PATH"
+}
+
+verify_app_signature() {
+    echo -e "${YELLOW}🔍 Verifiziere App-Signatur...${NC}"
+    codesign --verify --deep --strict "$APP_PATH"
+    if have_cmd spctl; then
+        spctl -a -vv --type exec "$APP_PATH" || true
+    fi
+    echo -e "${GREEN}   ✓ OK${NC}"
+}
+
+build_dmg() {
+    local dmg_temp="dist/dmg_content"
+    rm -rf "$dmg_temp"
+    mkdir -p "$dmg_temp"
+
+    cp -R "$APP_PATH" "$dmg_temp/"
+    ln -s /Applications "$dmg_temp/Applications"
+
+    hdiutil create -volname "$VOLUME_NAME" \
+        -srcfolder "$dmg_temp" \
+        -ov -format UDZO \
+        "$DMG_PATH"
+
+    rm -rf "$dmg_temp"
+}
+
+sign_dmg() {
+    local identity="$1"
+    if [ "$identity" = "-" ]; then
+        return
+    fi
+    echo -e "${YELLOW}🔐 Signiere DMG (Developer ID)...${NC}"
+    codesign --force --sign "$identity" "$DMG_PATH"
+    echo -e "${GREEN}   ✓ DMG signiert${NC}"
+}
+
+verify_dmg_signature() {
+    if ! have_cmd codesign; then
+        return
+    fi
+    echo -e "${YELLOW}🔍 Verifiziere DMG...${NC}"
+    codesign --verify --strict "$DMG_PATH" || true
+    if have_cmd spctl; then
+        spctl -a -vv --type open "$DMG_PATH" || true
+    fi
+}
+
+# ---- Args ----
+while [ "${1:-}" != "" ]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --version)
+            VERSION="${2:-}"
+            shift 2
+            ;;
+        --notarize)
+            NOTARIZE="true"
+            shift
+            ;;
+        --identity)
+            CODESIGN_IDENTITY="${2:-}"
+            shift 2
+            ;;
+        --profile)
+            NOTARY_PROFILE="${2:-}"
+            shift 2
+            ;;
+        --entitlements)
+            ENTITLEMENTS_PATH="${2:-}"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            usage
+            die "Unbekannte Option: $1"
+            ;;
+        *)
+            if [ -z "$VERSION" ]; then
+                VERSION="$1"
+                shift
+            else
+                usage
+                die "Unerwartetes Argument: $1"
+            fi
+            ;;
+    esac
+done
+
+if [ -z "$VERSION" ]; then
+    VERSION="$(read_version_from_pyproject)"
+fi
+
+DMG_NAME="${APP_NAME}-${VERSION}"
+DMG_PATH="dist/${DMG_NAME}.dmg"
+VOLUME_NAME="${APP_NAME} ${VERSION}"
 
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  WhisperGo DMG Builder - Version ${VERSION}${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# === Prüfungen ===
-if [ ! -d "$APP_PATH" ]; then
-    echo -e "${RED}❌ Fehler: ${APP_PATH} nicht gefunden!${NC}"
-    echo "   Führe zuerst aus: pyinstaller build_app.spec --clean"
-    exit 1
+[ -d "$APP_PATH" ] || die "${APP_PATH} nicht gefunden! Führe zuerst aus: pyinstaller build_app.spec --clean"
+
+echo -e "${YELLOW}ℹ️  Identity: ${CODESIGN_IDENTITY}${NC}"
+if [ "$NOTARIZE" = "true" ]; then
+    echo -e "${YELLOW}ℹ️  Notarize: enabled (profile: ${NOTARY_PROFILE})${NC}"
 fi
 
-# === Ad-hoc Code Signing ===
-echo -e "${YELLOW}🔐 Signiere App (ad-hoc)...${NC}"
-codesign --force --deep --sign - "$APP_PATH"
-echo -e "${GREEN}   ✓ App signiert${NC}"
+sign_app "$CODESIGN_IDENTITY"
+verify_app_signature
 
-# Signatur verifizieren
-echo -e "${YELLOW}🔍 Verifiziere Signatur...${NC}"
-if codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
-    echo -e "${GREEN}   ✓ Signatur gültig${NC}"
-else
-    echo -e "${YELLOW}   ⚠ Ad-hoc Signatur (keine Apple Developer ID)${NC}"
+if [ "$NOTARIZE" = "true" ]; then
+    [ "$CODESIGN_IDENTITY" != "-" ] || die "--notarize erfordert Developer ID Signing (setze --identity oder CODESIGN_IDENTITY)"
+    [ -n "$NOTARY_PROFILE" ] || die "--notarize erfordert NOTARY_PROFILE (Keychain profile von notarytool)"
+    have_cmd xcrun || die "xcrun nicht gefunden (Xcode Command Line Tools installieren)"
+
+    echo -e "${YELLOW}🧾 Notarize App (zip) + staple...${NC}"
+    ZIP_PATH="dist/${APP_NAME}-${VERSION}.app.zip"
+    rm -f "$ZIP_PATH"
+    ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+    notarize_file "$ZIP_PATH"
+    rm -f "$ZIP_PATH"
+    xcrun stapler staple "$APP_PATH"
+    xcrun stapler validate "$APP_PATH"
+    echo -e "${GREEN}   ✓ App notarized + stapled${NC}"
 fi
 
-# === Alte DMG entfernen ===
 if [ -f "$DMG_PATH" ]; then
     echo -e "${YELLOW}🗑  Entferne alte DMG...${NC}"
     rm "$DMG_PATH"
 fi
 
-# === DMG erstellen ===
-echo ""
-echo -e "${YELLOW}📦 Erstelle DMG mit Applications-Symlink...${NC}"
+echo -e "${YELLOW}📦 Erstelle DMG (Drag & Drop → /Applications)...${NC}"
+build_dmg
 
-# Temporäres Verzeichnis für DMG-Inhalt
-DMG_TEMP="dist/dmg_content"
-rm -rf "$DMG_TEMP"
-mkdir -p "$DMG_TEMP"
+sign_dmg "$CODESIGN_IDENTITY"
+verify_dmg_signature
 
-# App kopieren
-cp -R "$APP_PATH" "$DMG_TEMP/"
+if [ "$NOTARIZE" = "true" ]; then
+    echo -e "${YELLOW}🧾 Notarize DMG + staple...${NC}"
+    notarize_file "$DMG_PATH"
+    xcrun stapler staple "$DMG_PATH"
+    xcrun stapler validate "$DMG_PATH"
+    verify_dmg_signature
+    echo -e "${GREEN}   ✓ DMG notarized + stapled${NC}"
+fi
 
-# Symlink zu Applications erstellen (für Drag & Drop Installation)
-ln -s /Applications "$DMG_TEMP/Applications"
-
-# DMG erstellen (komprimiert)
-hdiutil create -volname "$VOLUME_NAME" \
-    -srcfolder "$DMG_TEMP" \
-    -ov -format UDZO \
-    "$DMG_PATH"
-
-# Aufräumen
-rm -rf "$DMG_TEMP"
-
-# === Ergebnis ===
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  ✅ DMG erfolgreich erstellt!${NC}"

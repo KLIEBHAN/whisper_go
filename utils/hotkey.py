@@ -262,6 +262,57 @@ def _get_utf8_env() -> dict:
     return env
 
 
+def _capture_clipboard_snapshot():
+    """Snapshot des macOS Pasteboards (best-effort).
+
+    Wir versuchen die kompletten Pasteboard-Items (alle Types) zu sichern, damit
+    Auto-Paste den Clipboard-Inhalt nach erfolgreichem Einfügen wiederherstellen kann.
+    """
+    try:
+        from AppKit import NSPasteboard  # type: ignore[import-not-found]
+
+        pb = NSPasteboard.generalPasteboard()
+        items = pb.pasteboardItems() or []
+        snapshot: list[dict[str, object]] = []
+        for item in items:
+            data_by_type: dict[str, object] = {}
+            for t in item.types() or []:
+                try:
+                    data = item.dataForType_(t)
+                except Exception:
+                    data = None
+                if data is not None:
+                    data_by_type[str(t)] = data
+            snapshot.append(data_by_type)
+        return snapshot
+    except Exception:
+        return None
+
+
+def _restore_clipboard_snapshot(snapshot) -> None:
+    """Stellt einen vorherigen Pasteboard-Snapshot wieder her (best-effort)."""
+    if snapshot is None:
+        return
+    try:
+        from AppKit import NSPasteboard, NSPasteboardItem  # type: ignore[import-not-found]
+
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        items_to_write = []
+        for item_data in snapshot:
+            pb_item = NSPasteboardItem.alloc().init()
+            for t, data in item_data.items():
+                try:
+                    pb_item.setData_forType_(data, t)
+                except Exception:
+                    continue
+            items_to_write.append(pb_item)
+        if items_to_write:
+            pb.writeObjects_(items_to_write)
+    except Exception:
+        return
+
+
 def paste_transcript(text: str) -> bool:
     """
     Kopiert Text in Clipboard und fügt via Cmd+V ein.
@@ -281,6 +332,7 @@ def paste_transcript(text: str) -> bool:
 
     # UTF-8 Environment für pbcopy/pbpaste (wichtig für Umlaute)
     utf8_env = _get_utf8_env()
+    clipboard_snapshot = _capture_clipboard_snapshot()
 
     # 1. In Clipboard kopieren via pbcopy
     try:
@@ -325,17 +377,25 @@ def paste_transcript(text: str) -> bool:
     time.sleep(0.1)
 
     # 4. Cmd+V senden (verschiedene Methoden in Prioritätsreihenfolge)
+    pasted_ok = False
 
     # 4a. pynput (Cross-Platform, bevorzugt)
     if _paste_via_pynput():
-        return True
+        pasted_ok = True
 
     # 4b. CGEventPost (Quartz)
-    if _paste_via_quartz():
-        return True
+    elif _paste_via_quartz():
+        pasted_ok = True
 
     # 4c. osascript (letzter Fallback)
-    if _paste_via_osascript():
+    elif _paste_via_osascript():
+        pasted_ok = True
+
+    # 5. Clipboard wiederherstellen (nur wenn Paste erfolgreich war).
+    # Bei Fehlern bleibt der Text im Clipboard, damit User manuell CMD+V nutzen kann.
+    if pasted_ok:
+        time.sleep(0.2)
+        _restore_clipboard_snapshot(clipboard_snapshot)
         return True
 
     logger.error(

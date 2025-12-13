@@ -531,6 +531,8 @@ Optionally enable an additional warmup inference via `WHISPER_GO_LOCAL_WARMUP=tr
 
 If Auto-Paste doesn't work in `WhisperGo.app` (text is copied but not pasted):
 
+**Clipboard behavior:** WhisperGo restores your previous clipboard content after a successful paste. If paste fails, the transcript stays in the clipboard so you can paste manually.
+
 **Symptom:** Log shows `AXIsProcessTrusted = False` even though the app is enabled in Accessibility.
 
 **Cause:** Unsigned PyInstaller bundles change their hash with every rebuild. macOS doesn't recognize the "new" app as authorized.
@@ -554,6 +556,8 @@ Logs are stored in `~/.whisper_go/logs/`:
 # Emergency startup log (if daemon fails to start)
 ~/.whisper_go/startup.log
 ```
+
+**Diagnostics report:** Menu bar → **Export Diagnostics…** creates a zip in `~/.whisper_go/diagnostics/` (API keys masked, log tail redacted).
 
 ## Development
 
@@ -591,3 +595,17 @@ codesign --force --deep --sign - dist/WhisperGo.app
 ```
 
 > **Note:** Without signing, you must re-authorize the app in System Settings → Privacy & Security → Accessibility after every rebuild. See [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle).
+
+### Building a DMG (recommended for distribution)
+
+```bash
+# Dev (ad-hoc signed)
+./build_dmg.sh
+
+# Release (Developer ID + notarization)
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export NOTARY_PROFILE="whispergo-notary"
+./build_dmg.sh 1.0.0 --notarize
+```
+
+See `docs/BUILDING_MACOS.md` for notarization setup.

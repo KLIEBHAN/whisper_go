@@ -217,7 +217,9 @@ class TestPasteTranscript:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock Quartz CGEventPost
-        with patch("utils.hotkey._paste_via_pynput", return_value=False), \
+        with patch("utils.hotkey._capture_clipboard_snapshot", return_value=None), \
+             patch("utils.hotkey._restore_clipboard_snapshot"), \
+             patch("utils.hotkey._paste_via_pynput", return_value=False), \
              patch("utils.hotkey._paste_via_quartz", return_value=True):  # Quartz success
             
             result = utils.hotkey.paste_transcript("test text")
@@ -233,7 +235,9 @@ class TestPasteTranscript:
 
         monkeypatch.setattr(subprocess, "run", mock_run)
 
-        result = utils.hotkey.paste_transcript("test text")
+        with patch("utils.hotkey._capture_clipboard_snapshot", return_value=None), \
+             patch("utils.hotkey._restore_clipboard_snapshot"):
+            result = utils.hotkey.paste_transcript("test text")
         assert result is False
 
     def test_paste_transcript_timeout(self, monkeypatch):
@@ -243,7 +247,9 @@ class TestPasteTranscript:
 
         monkeypatch.setattr(subprocess, "run", mock_run)
 
-        result = utils.hotkey.paste_transcript("test text")
+        with patch("utils.hotkey._capture_clipboard_snapshot", return_value=None), \
+             patch("utils.hotkey._restore_clipboard_snapshot"):
+            result = utils.hotkey.paste_transcript("test text")
         assert result is False
 
     def test_paste_transcript_empty_text(self, monkeypatch):
@@ -260,7 +266,9 @@ class TestPasteTranscript:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock Quartz etc success
-        with patch("utils.hotkey._paste_via_pynput", return_value=True):
+        with patch("utils.hotkey._capture_clipboard_snapshot", return_value=None), \
+             patch("utils.hotkey._restore_clipboard_snapshot"), \
+             patch("utils.hotkey._paste_via_pynput", return_value=True):
              utils.hotkey.paste_transcript("")
         
         # Leerer Text sollte trotzdem verarbeitet werden

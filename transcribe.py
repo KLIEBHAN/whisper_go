@@ -149,8 +149,11 @@ def _is_whisper_go_process(pid: int) -> bool:
 # =============================================================================
 
 
-from utils import daemonize as _daemonize, cleanup_stale_pid_file as _cleanup_stale_pid_file
-from utils.daemon import is_whisper_go_process as _shared_is_whisper_go_process
+from utils.daemon import (
+    cleanup_stale_pid_file as _cleanup_stale_pid_file,
+    daemonize as _daemonize,
+    is_whisper_go_process as _shared_is_whisper_go_process,
+)
 
 
 # =============================================================================

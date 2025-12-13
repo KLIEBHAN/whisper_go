@@ -48,6 +48,17 @@ class _MenuActionHandler(NSObject):
         if self.welcome_callback:
             self.welcome_callback()
 
+    @objc.signature(b"v@:@")
+    def exportDiagnostics_(self, _sender) -> None:
+        """Erstellt einen Diagnostics-Report (ohne Audio) und öffnet Finder."""
+        try:
+            from utils.diagnostics import export_diagnostics_report
+
+            export_diagnostics_report()
+        except Exception:
+            # Diagnostics is best-effort; avoid crashing the menu bar app.
+            return
+
 
 class MenuBarController:
     """
@@ -101,6 +112,13 @@ class MenuBarController:
         )
         logs_item.setTarget_(self._action_handler)
         menu.addItem_(logs_item)
+
+        # Diagnostics export
+        diag_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Export Diagnostics…", "exportDiagnostics:", ""
+        )
+        diag_item.setTarget_(self._action_handler)
+        menu.addItem_(diag_item)
 
         menu.addItem_(NSMenuItem.separatorItem())
 

@@ -22,10 +22,32 @@ block_cipher = None
 
 # PyInstaller Hook helpers for native libs/data
 from PyInstaller.utils.hooks import collect_all  # type: ignore
+import os
+import pathlib
+import re
 
 
 def _dedupe(items):
     return list(dict.fromkeys(items))
+
+def _read_app_version() -> str:
+    env_version = (os.getenv("WHISPERGO_VERSION") or os.getenv("VERSION") or "").strip()
+    if env_version:
+        return env_version
+
+    # SPEC_DIR wird von PyInstaller gesetzt, __file__ ist nicht verfügbar in .spec Dateien
+    spec_dir = pathlib.Path(SPECPATH) if 'SPECPATH' in dir() else pathlib.Path.cwd()
+    pyproject = spec_dir / "pyproject.toml"
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return "1.0.0"
+
+    match = re.search(r'^\s*version\s*=\s*"([^"]+)"\s*$', text, flags=re.MULTILINE)
+    return match.group(1) if match else "1.0.0"
+
+
+APP_VERSION = _read_app_version()
 
 
 # Pfade zu Modulen und Ressourcen
@@ -197,8 +219,8 @@ app = BUNDLE(
         # App-Info
         'CFBundleName': 'Whisper Go',
         'CFBundleDisplayName': 'Whisper Go',
-        'CFBundleShortVersionString': '1.0.0',
-        'CFBundleVersion': '1.0.0',
+        'CFBundleShortVersionString': APP_VERSION,
+        'CFBundleVersion': APP_VERSION,
         
         # macOS Features
         'NSHighResolutionCapable': True,

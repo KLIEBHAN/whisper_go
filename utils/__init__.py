@@ -10,19 +10,16 @@ Usage:
         do_something()
 """
 
+# NOTE:
+# Keep this package-level re-export module intentionally small.
+# `config.py` imports `utils.paths`, which imports the `utils` package and executes this
+# file. Avoid importing modules here that in turn import `config`, otherwise we can
+# end up with circular imports during app startup.
+
+from .alerts import show_error_alert
+from .hotkey import parse_hotkey, paste_transcript
 from .logging import setup_logging, log, error, get_logger, get_session_id
 from .timing import timed_operation, format_duration, log_preview
-from .daemon import daemonize, is_whisper_go_process, cleanup_stale_pid_file
-from .hotkey import parse_hotkey, paste_transcript
-from .alerts import show_error_alert
-from .preferences import (
-    has_seen_onboarding,
-    set_onboarding_seen,
-    get_show_welcome_on_startup,
-    set_show_welcome_on_startup,
-    save_api_key,
-    get_api_key,
-)
 
 __all__ = [
     "setup_logging",
@@ -33,16 +30,7 @@ __all__ = [
     "timed_operation",
     "log_preview",
     "format_duration",
-    "daemonize",
-    "is_whisper_go_process",
-    "cleanup_stale_pid_file",
     "parse_hotkey",
     "paste_transcript",
     "show_error_alert",
-    "has_seen_onboarding",
-    "set_onboarding_seen",
-    "get_show_welcome_on_startup",
-    "set_show_welcome_on_startup",
-    "save_api_key",
-    "get_api_key",
 ]

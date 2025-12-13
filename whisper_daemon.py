@@ -47,7 +47,7 @@ emergency_log("=== Booting Whisper Daemon ===")
 try:
     from config import INTERIM_FILE, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
     from utils import setup_logging, show_error_alert
-    from config import DEFAULT_DEEPGRAM_MODEL
+    from config import DEFAULT_DEEPGRAM_MODEL, DEFAULT_LOCAL_MODEL
     from utils.env import get_env_bool, get_env_bool_default, parse_bool
     from utils.environment import load_environment
     from providers.deepgram_stream import deepgram_stream_core
@@ -148,9 +148,16 @@ class WhisperDaemon:
         # UI-Controller (werden in run() initialisiert)
         self._menubar: MenuBarController | None = None
         self._overlay: OverlayController | None = None
+        self._welcome = None
+        self._onboarding_wizard = None
 
         # Provider-Cache: vermeidet Re-Init (z.B. lokales Modell laden)
         self._provider_cache: dict[str, object] = {}
+        # Effective mode for the current recording run (may differ after fallbacks).
+        self._run_mode: str | None = None
+        # Test dictation run (in-app, no auto-paste)
+        self._test_run_active = False
+        self._test_run_callback = None
         self._hold_listeners: list = []
         self._toggle_hotkey_handlers: list = []
         self._fn_active = False
@@ -159,6 +166,11 @@ class WhisperDaemon:
         # Track active hold hotkeys to avoid race conditions
         self._active_hold_sources: set[str] = set()
         self._recording_started_by_hold = False
+        # Temporary mode: route hotkeys to a safe, local "test dictation" run
+        # (used by onboarding wizard).
+        self._test_hotkey_mode_enabled = False
+        self._test_hotkey_mode_callback = None
+        self._test_hotkey_mode_state_callback = None
 
     # =============================================================================
     # Modifier Hotkeys (Fn/Globe, CapsLock)
@@ -188,7 +200,10 @@ class WhisperDaemon:
             return
         if self._recording:
             return
-        self._start_recording()
+        if self._test_hotkey_mode_enabled and callable(self._test_hotkey_mode_callback):
+            self._start_test_dictation_from_hotkey()
+        else:
+            self._start_recording()
         if self._recording:
             self._recording_started_by_hold = True
 
@@ -256,7 +271,7 @@ class WhisperDaemon:
                             not self._active_hold_sources
                             and self._recording_started_by_hold
                         ):
-                            self._call_on_main(self._stop_recording)
+                            self._call_on_main(self._stop_recording_from_hotkey)
                 else:
                     if toggle_on_down_only:
                         if is_down and not is_active:
@@ -338,18 +353,20 @@ class WhisperDaemon:
         cleaned = model.strip()
         return cleaned or None
 
-    def _model_name_for_logging(self, provider) -> str | None:
+    def _model_name_for_logging(self, provider, *, mode_override: str | None = None) -> str | None:
         """Ermittelt den tatsächlich erwarteten Modellnamen für Logs."""
+        mode = mode_override or self.mode
         model = self._clean_model_name(self.model)
-        if self.mode == "local" and model is None:
+        if mode == "local" and model is None:
             model = self._clean_model_name(os.getenv("WHISPER_GO_LOCAL_MODEL"))
         if model is None:
             model = self._clean_model_name(getattr(provider, "default_model", None))
         return model
 
-    def _local_backend_for_logging(self, provider) -> str | None:
+    def _local_backend_for_logging(self, provider, *, mode_override: str | None = None) -> str | None:
         """Ermittelt das tatsächlich verwendete Local-Backend für Logs."""
-        if self.mode != "local":
+        mode = mode_override or self.mode
+        if mode != "local":
             return None
         backend = getattr(provider, "backend", None)
         if not backend:
@@ -479,10 +496,144 @@ class WhisperDaemon:
 
     def _toggle_recording(self) -> None:
         """Toggle-Mode: Start/Stop bei jedem Tastendruck."""
+        if self._test_hotkey_mode_enabled and callable(self._test_hotkey_mode_callback):
+            if self._recording:
+                self._stop_test_dictation_from_hotkey()
+            else:
+                self._start_test_dictation_from_hotkey()
+            return
         if self._recording:
             self._stop_recording()
         else:
             self._start_recording()
+
+    def enable_test_hotkey_mode(self, callback, *, state_callback=None) -> None:
+        """Routes hotkey presses to a safe onboarding test dictation run."""
+        self._test_hotkey_mode_enabled = True
+        self._test_hotkey_mode_callback = callback
+        self._test_hotkey_mode_state_callback = state_callback
+
+    def disable_test_hotkey_mode(self) -> None:
+        """Disables onboarding test hotkey routing."""
+        self._test_hotkey_mode_enabled = False
+        self._test_hotkey_mode_callback = None
+        self._test_hotkey_mode_state_callback = None
+
+    def _start_test_dictation_from_hotkey(self) -> None:
+        """Starts a test dictation run using the configured hotkey."""
+        cb = self._test_hotkey_mode_callback
+        if not callable(cb):
+            return
+        if self._recording:
+            try:
+                cb("", "Already recording.")
+            except Exception:
+                pass
+            return
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            try:
+                cb("", "WhisperGo is busy — please wait a moment and try again.")
+            except Exception:
+                pass
+            return
+
+        state_cb = self._test_hotkey_mode_state_callback
+        if callable(state_cb):
+            try:
+                state_cb("recording")
+            except Exception:
+                pass
+
+        self._test_run_active = True
+        self._test_run_callback = cb
+        self._start_recording(run_mode_override="local")
+
+    def _stop_test_dictation_from_hotkey(self) -> None:
+        """Stops an active test dictation run started via hotkey."""
+        state_cb = self._test_hotkey_mode_state_callback
+        if callable(state_cb):
+            try:
+                state_cb("stopping")
+            except Exception:
+                pass
+        self._stop_recording()
+
+    def _stop_recording_from_hotkey(self) -> None:
+        """Stops recording and updates onboarding test UI if needed."""
+        if self._test_hotkey_mode_enabled and self._test_run_active:
+            self._stop_test_dictation_from_hotkey()
+            return
+        self._stop_recording()
+
+    def start_test_dictation(self, callback) -> None:
+        """Starts a one-off test dictation run (no auto-paste).
+
+        The transcript is delivered via `callback(transcript, error)`.
+        """
+        if self._recording:
+            try:
+                callback("", "Already recording.")
+            except Exception:
+                pass
+            return
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            try:
+                callback("", "WhisperGo is busy — please wait a moment and try again.")
+            except Exception:
+                pass
+            return
+        self._test_run_active = True
+        self._test_run_callback = callback
+        self._start_recording(run_mode_override="local")
+
+    def stop_test_dictation(self) -> None:
+        """Stops an active test dictation run."""
+        if not self._recording:
+            return
+        self._stop_recording()
+
+    def _finish_test_run(self, transcript: str, error: str | None) -> None:
+        cb = self._test_run_callback
+        self._test_run_active = False
+        self._test_run_callback = None
+        if cb:
+            try:
+                cb(transcript, error)
+            except Exception:
+                pass
+
+    def _handle_worker_error(self, err: Exception) -> None:
+        if self._test_run_active:
+            self._finish_test_run("", str(err))
+            get_sound_player().play("error")
+            self._update_state(AppState.ERROR)
+            return
+
+        logger.error(f"Fehler: {err}")
+        emergency_log(f"Worker Exception: {err}")  # Backup log
+
+        # API-Key-Fehler als Pop-up anzeigen
+        if isinstance(err, ValueError):
+            show_error_alert("API-Key fehlt", str(err))
+
+        get_sound_player().play("error")
+        self._update_state(AppState.ERROR)
+
+    def _handle_transcript_result(self, transcript: str) -> None:
+        if self._test_run_active:
+            self._finish_test_run(transcript, None)
+            if transcript:
+                self._update_state(AppState.DONE, transcript)
+            else:
+                self._update_state(AppState.IDLE)
+            return
+
+        if transcript:
+            self._paste_result(transcript)
+            self._update_state(AppState.DONE, transcript)
+        else:
+            logger.warning("Leeres Transkript")
+            self._update_state(AppState.IDLE)
 
     # =============================================================================
     # Hold-to-record Hotkey (Push-to-talk)
@@ -623,7 +774,7 @@ class WhisperDaemon:
                 logger.debug("Hotkey hold up")
                 self._active_hold_sources.discard(source_id)
                 if not self._active_hold_sources and self._recording_started_by_hold:
-                    self._call_on_main(self._stop_recording)
+                    self._call_on_main(self._stop_recording_from_hotkey)
 
         listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         listener.daemon = True
@@ -631,7 +782,7 @@ class WhisperDaemon:
         self._hold_listeners.append(listener)
         return True
 
-    def _start_recording(self) -> None:
+    def _start_recording(self, *, run_mode_override: str | None = None) -> None:
         """Startet Streaming-Aufnahme im Worker-Thread."""
         # Sicherstellen, dass kein alter Worker noch läuft.
         #
@@ -653,11 +804,14 @@ class WhisperDaemon:
         # Neues Stop-Event für diese Aufnahme
         self._stop_event = threading.Event()
 
+        effective_mode = run_mode_override or self.mode
+
         # Modus-Entscheidung: Streaming vs. Recording
         use_streaming = (
-            self.mode == "deepgram"
+            effective_mode == "deepgram"
             and get_env_bool_default("WHISPER_GO_STREAMING", True)
         )
+        self._run_mode = effective_mode
 
         if use_streaming:
             target = self._streaming_worker
@@ -666,7 +820,7 @@ class WhisperDaemon:
         else:
             target = self._recording_worker
             name = "RecordingWorker"
-            logger.info(f"Starte Standard-Aufnahme (Mode: {self.mode})...")
+            logger.info(f"Starte Standard-Aufnahme (Mode: {effective_mode})...")
 
         # Worker-Thread starten
         self._worker_thread = threading.Thread(
@@ -879,7 +1033,8 @@ class WhisperDaemon:
 
                 # Lokales Whisper profitiert oft von etwas künstlicher "End-Silence",
                 # damit letzte Wörter stabiler dekodiert werden.
-                if self.mode == "local":
+                mode_for_run = self._run_mode or self.mode
+                if mode_for_run == "local":
                     tail_s = 0.2
                     tail_samples = int(WHISPER_SAMPLE_RATE * tail_s)
                     if tail_samples > 0:
@@ -897,31 +1052,57 @@ class WhisperDaemon:
                 # (via Queue nicht direkt möglich, aber _stop_recording setzt es im Main-Thread)
 
                 # Transkribieren via Provider
-                provider = self._get_provider(self.mode)
+                mode_for_run = self._run_mode or self.mode
+                provider = self._get_provider(mode_for_run)
                 t0 = time.perf_counter()
-                if self.mode == "local" and hasattr(provider, "transcribe_audio"):
-                    transcript = provider.transcribe_audio(
-                        audio_data, model=self.model, language=self.language
-                    )
-                else:
-                    sf.write(temp_path, audio_data, WHISPER_SAMPLE_RATE)
-                    transcript = provider.transcribe(
-                        Path(temp_path), model=self.model, language=self.language
-                    )
+                try:
+                    if mode_for_run == "local" and hasattr(provider, "transcribe_audio"):
+                        transcript = provider.transcribe_audio(
+                            audio_data, model=self.model, language=self.language
+                        )
+                    else:
+                        sf.write(temp_path, audio_data, WHISPER_SAMPLE_RATE)
+                        transcript = provider.transcribe(
+                            Path(temp_path), model=self.model, language=self.language
+                        )
+                except Exception as e:
+                    # Best-effort fallback to local transcription for non-streaming modes
+                    # (e.g. missing API keys, provider downtime).
+                    if mode_for_run != "local":
+                        logger.warning(
+                            f"Provider '{mode_for_run}' fehlgeschlagen ({e}). Fallback auf local..."
+                        )
+                        provider = self._get_provider("local")
+                        if hasattr(provider, "transcribe_audio"):
+                            transcript = provider.transcribe_audio(
+                                audio_data,
+                                # Don't pass provider-specific model names (e.g. 'nova-3').
+                                model=None,
+                                language=self.language,
+                            )
+                            mode_for_run = "local"
+                        else:
+                            raise
+                    else:
+                        raise
                 t_transcribe = time.perf_counter() - t0
                 if audio_duration > 0:
                     rtf = t_transcribe / audio_duration
-                    model_name = self._model_name_for_logging(provider)
-                    backend_name = self._local_backend_for_logging(provider)
+                    model_name = self._model_name_for_logging(
+                        provider, mode_override=mode_for_run
+                    )
+                    backend_name = self._local_backend_for_logging(
+                        provider, mode_override=mode_for_run
+                    )
                     backend_info = f", backend={backend_name}" if backend_name else ""
                     logger.info(
-                        f"Transcription performance: mode={self.mode}{backend_info}, "
+                        f"Transcription performance: mode={mode_for_run}{backend_info}, "
                         f"model={model_name}, "
                         f"audio={audio_duration:.2f}s, time={t_transcribe:.2f}s, rtf={rtf:.2f}x"
                     )
                 else:
                     logger.info(
-                        f"Transcription performance: mode={self.mode}, "
+                        f"Transcription performance: mode={mode_for_run}, "
                         f"time={t_transcribe:.2f}s (audio duration unknown)"
                     )
 
@@ -1030,15 +1211,7 @@ class WhisperDaemon:
                     # Exception Handling
                     if isinstance(result, Exception):
                         self._stop_result_polling()
-                        logger.error(f"Fehler: {result}")
-                        emergency_log(f"Worker Exception: {result}")  # Backup log
-
-                        # API-Key-Fehler als Pop-up anzeigen
-                        if isinstance(result, ValueError):
-                            show_error_alert("API-Key fehlt", str(result))
-
-                        get_sound_player().play("error")
-                        self._update_state(AppState.ERROR)
+                        self._handle_worker_error(result)
                         return
 
                     # DaemonMessage Handling
@@ -1066,13 +1239,8 @@ class WhisperDaemon:
 
                         elif result.type == MessageType.TRANSCRIPT_RESULT:
                             self._stop_result_polling()
-                            transcript = result.payload
-                            if transcript:
-                                self._paste_result(transcript)
-                                self._update_state(AppState.DONE, transcript)
-                            else:
-                                logger.warning("Leeres Transkript")
-                                self._update_state(AppState.IDLE)
+                            transcript = str(result.payload or "")
+                            self._handle_transcript_result(transcript)
                             return
 
                     # Safety Break nach zu vielen Messages pro Tick, um UI nicht zu blockieren
@@ -1139,36 +1307,50 @@ class WhisperDaemon:
 
     def _show_welcome_if_needed(self) -> None:
         """Zeigt Welcome Window beim ersten Start oder wenn aktiviert."""
-        from utils import has_seen_onboarding, get_show_welcome_on_startup
-        from ui import WelcomeController
-
-        show_welcome = not has_seen_onboarding() or get_show_welcome_on_startup()
-
-        if show_welcome:
-            self._welcome = WelcomeController(
-                hotkey=self.hotkey,
-                config={
-                    "deepgram_key": bool(os.getenv("DEEPGRAM_API_KEY")),
-                    "groq_key": bool(os.getenv("GROQ_API_KEY")),
-                    "refine": self.refine,
-                    "refine_model": self.refine_model,
-                    "language": self.language,
-                    "mode": self.mode,
-                },
-            )
-            # Callback für Settings-Änderungen setzen
-            self._welcome.set_on_settings_changed(self._reload_settings)
-            self._welcome.show()
-        else:
-            self._welcome = None
+        from utils.preferences import has_seen_onboarding, get_show_welcome_on_startup
+        if not has_seen_onboarding():
+            self._show_onboarding_wizard(show_settings_after=True)
+        elif get_show_welcome_on_startup():
+            self._show_welcome_window()
 
         # Callback für Menubar "Settings..." setzen
         if self._menubar:
             self._menubar.set_welcome_callback(self._show_welcome_window)
 
+    def _show_onboarding_wizard(self, *, show_settings_after: bool) -> None:
+        """Zeigt den separaten Setup-Wizard."""
+        from ui import OnboardingWizardController
+
+        self._onboarding_wizard = OnboardingWizardController(
+            persist_progress=bool(show_settings_after)
+        )
+        self._onboarding_wizard.set_on_settings_changed(self._reload_settings)
+
+        wizard = self._onboarding_wizard
+        wizard.set_test_dictation_callbacks(
+            start=lambda: self.start_test_dictation(wizard.on_test_dictation_result),
+            stop=self.stop_test_dictation,
+        )
+        wizard.set_test_hotkey_mode_callbacks(
+            enable=lambda: self.enable_test_hotkey_mode(
+                wizard.on_test_dictation_result,
+                state_callback=wizard.on_test_dictation_hotkey_state,
+            ),
+            disable=self.disable_test_hotkey_mode,
+        )
+        if show_settings_after:
+            wizard.set_on_complete(self._show_welcome_window)
+        self._onboarding_wizard.show()
+
     def _show_welcome_window(self) -> None:
         """Zeigt Welcome Window (via Menubar)."""
+        from utils.preferences import has_seen_onboarding
         from ui import WelcomeController
+
+        # Während des First-Run-Wizards kein Settings-Window öffnen.
+        if not has_seen_onboarding():
+            self._show_onboarding_wizard(show_settings_after=True)
+            return
 
         # Neues Window erstellen falls noch nicht vorhanden
         if self._welcome is None:
@@ -1185,10 +1367,18 @@ class WhisperDaemon:
             )
             # Callback für Settings-Änderungen setzen
             self._welcome.set_on_settings_changed(self._reload_settings)
+            self._welcome.set_onboarding_wizard_callback(
+                lambda: self._show_onboarding_wizard(show_settings_after=False)
+            )
+        else:
+            # Ensure callback is present even when reusing the window instance.
+            self._welcome.set_onboarding_wizard_callback(
+                lambda: self._show_onboarding_wizard(show_settings_after=False)
+            )
         self._welcome.show()
 
     def _reload_settings(self) -> None:
-        """Lädt Settings aus .env neu und wendet sie an (außer Hotkey)."""
+        """Lädt Settings aus .env neu und wendet sie an."""
         from config import DEFAULT_REFINE_MODEL
         from utils.preferences import read_env_file
 
@@ -1196,11 +1386,21 @@ class WhisperDaemon:
         load_environment(override_existing=True)
         env_values = read_env_file()
 
+        old_hotkey_signature = self._hotkey_bindings_signature(
+            self._resolve_hotkey_bindings()
+        )
+
         # WICHTIG: python-dotenv setzt Variablen, entfernt sie aber nicht wenn ein Key
         # aus der Datei gelöscht wurde. Das ist relevant, weil die Settings-UI einige
         # Defaults über "Key entfernen" abbildet (z.B. local backend = whisper).
         # Daher synchronisieren wir ausgewählte Keys explizit mit der .env Datei.
         for key in (
+            # Hotkeys
+            "WHISPER_GO_HOTKEY",
+            "WHISPER_GO_HOTKEY_MODE",
+            "WHISPER_GO_TOGGLE_HOTKEY",
+            "WHISPER_GO_HOLD_HOTKEY",
+            # Local options
             "WHISPER_GO_LOCAL_BACKEND",
             "WHISPER_GO_LOCAL_MODEL",
             "WHISPER_GO_LANGUAGE",
@@ -1225,41 +1425,22 @@ class WhisperDaemon:
             else:
                 os.environ[key] = value
 
-        # Hotkey / Hotkey-Mode Änderungen erfordern Neustart
-        new_hotkey = env_values.get("WHISPER_GO_HOTKEY")
-        if new_hotkey and new_hotkey.lower() != (self.hotkey or "").lower():
-            logger.warning(
-                f"Hotkey geändert ({self.hotkey} → {new_hotkey}). Neustart erforderlich."
+        # Hotkeys übernehmen (apply immediately; legacy values kept unless explicitly set)
+        self.toggle_hotkey = (
+            (env_values.get("WHISPER_GO_TOGGLE_HOTKEY") or "").strip() or None
+        )
+        self.hold_hotkey = (
+            (env_values.get("WHISPER_GO_HOLD_HOTKEY") or "").strip() or None
+        )
+        if "WHISPER_GO_HOTKEY" in env_values:
+            self.hotkey = (env_values.get("WHISPER_GO_HOTKEY") or "").strip() or None
+        if "WHISPER_GO_HOTKEY_MODE" in env_values:
+            self.hotkey_mode = (
+                (env_values.get("WHISPER_GO_HOTKEY_MODE") or "").strip()
+                or self.hotkey_mode
             )
 
-        new_hotkey_mode = env_values.get("WHISPER_GO_HOTKEY_MODE")
-        if (
-            new_hotkey_mode
-            and new_hotkey_mode.lower() != (self.hotkey_mode or "").lower()
-        ):
-            logger.warning(
-                f"Hotkey-Modus geändert ({self.hotkey_mode} → {new_hotkey_mode}). Neustart erforderlich."
-            )
-
-        new_toggle_hotkey = env_values.get("WHISPER_GO_TOGGLE_HOTKEY")
-        if (
-            new_toggle_hotkey
-            and new_toggle_hotkey.lower() != (self.toggle_hotkey or "").lower()
-        ):
-            logger.warning(
-                f"Toggle-Hotkey geändert ({self.toggle_hotkey} → {new_toggle_hotkey}). Neustart erforderlich."
-            )
-
-        new_hold_hotkey = env_values.get("WHISPER_GO_HOLD_HOTKEY")
-        if (
-            new_hold_hotkey
-            and new_hold_hotkey.lower() != (self.hold_hotkey or "").lower()
-        ):
-            logger.warning(
-                f"Hold-Hotkey geändert ({self.hold_hotkey} → {new_hold_hotkey}). Neustart erforderlich."
-            )
-
-        # Settings aktualisieren (außer Hotkey - erfordert Neustart)
+        # Settings aktualisieren
         new_mode = env_values.get("WHISPER_GO_MODE")
         if new_mode:
             self.mode = new_mode
@@ -1300,6 +1481,16 @@ class WhisperDaemon:
             f"refine_model={self.refine_model}"
         )
 
+        # Hotkeys ggf. neu registrieren (ohne Neustart)
+        new_hotkey_signature = self._hotkey_bindings_signature(
+            self._resolve_hotkey_bindings()
+        )
+        if new_hotkey_signature != old_hotkey_signature:
+            logger.info(
+                f"Hotkeys geändert ({old_hotkey_signature} → {new_hotkey_signature}) – re-register…"
+            )
+            self._reconfigure_hotkeys(show_alerts=True)
+
         # Falls lokal aktiviert, Modell im Hintergrund vorladen
         self._preload_local_model_async()
 
@@ -1325,6 +1516,239 @@ class WhisperDaemon:
                 legacy_mode = "toggle"
             bindings.append((legacy_mode, legacy_hotkey))
         return bindings
+
+    @staticmethod
+    def _hotkey_bindings_signature(bindings: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+        """Normalisierte Signatur für Bindings-Vergleiche."""
+        normalized: list[tuple[str, str]] = []
+        for mode, hk in bindings:
+            m = (mode or "toggle").strip().lower()
+            key = (hk or "").strip().lower()
+            if not key:
+                continue
+            if m not in ("toggle", "hold"):
+                m = "toggle"
+            normalized.append((m, key))
+        return tuple(normalized)
+
+    def _unregister_all_hotkeys(self) -> None:
+        """Stoppt alle registrierten Hotkeys/Listener (best-effort)."""
+        # Toggle hotkeys (quickmachotkey)
+        for handler in list(self._toggle_hotkey_handlers):
+            unregister = getattr(handler, "unregister", None)
+            if callable(unregister):
+                try:
+                    unregister()
+                except Exception:
+                    pass
+        self._toggle_hotkey_handlers.clear()
+
+        # Hold listeners (pynput)
+        for listener in list(self._hold_listeners):
+            stop = getattr(listener, "stop", None)
+            if callable(stop):
+                try:
+                    stop()
+                except Exception:
+                    pass
+        self._hold_listeners.clear()
+
+        # Modifier taps (Quartz)
+        if self._modifier_taps:
+            try:
+                from Quartz import (  # type: ignore[import-not-found]
+                    CGEventTapEnable,
+                    CFMachPortInvalidate,
+                    CFRunLoopGetCurrent,
+                    CFRunLoopRemoveSource,
+                    kCFRunLoopCommonModes,
+                )
+
+                run_loop = CFRunLoopGetCurrent()
+                for tap, source, _callback in list(self._modifier_taps):
+                    try:
+                        CGEventTapEnable(tap, False)
+                    except Exception:
+                        pass
+                    try:
+                        CFRunLoopRemoveSource(run_loop, source, kCFRunLoopCommonModes)
+                    except Exception:
+                        pass
+                    try:
+                        CFMachPortInvalidate(tap)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        self._modifier_taps.clear()
+        self._fn_active = False
+        self._caps_active = False
+        self._active_hold_sources.clear()
+        self._recording_started_by_hold = False
+
+    def _register_hotkeys_from_current_settings(self, *, show_alerts: bool) -> None:
+        """Registriert Hotkeys anhand der aktuellen Settings (toggle/hold + legacy)."""
+        bindings = self._resolve_hotkey_bindings()
+        if not bindings:
+            logger.warning("Kein Hotkey konfiguriert – Hotkeys deaktiviert")
+            if show_alerts:
+                try:
+                    show_error_alert(
+                        "Kein Hotkey konfiguriert",
+                        "Es ist kein Hotkey gesetzt. WhisperGo läuft ohne Hotkey.\n\n"
+                        "Öffne Settings, um einen Hotkey zu wählen.",
+                    )
+                except Exception:
+                    pass
+            return
+
+        normalized: list[tuple[str, str]] = []
+        for mode, hk in bindings:
+            m = (mode or "toggle").lower()
+            if m not in ("toggle", "hold"):
+                logger.warning(f"Unbekannter Hotkey-Modus '{m}', fallback auf toggle")
+                m = "toggle"
+            normalized.append((m, hk))
+
+        # Doppelte Hotkeys entfernen (z.B. gleicher Key für Toggle und Hold)
+        deduped: list[tuple[str, str]] = []
+        seen_keys: dict[str, str] = {}
+        duplicate_msgs: list[str] = []
+        for m, hk in normalized:
+            key_norm = hk.strip().lower()
+            if not key_norm:
+                continue
+            if key_norm in seen_keys:
+                msg = (
+                    f"Hotkey '{hk}' ist doppelt konfiguriert "
+                    f"({seen_keys[key_norm]} + {m}). Nur der erste wird verwendet."
+                )
+                logger.warning(msg)
+                duplicate_msgs.append(msg)
+                continue
+            seen_keys[key_norm] = m
+            deduped.append((m, hk))
+
+        # Berechtigungen prüfen (ohne modale Alerts während Settings-Änderungen)
+        accessibility_ok = check_accessibility_permission(show_alert=False)
+        requires_input_monitoring = any(
+            mode == "hold" or hk.strip().lower() in ("fn", "capslock", "caps_lock")
+            for mode, hk in deduped
+        )
+        input_monitoring_ok = (
+            check_input_monitoring_permission(show_alert=False)
+            if requires_input_monitoring
+            else True
+        )
+
+        from quickmachotkey import quickHotKey
+
+        invalid_hotkeys: list[str] = []
+        invalid_hotkeys.extend(duplicate_msgs)
+
+        for mode, hk in deduped:
+            hk_str = hk.strip().lower()
+            hk_is_fn = hk_str == "fn"
+            hk_is_capslock = hk_str in ("capslock", "caps_lock")
+
+            if not input_monitoring_ok and (
+                mode == "hold" or hk_is_fn or hk_is_capslock
+            ):
+                msg = f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
+                continue
+
+            if (hk_is_fn or hk_is_capslock) and not accessibility_ok:
+                msg = (
+                    f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                )
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
+                continue
+
+            if (
+                mode == "hold"
+                and not accessibility_ok
+                and not (hk_is_fn or hk_is_capslock)
+            ):
+                msg = f"Hold Hotkey '{hk}' benötigt Bedienungshilfen-Zugriff – deaktiviert."
+                logger.warning(msg)
+                invalid_hotkeys.append(msg)
+                continue
+
+            if hk_is_fn:
+                logger.info(
+                    f"Hotkey aktiviert: fn (Globe), mode={mode} (Quartz FlagsChanged Tap)"
+                )
+                if not self._start_fn_hotkey_monitor(mode):
+                    logger.error("Fn Hotkey Monitor konnte nicht gestartet werden.")
+                continue
+
+            if hk_is_capslock:
+                logger.info(
+                    f"Hotkey aktiviert: capslock, mode={mode} (Quartz FlagsChanged Tap)"
+                )
+                if not self._start_capslock_hotkey_monitor(mode):
+                    logger.error(
+                        "CapsLock Hotkey Monitor konnte nicht gestartet werden."
+                    )
+                continue
+
+            if mode == "toggle":
+                try:
+                    virtual_key, modifier_mask = parse_hotkey(hk)
+                except ValueError as e:
+                    msg = f"Hotkey '{hk}' ungültig: {e}"
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
+                    continue
+
+                logger.info(
+                    f"Hotkey aktiviert: {hk} (toggle)"
+                )
+
+                def _handler() -> None:
+                    self._on_hotkey()
+
+                decorated = quickHotKey(
+                    virtualKey=virtual_key, modifierMask=modifier_mask
+                )(_handler)  # type: ignore[arg-type]
+                self._toggle_hotkey_handlers.append(decorated)
+            else:
+                logger.info(f"Hotkey aktiviert: {hk} (hold, pynput)")
+                if not self._start_hold_hotkey_listener(hk):
+                    msg = (
+                        f"Hold Hotkey Listener für '{hk}' konnte nicht gestartet werden "
+                        "und wurde deaktiviert."
+                    )
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
+                    try:
+                        virtual_key, modifier_mask = parse_hotkey(hk)
+                        decorated = quickHotKey(
+                            virtualKey=virtual_key, modifierMask=modifier_mask
+                        )(lambda: self._on_hotkey())  # type: ignore[arg-type]
+                        self._toggle_hotkey_handlers.append(decorated)
+                    except Exception:
+                        pass
+
+        if show_alerts and invalid_hotkeys:
+            try:
+                show_error_alert(
+                    "Ungültige Hotkey‑Konfiguration",
+                    "Ein oder mehrere Hotkeys konnten nicht aktiviert werden:\n\n"
+                    + "\n".join(f"- {m}" for m in invalid_hotkeys)
+                    + "\n\nÖffne Settings, um das zu korrigieren.",
+                )
+            except Exception:
+                pass
+
+    def _reconfigure_hotkeys(self, *, show_alerts: bool) -> None:
+        """Re-register hotkeys at runtime."""
+        self._unregister_all_hotkeys()
+        self._register_hotkeys_from_current_settings(show_alerts=show_alerts)
 
     def run(self) -> None:
         """Startet Daemon (blockiert)."""
@@ -1692,7 +2116,37 @@ Beispiele:
         hold_hotkey = "fn"
     language = args.language or os.getenv("WHISPER_GO_LANGUAGE")
     model = args.model or os.getenv("WHISPER_GO_MODEL")
-    mode = args.mode or os.getenv("WHISPER_GO_MODE", "deepgram")
+    mode_env = os.getenv("WHISPER_GO_MODE")
+    mode = args.mode or mode_env or "deepgram"
+
+    # Demo/first-success default: if no mode is configured and no API keys are present,
+    # start in local mode so the app works immediately without setup.
+    if args.mode is None and mode_env is None:
+        has_any_api_key = bool(
+            os.getenv("DEEPGRAM_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or os.getenv("GROQ_API_KEY")
+        )
+        if not has_any_api_key:
+            mode = "local"
+            # Avoid passing provider-specific model names (e.g. Deepgram model) into local mode.
+            if args.model is None:
+                model = None
+            os.environ.setdefault("WHISPER_GO_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+            if os.getenv("WHISPER_GO_LOCAL_BACKEND") is None:
+                try:
+                    import importlib.util
+                    import platform
+
+                    is_arm = platform.machine() in ("arm64", "aarch64")
+                    has_mlx = importlib.util.find_spec("mlx_whisper") is not None
+                    if is_arm and has_mlx:
+                        os.environ["WHISPER_GO_LOCAL_BACKEND"] = "mlx"
+                        os.environ.setdefault("WHISPER_GO_LOCAL_FAST", "true")
+                    else:
+                        os.environ["WHISPER_GO_LOCAL_BACKEND"] = "whisper"
+                except Exception:
+                    os.environ["WHISPER_GO_LOCAL_BACKEND"] = "whisper"
 
     # Daemon starten
     try:

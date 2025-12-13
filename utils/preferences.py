@@ -8,6 +8,12 @@ import json
 from pathlib import Path
 
 from config import USER_CONFIG_DIR
+from utils.onboarding import (
+    OnboardingChoice,
+    OnboardingStep,
+    coerce_onboarding_choice,
+    coerce_onboarding_step,
+)
 
 PREFS_FILE = USER_CONFIG_DIR / "preferences.json"
 ENV_FILE = USER_CONFIG_DIR / ".env"
@@ -88,6 +94,65 @@ def set_onboarding_seen(seen: bool = True) -> None:
     prefs = load_preferences()
     prefs["has_seen_onboarding"] = seen
     save_preferences(prefs)
+
+def get_onboarding_step() -> OnboardingStep:
+    """Aktueller Wizard-Step (persistiert).
+
+    Backwards compat:
+      - Wenn `onboarding_step` noch nicht existiert, aber `has_seen_onboarding=True`,
+        behandeln wir den Wizard als abgeschlossen, damit bestehende Nutzer nicht
+        plötzlich wieder im Wizard landen.
+    """
+    prefs = load_preferences()
+    raw = prefs.get("onboarding_step")
+    step = coerce_onboarding_step(str(raw)) if raw is not None else None
+    if step is not None:
+        return step
+    if prefs.get("has_seen_onboarding", False):
+        return OnboardingStep.DONE
+    return OnboardingStep.CHOOSE_GOAL
+
+
+def set_onboarding_step(step: OnboardingStep | str) -> None:
+    """Setzt den aktuellen Wizard-Step."""
+    raw = step.value if isinstance(step, OnboardingStep) else str(step)
+    normalized = coerce_onboarding_step(raw) or OnboardingStep.DONE
+    prefs = load_preferences()
+    prefs["onboarding_step"] = normalized.value
+    # Completion implies "seen".
+    if normalized == OnboardingStep.DONE:
+        prefs["has_seen_onboarding"] = True
+    save_preferences(prefs)
+
+
+def get_onboarding_choice() -> OnboardingChoice | None:
+    """Letzte Wizard-Auswahl (fast/private/advanced)."""
+    raw = load_preferences().get("onboarding_choice")
+    return coerce_onboarding_choice(str(raw)) if raw is not None else None
+
+
+def set_onboarding_choice(choice: OnboardingChoice | str | None) -> None:
+    """Speichert die Wizard-Auswahl oder löscht sie."""
+    prefs = load_preferences()
+    if choice is None:
+        prefs.pop("onboarding_choice", None)
+        save_preferences(prefs)
+        return
+    normalized = (
+        choice
+        if isinstance(choice, OnboardingChoice)
+        else coerce_onboarding_choice(str(choice))
+    )
+    if normalized is None:
+        prefs.pop("onboarding_choice", None)
+    else:
+        prefs["onboarding_choice"] = normalized.value
+    save_preferences(prefs)
+
+
+def is_onboarding_complete() -> bool:
+    """True wenn Wizard abgeschlossen ist."""
+    return get_onboarding_step() == OnboardingStep.DONE
 
 
 def get_show_welcome_on_startup() -> bool:

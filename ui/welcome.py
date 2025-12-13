@@ -8,6 +8,7 @@ import os
 
 from config import LOG_FILE
 from utils.env import parse_bool
+from utils.presets import LOCAL_PRESET_BASE, LOCAL_PRESETS, LOCAL_PRESET_OPTIONS
 from utils.preferences import (
     get_api_key,
     get_env_setting,
@@ -39,58 +40,6 @@ LOCAL_MODEL_OPTIONS = ["default", "turbo", "large", "medium", "small", "base", "
 DEVICE_OPTIONS = ["auto", "mps", "cpu", "cuda"]
 BOOL_OVERRIDE_OPTIONS = ["default", "true", "false"]
 WARMUP_OPTIONS = ["auto", "true", "false"]
-
-# Local presets (UI-only; values are applied to the widgets and persisted via "Save & Apply").
-_LOCAL_PRESET_BASE: dict[str, str] = {
-    "device": "auto",
-    "warmup": "auto",
-    "local_fast": "default",
-    "fp16": "default",
-    "beam_size": "",
-    "best_of": "",
-    "temperature": "",
-    "compute_type": "",
-    "cpu_threads": "",
-    "num_workers": "",
-    "without_timestamps": "default",
-    "vad_filter": "default",
-}
-
-LOCAL_PRESETS: dict[str, dict[str, str]] = {
-    "macOS: MPS Balanced (turbo)": {
-        "local_backend": "whisper",
-        "local_model": "turbo",
-    },
-    "macOS: MPS Fast (turbo)": {
-        "local_backend": "whisper",
-        "local_model": "turbo",
-        "local_fast": "true",
-    },
-    "macOS: MLX Balanced (large)": {
-        "local_backend": "mlx",
-        "local_model": "large",
-        "local_fast": "true",
-    },
-    "macOS: MLX Fast (turbo)": {
-        "local_backend": "mlx",
-        "local_model": "turbo",
-        "local_fast": "true",
-    },
-    "CPU: faster int8 (turbo)": {
-        "local_backend": "faster",
-        "local_model": "turbo",
-        "device": "cpu",
-        "warmup": "false",
-        "local_fast": "true",
-        "compute_type": "int8",
-        "cpu_threads": "0",
-        "num_workers": "1",
-        "without_timestamps": "true",
-        "vad_filter": "true",
-    },
-}
-
-LOCAL_PRESET_OPTIONS = ["(none)", *LOCAL_PRESETS.keys()]
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -169,6 +118,13 @@ class WelcomeController:
         self._record_target_field = None
         self._record_target_btn = None
         self._hotkey_monitor = None
+        # Setup/Onboarding Tab
+        self._setup_action_handlers = []
+        self._perm_mic_status_label = None
+        self._perm_access_status_label = None
+        self._perm_input_status_label = None
+        self._setup_preset_status_label = None
+        self._onboarding_wizard_callback = None
         # API-Key-Felder werden dynamisch via setattr gesetzt:
         # _{provider}_field, _{provider}_status für deepgram, groq, openai, openrouter
 
@@ -200,7 +156,7 @@ class WelcomeController:
             NSBackingStoreBuffered,
             False,
         )
-        self._window.setTitle_("WhisperGo Setup")
+        self._window.setTitle_("WhisperGo Settings")
         self._window.setReleasedWhenClosed_(False)
 
         # Visual Effect View (HUD-Material)
@@ -291,6 +247,7 @@ class WelcomeController:
         except Exception:
             content_height = tab_height
 
+        self._add_tab(tab_view, "Setup", self._build_setup_tab, content_height)
         self._add_tab(tab_view, "General", self._build_general_tab, content_height)
         self._add_tab(tab_view, "Providers", self._build_providers_tab, content_height)
         self._add_tab(tab_view, "Advanced", self._build_advanced_tab, content_height)
@@ -311,6 +268,485 @@ class WelcomeController:
         item.setView_(content)
         tab_view.addTabViewItem_(item)
         builder(content, tab_height)
+
+    def _build_setup_tab(self, parent_view, tab_height: int) -> None:
+        """Setup overview + shortcuts (wizard lives in a separate window)."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
+            NSFont,
+            NSFontWeightMedium,
+            NSMakeRect,
+        )
+        import objc  # type: ignore[import-not-found]
+
+        # "Run Setup Wizard" shortcut
+        wizard_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(WELCOME_WIDTH - WELCOME_PADDING - 180, tab_height - 36, 180, 26)
+        )
+        wizard_btn.setTitle_("Run Setup Wizard…")
+        wizard_btn.setBezelStyle_(NSBezelStyleRounded)
+        wizard_btn.setFont_(NSFont.systemFontOfSize_weight_(12, NSFontWeightMedium))
+        wizard_handler = _SetupActionHandler.alloc().initWithController_action_(
+            self, "open_onboarding_wizard"
+        )
+        wizard_btn.setTarget_(wizard_handler)
+        wizard_btn.setAction_(objc.selector(wizard_handler.performAction_, signature=b"v@:@"))
+        self._setup_action_handlers.append(wizard_handler)
+        parent_view.addSubview_(wizard_btn)
+
+        y_pos = tab_height - 52
+        y_pos = self._build_setup_permissions_card(y_pos, parent_view)
+        y_pos = self._build_setup_recommended_card(y_pos, parent_view)
+        self._build_setup_howto_card(y_pos, parent_view)
+        self._refresh_setup_permissions()
+
+    def _open_privacy_settings(self, anchor: str) -> None:
+        """Öffnet System Settings → Privacy & Security (best effort)."""
+        import subprocess
+
+        url = f"x-apple.systempreferences:com.apple.preference.security?{anchor}"
+        try:
+            subprocess.Popen(["open", url])
+        except Exception:
+            pass
+
+    def _handle_setup_action(self, action: str) -> None:
+        from utils.permissions import (
+            check_accessibility_permission,
+            check_input_monitoring_permission,
+            check_microphone_permission,
+        )
+
+        if action == "open_onboarding_wizard":
+            if callable(self._onboarding_wizard_callback):
+                try:
+                    self._onboarding_wizard_callback()
+                except Exception:
+                    pass
+            return
+
+        if action == "refresh_permissions":
+            self._refresh_setup_permissions()
+            return
+
+        if action == "open_microphone":
+            self._open_privacy_settings("Privacy_Microphone")
+            return
+
+        if action == "open_accessibility":
+            self._open_privacy_settings("Privacy_Accessibility")
+            return
+
+        if action == "open_input_monitoring":
+            self._open_privacy_settings("Privacy_ListenEvent")
+            return
+
+        if action == "request_microphone":
+            check_microphone_permission(show_alert=False, request=True)
+            self._refresh_setup_permissions()
+            return
+
+        if action == "request_accessibility":
+            check_accessibility_permission(show_alert=False, request=True)
+            self._refresh_setup_permissions()
+            return
+
+        if action == "request_input_monitoring":
+            check_input_monitoring_permission(show_alert=False, request=True)
+            self._refresh_setup_permissions()
+            return
+
+        if action == "apply_mlx_large_preset":
+            self._apply_local_preset("macOS: MLX Balanced (large)")
+            if self._setup_preset_status_label is not None:
+                self._setup_preset_status_label.setStringValue_(
+                    "Preset applied — click 'Save & Apply' to persist."
+                )
+            return
+
+        if action == "apply_mlx_turbo_preset":
+            self._apply_local_preset("macOS: MLX Fast (turbo)")
+            if self._setup_preset_status_label is not None:
+                self._setup_preset_status_label.setStringValue_(
+                    "Preset applied — click 'Save & Apply' to persist."
+                )
+            return
+
+    def _refresh_setup_permissions(self) -> None:
+        from AppKit import NSColor  # type: ignore[import-not-found]
+
+        from utils.permissions import (
+            check_accessibility_permission,
+            check_input_monitoring_permission,
+            get_microphone_permission_state,
+        )
+
+        ok_color = _get_color(120, 255, 150)
+        warn_color = _get_color(255, 200, 90)
+        err_color = _get_color(255, 120, 120)
+        neutral_color = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+
+        def set_status(field, text: str, color) -> None:
+            if field is None:
+                return
+            try:
+                field.setStringValue_(text)
+                field.setTextColor_(color)
+            except Exception:
+                pass
+
+        mic_state = get_microphone_permission_state()
+        if mic_state == "authorized":
+            set_status(self._perm_mic_status_label, "✅ Granted", ok_color)
+        elif mic_state == "not_determined":
+            set_status(self._perm_mic_status_label, "⚠ Not requested yet", warn_color)
+        elif mic_state in ("denied", "restricted"):
+            set_status(self._perm_mic_status_label, "❌ Denied", err_color)
+        else:
+            set_status(self._perm_mic_status_label, "Unknown", neutral_color)
+
+        acc_ok = check_accessibility_permission(show_alert=False)
+        set_status(
+            self._perm_access_status_label,
+            "✅ Granted" if acc_ok else "⚠ Not granted",
+            ok_color if acc_ok else warn_color,
+        )
+
+        input_ok = check_input_monitoring_permission(show_alert=False)
+        set_status(
+            self._perm_input_status_label,
+            "✅ Granted" if input_ok else "⚠ Not granted",
+            ok_color if input_ok else warn_color,
+        )
+        return
+
+    def _select_tab(self, label: str) -> None:
+        if self._tab_view is None:
+            return
+        try:
+            self._tab_view.selectTabViewItemWithIdentifier_(label)
+        except Exception:
+            pass
+
+    def _build_setup_permissions_card(self, y: int, parent_view=None) -> int:
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSTextField,
+        )
+        import objc  # type: ignore[import-not-found]
+
+        parent_view = parent_view or self._content_view
+
+        card_height = 220
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_y = y - card_height - CARD_SPACING
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        right_edge = WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 320, 18)
+        )
+        title.setStringValue_("✅ Quickstart (macOS)")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        desc = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 46, card_width - 2 * CARD_PADDING, 14)
+        )
+        desc.setStringValue_("Grant these once so dictation + auto‑paste work reliably.")
+        desc.setBezeled_(False)
+        desc.setDrawsBackground_(False)
+        desc.setEditable_(False)
+        desc.setSelectable_(False)
+        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(desc)
+
+        row_height = 30
+        row_y = card_y + card_height - 84
+        label_w = 130
+        status_x = base_x + label_w + 8
+        button_w = 72
+        button_h = 22
+        button_spacing = 8
+        request_x = right_edge - button_w
+        open_x = request_x - button_spacing - button_w
+        status_w = max(80, open_x - status_x - 8)
+
+        def add_row(
+            row_y: int,
+            label_text: str,
+            status_field_attr: str,
+            open_action: str,
+            request_action: str,
+        ) -> None:
+            label = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(base_x, row_y + 4, label_w, 16)
+            )
+            label.setStringValue_(label_text)
+            label.setBezeled_(False)
+            label.setDrawsBackground_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.75))
+            parent_view.addSubview_(label)
+
+            status_field = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(status_x, row_y + 2, status_w, 18)
+            )
+            status_field.setStringValue_("…")
+            status_field.setBezeled_(False)
+            status_field.setDrawsBackground_(False)
+            status_field.setEditable_(False)
+            status_field.setSelectable_(False)
+            status_field.setFont_(NSFont.systemFontOfSize_(11))
+            status_field.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+            parent_view.addSubview_(status_field)
+            setattr(self, status_field_attr, status_field)
+
+            open_btn = NSButton.alloc().initWithFrame_(
+                NSMakeRect(open_x, row_y, button_w, button_h)
+            )
+            open_btn.setTitle_("Open")
+            open_btn.setBezelStyle_(NSBezelStyleRounded)
+            open_btn.setFont_(NSFont.systemFontOfSize_(11))
+            open_handler = _SetupActionHandler.alloc().initWithController_action_(
+                self, open_action
+            )
+            open_btn.setTarget_(open_handler)
+            open_btn.setAction_(
+                objc.selector(open_handler.performAction_, signature=b"v@:@")
+            )
+            self._setup_action_handlers.append(open_handler)
+            parent_view.addSubview_(open_btn)
+
+            req_btn = NSButton.alloc().initWithFrame_(
+                NSMakeRect(request_x, row_y, button_w, button_h)
+            )
+            req_btn.setTitle_("Request")
+            req_btn.setBezelStyle_(NSBezelStyleRounded)
+            req_btn.setFont_(NSFont.systemFontOfSize_(11))
+            req_handler = _SetupActionHandler.alloc().initWithController_action_(
+                self, request_action
+            )
+            req_btn.setTarget_(req_handler)
+            req_btn.setAction_(
+                objc.selector(req_handler.performAction_, signature=b"v@:@")
+            )
+            self._setup_action_handlers.append(req_handler)
+            parent_view.addSubview_(req_btn)
+
+        add_row(
+            row_y,
+            "Microphone",
+            "_perm_mic_status_label",
+            "open_microphone",
+            "request_microphone",
+        )
+        add_row(
+            row_y - row_height,
+            "Input Monitoring",
+            "_perm_input_status_label",
+            "open_input_monitoring",
+            "request_input_monitoring",
+        )
+        add_row(
+            row_y - 2 * row_height,
+            "Accessibility",
+            "_perm_access_status_label",
+            "open_accessibility",
+            "request_accessibility",
+        )
+
+        refresh_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(right_edge - 90, card_y + 10, 90, 24)
+        )
+        refresh_btn.setTitle_("Refresh")
+        refresh_btn.setBezelStyle_(NSBezelStyleRounded)
+        refresh_btn.setFont_(NSFont.systemFontOfSize_(11))
+        refresh_handler = _SetupActionHandler.alloc().initWithController_action_(
+            self, "refresh_permissions"
+        )
+        refresh_btn.setTarget_(refresh_handler)
+        refresh_btn.setAction_(
+            objc.selector(refresh_handler.performAction_, signature=b"v@:@")
+        )
+        self._setup_action_handlers.append(refresh_handler)
+        parent_view.addSubview_(refresh_btn)
+
+        return card_y - CARD_SPACING
+
+    def _build_setup_recommended_card(self, y: int, parent_view=None) -> int:
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSTextField,
+        )
+        import objc  # type: ignore[import-not-found]
+
+        parent_view = parent_view or self._content_view
+
+        card_height = 140
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_y = y - card_height - CARD_SPACING
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 320, 18)
+        )
+        title.setStringValue_("⚡ Recommended (Apple Silicon)")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        desc = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 46, card_width - 2 * CARD_PADDING, 14)
+        )
+        desc.setStringValue_("One click presets for fast local dictation (MLX/Metal).")
+        desc.setBezeled_(False)
+        desc.setDrawsBackground_(False)
+        desc.setEditable_(False)
+        desc.setSelectable_(False)
+        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(desc)
+
+        btn_w = 150
+        btn_h = 28
+        btn_y = card_y + 56
+        btn1 = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x, btn_y, btn_w, btn_h)
+        )
+        btn1.setTitle_("Use MLX Large")
+        btn1.setBezelStyle_(NSBezelStyleRounded)
+        btn1.setFont_(NSFont.systemFontOfSize_(12))
+        h1 = _SetupActionHandler.alloc().initWithController_action_(
+            self, "apply_mlx_large_preset"
+        )
+        btn1.setTarget_(h1)
+        btn1.setAction_(objc.selector(h1.performAction_, signature=b"v@:@"))
+        self._setup_action_handlers.append(h1)
+        parent_view.addSubview_(btn1)
+
+        btn2 = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x + btn_w + 10, btn_y, btn_w, btn_h)
+        )
+        btn2.setTitle_("Use MLX Turbo")
+        btn2.setBezelStyle_(NSBezelStyleRounded)
+        btn2.setFont_(NSFont.systemFontOfSize_(12))
+        h2 = _SetupActionHandler.alloc().initWithController_action_(
+            self, "apply_mlx_turbo_preset"
+        )
+        btn2.setTarget_(h2)
+        btn2.setAction_(objc.selector(h2.performAction_, signature=b"v@:@"))
+        self._setup_action_handlers.append(h2)
+        parent_view.addSubview_(btn2)
+
+        status = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 26, card_width - 2 * CARD_PADDING, 18)
+        )
+        status.setStringValue_("")
+        status.setBezeled_(False)
+        status.setDrawsBackground_(False)
+        status.setEditable_(False)
+        status.setSelectable_(False)
+        status.setFont_(NSFont.systemFontOfSize_(11))
+        status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(status)
+        self._setup_preset_status_label = status
+
+        return card_y - CARD_SPACING
+
+    def _build_setup_howto_card(self, y: int, parent_view=None) -> int:
+        from AppKit import (  # type: ignore[import-not-found]
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSTextField,
+        )
+
+        parent_view = parent_view or self._content_view
+
+        card_height = 125
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_y = y - card_height - CARD_SPACING
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 320, 18)
+        )
+        title.setStringValue_("🎤 Try it")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        body = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 28, card_width - 2 * CARD_PADDING, 64)
+        )
+        body.setStringValue_(
+            "1) Press your hotkey and speak.\n"
+            "2) Release / toggle to stop.\n"
+            "3) WhisperGo copies + pastes the text into the frontmost app."
+        )
+        body.setBezeled_(False)
+        body.setDrawsBackground_(False)
+        body.setEditable_(False)
+        body.setSelectable_(False)
+        body.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        body.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(body)
+
+        hint = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 10, card_width - 2 * CARD_PADDING, 14)
+        )
+        hint.setStringValue_("If paste fails: grant Accessibility. If hotkeys fail: grant Input Monitoring.")
+        hint.setBezeled_(False)
+        hint.setDrawsBackground_(False)
+        hint.setEditable_(False)
+        hint.setSelectable_(False)
+        hint.setFont_(NSFont.systemFontOfSize_(10))
+        hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.55))
+        parent_view.addSubview_(hint)
+
+        return card_y - CARD_SPACING
 
     def _build_general_tab(self, parent_view, tab_height: int) -> None:
         y_pos = tab_height - WELCOME_PADDING
@@ -1535,7 +1971,7 @@ class WelcomeController:
         if not preset_values:
             return
 
-        values = dict(_LOCAL_PRESET_BASE)
+        values = dict(LOCAL_PRESET_BASE)
         values.update(preset_values)
 
         set_popup(self._local_backend_popup, values.get("local_backend", ""))
@@ -1640,6 +2076,10 @@ class WelcomeController:
     def set_on_settings_changed(self, callback) -> None:
         """Setzt Callback der aufgerufen wird wenn Settings gespeichert werden."""
         self._on_settings_changed_callback = callback
+
+    def set_onboarding_wizard_callback(self, callback) -> None:
+        """Setzt Callback zum Öffnen des separaten Setup-Wizards."""
+        self._onboarding_wizard_callback = callback
 
     def show(self) -> None:
         """Zeigt Window (nicht-modal)."""
@@ -2190,3 +2630,27 @@ def _create_preset_changed_handler_class():
 
 
 _PresetChangedHandler = _create_preset_changed_handler_class()
+
+
+def _create_setup_action_handler_class():
+    """Erstellt NSObject-Subklasse für Setup/Onboarding Buttons."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class SetupActionHandler(NSObject):
+        def initWithController_action_(self, controller, action):
+            self = objc.super(SetupActionHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            self._action = action
+            return self
+
+        @objc.signature(b"v@:@")
+        def performAction_(self, _sender) -> None:
+            self._controller._handle_setup_action(self._action)
+
+    return SetupActionHandler
+
+
+_SetupActionHandler = _create_setup_action_handler_class()
