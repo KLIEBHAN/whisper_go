@@ -201,6 +201,54 @@ class TestParsePynputHotkey:
             WhisperDaemon._parse_pynput_hotkey("f99")
 
 
+class TestMacOSHotkeyListenerSelection:
+    def test_toggle_uses_quartz_on_macos(self, monkeypatch):
+        from whisper_daemon import WhisperDaemon
+
+        daemon = WhisperDaemon()
+        calls = {"quartz": 0, "pynput": 0}
+
+        def fake_quartz(hk: str, *, mode: str) -> bool:
+            assert hk == "cmd+l"
+            assert mode == "toggle"
+            calls["quartz"] += 1
+            return True
+
+        def fake_parse(_hotkey: str):
+            calls["pynput"] += 1
+            raise AssertionError("pynput parser must not be used on macOS")
+
+        monkeypatch.setattr(daemon, "_start_quartz_hotkey_listener", fake_quartz)
+        monkeypatch.setattr(WhisperDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse))
+
+        assert daemon._start_toggle_hotkey_listener("cmd+l") is True
+        assert calls["quartz"] == 1
+        assert calls["pynput"] == 0
+
+    def test_hold_uses_quartz_on_macos(self, monkeypatch):
+        from whisper_daemon import WhisperDaemon
+
+        daemon = WhisperDaemon()
+        calls = {"quartz": 0, "pynput": 0}
+
+        def fake_quartz(hk: str, *, mode: str) -> bool:
+            assert hk == "cmd+l"
+            assert mode == "hold"
+            calls["quartz"] += 1
+            return True
+
+        def fake_parse(_hotkey: str):
+            calls["pynput"] += 1
+            raise AssertionError("pynput parser must not be used on macOS")
+
+        monkeypatch.setattr(daemon, "_start_quartz_hotkey_listener", fake_quartz)
+        monkeypatch.setattr(WhisperDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse))
+
+        assert daemon._start_hold_hotkey_listener("cmd+l") is True
+        assert calls["quartz"] == 1
+        assert calls["pynput"] == 0
+
+
 # =============================================================================
 # Tests: paste_transcript (Auto-Paste)
 # =============================================================================

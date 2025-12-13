@@ -326,12 +326,12 @@ open start_daemon.command
 ```
 
 > **Toggle hotkeys don't need Accessibility permission.** QuickMacHotKey uses the native Carbon API (`RegisterEventHotKey`).  
-> **Hold mode uses pynput and requires Accessibility** on macOS.
+> **Hold mode uses Quartz event taps and requires Input Monitoring** on macOS.
 
 ### Settings UI (Menu Bar)
 
 Use the menu bar icon → **Settings...** to configure provider keys, mode, local backend/model, and advanced local performance knobs (device, warmup, fast decoding, faster-whisper compute/threading, etc.).  
-Settings are stored in `~/.whisper_go/.env` and applied live (hotkey changes require a restart).
+Settings are stored in `~/.whisper_go/.env` and applied live (hotkey changes apply immediately).
 
 ### Configuration
 

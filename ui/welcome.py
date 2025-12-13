@@ -81,6 +81,7 @@ class WelcomeController:
         self._hold_hotkey_field = None
         self._toggle_record_btn = None
         self._hold_record_btn = None
+        self._hotkey_status_label = None
         self._mode_popup = None
         self._lang_popup = None
         self._refine_checkbox = None
@@ -964,6 +965,21 @@ class WelcomeController:
         )
         self._restart_handler = restart_handler
         parent_view.addSubview_(restart_btn)
+
+        # Status / validation feedback (inline, no modal required)
+        status_width = max(80, restart_x - base_x - 8)
+        status = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, restart_y + 4, status_width, 16)
+        )
+        status.setStringValue_("")
+        status.setBezeled_(False)
+        status.setDrawsBackground_(False)
+        status.setEditable_(False)
+        status.setSelectable_(False)
+        status.setFont_(NSFont.systemFontOfSize_(10))
+        status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(status)
+        self._hotkey_status_label = status
 
         return card_y - CARD_SPACING
 
@@ -2330,14 +2346,54 @@ class WelcomeController:
     # Hotkey Recording
     # =============================================================================
 
-    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> None:
-        apply_hotkey_setting(kind, hotkey_str)
+    def _set_hotkey_status(self, level: str, message: str | None) -> None:
+        if self._hotkey_status_label is None:
+            return
+        if not message:
+            try:
+                self._hotkey_status_label.setStringValue_("")
+            except Exception:
+                pass
+            return
+
+        from AppKit import NSColor  # type: ignore[import-not-found]
+
+        color = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+        if level == "ok":
+            color = _get_color(120, 255, 150)
+        elif level == "warning":
+            color = _get_color(255, 200, 90)
+        elif level == "error":
+            color = _get_color(255, 120, 120)
+
+        try:
+            self._hotkey_status_label.setStringValue_(message)
+            self._hotkey_status_label.setTextColor_(color)
+        except Exception:
+            pass
+
+    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> bool:
+        from utils.hotkey_validation import validate_hotkey_change
+        from utils.alerts import show_error_alert
+
+        normalized, level, message = validate_hotkey_change(kind, hotkey_str)
+        if level == "error":
+            show_error_alert("Ungültiger Hotkey", message or "Hotkey konnte nicht gesetzt werden.")
+            self._set_hotkey_status("error", message)
+            return False
+
+        apply_hotkey_setting(kind, normalized)
 
         if callable(self._on_settings_changed_callback):
             try:
                 self._on_settings_changed_callback()
             except Exception:
                 pass
+        if level == "warning":
+            self._set_hotkey_status("warning", message)
+        else:
+            self._set_hotkey_status("ok", "✓ Saved")
+        return True
 
     def _toggle_hotkey_recording(self, kind: str) -> None:
         """Startet/stoppt Hotkey-Aufnahme für Toggle/Hold Feld."""

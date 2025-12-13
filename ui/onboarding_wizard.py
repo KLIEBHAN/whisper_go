@@ -112,6 +112,7 @@ class OnboardingWizardController:
         self._hold_hotkey_field = None
         self._toggle_record_btn = None
         self._hold_record_btn = None
+        self._hotkey_status_label = None
         self._hotkey_recorder = HotkeyRecorder()
 
         # Strong refs for ObjC handlers
@@ -657,7 +658,7 @@ class OnboardingWizardController:
         self._sync_hotkey_fields_from_env()
 
         hint = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 18, btn_w, 18)
+            NSMakeRect(base_x, card_y + 4, btn_w, 16)
         )
         hint.setStringValue_("Tip: Hold is push‑to‑talk (may require Input Monitoring).")
         hint.setBezeled_(False)
@@ -667,6 +668,19 @@ class OnboardingWizardController:
         hint.setFont_(NSFont.systemFontOfSize_(10))
         hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.55))
         parent_view.addSubview_(hint)
+
+        status = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 22, btn_w, 16)
+        )
+        status.setStringValue_("")
+        status.setBezeled_(False)
+        status.setDrawsBackground_(False)
+        status.setEditable_(False)
+        status.setSelectable_(False)
+        status.setFont_(NSFont.systemFontOfSize_(10))
+        status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(status)
+        self._hotkey_status_label = status
 
     def _build_step_test_dictation(self, parent_view, content_h: int) -> None:
         from AppKit import (  # type: ignore[import-not-found]
@@ -1092,8 +1106,43 @@ class OnboardingWizardController:
     def _stop_hotkey_recording(self, *, cancelled: bool = False) -> None:
         self._hotkey_recorder.stop(cancelled=cancelled)
 
-    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> None:
-        apply_hotkey_setting(kind, hotkey_str)
+    def _set_hotkey_status(self, level: str, message: str | None) -> None:
+        if self._hotkey_status_label is None:
+            return
+        if not message:
+            try:
+                self._hotkey_status_label.setStringValue_("")
+            except Exception:
+                pass
+            return
+
+        color = _get_color(180, 180, 180)
+        if level == "ok":
+            color = _get_color(120, 255, 150)
+        elif level == "warning":
+            color = _get_color(255, 200, 90)
+        elif level == "error":
+            color = _get_color(255, 120, 120)
+        try:
+            self._hotkey_status_label.setStringValue_(message)
+            self._hotkey_status_label.setTextColor_(color)
+        except Exception:
+            pass
+
+    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> bool:
+        from utils.hotkey_validation import validate_hotkey_change
+
+        normalized, level, message = validate_hotkey_change(kind, hotkey_str)
+        if level == "error":
+            from utils.alerts import show_error_alert
+
+            show_error_alert("Ungültiger Hotkey", message or "Hotkey konnte nicht gesetzt werden.")
+            self._set_hotkey_status("error", message)
+            self._sync_hotkey_fields_from_env()
+            self._render()
+            return False
+
+        apply_hotkey_setting(kind, normalized)
 
         if self._on_settings_changed:
             try:
@@ -1101,8 +1150,14 @@ class OnboardingWizardController:
             except Exception:
                 pass
 
+        if level == "warning":
+            self._set_hotkey_status("warning", message)
+        else:
+            self._set_hotkey_status("ok", "✓ Saved")
+
         self._sync_hotkey_fields_from_env()
         self._render()
+        return True
 
     # ---------------------------------------------------------------------
     # Test dictation

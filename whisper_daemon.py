@@ -632,6 +632,172 @@ class WhisperDaemon:
     # =============================================================================
 
     @staticmethod
+    def _parse_quartz_hotkey(hotkey_str: str) -> tuple[int, int]:
+        """Parses a canonical hotkey string into (keycode, required_flags) for Quartz.
+
+        Fn/CapsLock are handled separately via FlagsChanged taps.
+        """
+        from utils.hotkey import KEY_CODE_MAP
+
+        raw = (hotkey_str or "").strip().lower()
+        parts = [p.strip() for p in raw.split("+") if p.strip()]
+        if not parts:
+            raise ValueError("Leerer Hotkey")
+
+        *mods, key = parts
+        if key not in KEY_CODE_MAP:
+            raise ValueError(f"Unbekannte Taste: {key}")
+
+        try:
+            from Quartz import (  # type: ignore[import-not-found]
+                kCGEventFlagMaskAlternate,
+                kCGEventFlagMaskCommand,
+                kCGEventFlagMaskControl,
+                kCGEventFlagMaskShift,
+            )
+        except Exception as e:  # pragma: no cover
+            raise ValueError(f"Quartz nicht verfügbar: {e}") from e
+
+        required_flags = 0
+        for mod in mods:
+            if mod in ("cmd", "command", "win"):
+                required_flags |= int(kCGEventFlagMaskCommand)
+            elif mod in ("ctrl", "control"):
+                required_flags |= int(kCGEventFlagMaskControl)
+            elif mod == "shift":
+                required_flags |= int(kCGEventFlagMaskShift)
+            elif mod in ("alt", "option"):
+                required_flags |= int(kCGEventFlagMaskAlternate)
+            else:
+                raise ValueError(f"Unbekannter Modifier: {mod}")
+
+        return int(KEY_CODE_MAP[key]), int(required_flags)
+
+    def _start_quartz_hotkey_listener(self, hotkey_str: str, *, mode: str) -> bool:
+        """Starts a Quartz event-tap based hotkey listener (macOS only)."""
+        if sys.platform != "darwin":
+            return False
+
+        target_hotkey = (hotkey_str or "").strip()
+        if not target_hotkey:
+            return False
+
+        try:
+            keycode, required_flags = self._parse_quartz_hotkey(target_hotkey)
+        except Exception as e:
+            logger.error(f"Quartz Hotkey Parsing fehlgeschlagen: {e}")
+            return False
+
+        try:
+            from Quartz import (  # type: ignore[import-not-found]
+                CGEventTapCreate,
+                CGEventTapEnable,
+                CGEventMaskBit,
+                CFMachPortCreateRunLoopSource,
+                CFRunLoopGetCurrent,
+                CFRunLoopAddSource,
+                kCFRunLoopCommonModes,
+                kCGHIDEventTap,
+                kCGHeadInsertEventTap,
+                kCGEventTapOptionListenOnly,
+                kCGEventFlagsChanged,
+                kCGEventKeyDown,
+                kCGEventKeyUp,
+                CGEventGetFlags,
+                CGEventGetIntegerValueField,
+                kCGKeyboardEventKeycode,
+            )
+        except Exception as e:  # pragma: no cover
+            logger.error(f"Quartz Hotkey Tap benötigt Quartz: {e}")
+            return False
+
+        source_id = f"quartz:{mode}:{target_hotkey.lower()}"
+        active = False
+        pressed = False
+
+        def callback(_proxy, event_type, event, _refcon):
+            nonlocal active, pressed
+            try:
+                if event_type not in (
+                    kCGEventKeyDown,
+                    kCGEventKeyUp,
+                    kCGEventFlagsChanged,
+                ):
+                    return event
+
+                flags = int(CGEventGetFlags(event))
+                mods_ok = (flags & required_flags) == required_flags
+
+                if event_type == kCGEventFlagsChanged:
+                    if mode == "hold" and active and not mods_ok:
+                        # Modifier released while active: stop hold.
+                        active = False
+                        self._active_hold_sources.discard(source_id)
+                        if (
+                            not self._active_hold_sources
+                            and self._recording_started_by_hold
+                        ):
+                            self._call_on_main(self._stop_recording_from_hotkey)
+                    elif mode == "toggle" and not mods_ok:
+                        pressed = False
+                    return event
+
+                event_keycode = int(
+                    CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                )
+                if event_keycode != keycode:
+                    return event
+
+                if mode == "hold":
+                    if event_type == kCGEventKeyDown and mods_ok and not active:
+                        active = True
+                        self._active_hold_sources.add(source_id)
+                        self._call_on_main(
+                            lambda: self._start_recording_from_hold(source_id)
+                        )
+                    elif event_type == kCGEventKeyUp and active:
+                        active = False
+                        self._active_hold_sources.discard(source_id)
+                        if (
+                            not self._active_hold_sources
+                            and self._recording_started_by_hold
+                        ):
+                            self._call_on_main(self._stop_recording_from_hotkey)
+                else:
+                    if event_type == kCGEventKeyDown and mods_ok and not pressed:
+                        pressed = True
+                        self._call_on_main(self._on_hotkey)
+                    elif event_type == kCGEventKeyUp:
+                        pressed = False
+            except Exception as e:
+                logger.debug(f"Quartz hotkey tap error: {e}")
+            return event
+
+        tap = CGEventTapCreate(
+            kCGHIDEventTap,
+            kCGHeadInsertEventTap,
+            kCGEventTapOptionListenOnly,
+            CGEventMaskBit(kCGEventKeyDown)
+            | CGEventMaskBit(kCGEventKeyUp)
+            | CGEventMaskBit(kCGEventFlagsChanged),
+            callback,
+            None,
+        )
+        if tap is None:  # pragma: no cover
+            logger.error(
+                "Quartz Hotkey Tap konnte nicht erstellt werden (Input Monitoring?)"
+            )
+            return False
+
+        source = CFMachPortCreateRunLoopSource(None, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes)
+        CGEventTapEnable(tap, True)
+
+        # Reuse the existing tap registry for cleanup.
+        self._modifier_taps.append((tap, source, callback))
+        return True
+
+    @staticmethod
     def _parse_pynput_hotkey(hotkey_str: str):
         """Parst Hotkey-String in pynput-Key-Set."""
         from pynput import keyboard  # type: ignore[import-not-found]
@@ -684,10 +850,13 @@ class WhisperDaemon:
         return keys
 
     def _start_hold_hotkey_listener(self, hotkey_str: str | None = None) -> bool:
-        """Startet pynput Listener für Hold-Mode für einen Hotkey."""
+        """Startet Listener für Hold-Mode für einen Hotkey."""
         target_hotkey = (hotkey_str or self.hotkey or "").strip()
         if not target_hotkey:
             return False
+
+        if sys.platform == "darwin":
+            return self._start_quartz_hotkey_listener(target_hotkey, mode="hold")
 
         try:
             hotkey_keys = self._parse_pynput_hotkey(target_hotkey)
@@ -716,10 +885,13 @@ class WhisperDaemon:
         )
 
     def _start_toggle_hotkey_listener(self, hotkey_str: str) -> bool:
-        """Startet pynput Listener für Toggle-Mode (Fallback/Alternative zu Carbon)."""
+        """Startet Listener für Toggle-Mode (Fallback/Alternative zu Carbon)."""
         target_hotkey = (hotkey_str or "").strip()
         if not target_hotkey:
             return False
+
+        if sys.platform == "darwin":
+            return self._start_quartz_hotkey_listener(target_hotkey, mode="toggle")
 
         try:
             hotkey_keys = self._parse_pynput_hotkey(target_hotkey)
@@ -1715,7 +1887,6 @@ class WhisperDaemon:
             deduped.append((m, hk))
 
         # Berechtigungen prüfen (ohne modale Alerts während Settings-Änderungen)
-        accessibility_ok = check_accessibility_permission(show_alert=False)
         input_monitoring_granted = check_input_monitoring_permission(show_alert=False)
 
         invalid_hotkeys: list[str] = []
@@ -1730,24 +1901,6 @@ class WhisperDaemon:
                 mode == "hold" or hk_is_fn or hk_is_capslock
             ):
                 msg = f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
-                logger.warning(msg)
-                invalid_hotkeys.append(msg)
-                continue
-
-            if (hk_is_fn or hk_is_capslock) and not accessibility_ok:
-                msg = (
-                    f"{hk_str} Hotkey benötigt Bedienungshilfen-Zugriff – deaktiviert."
-                )
-                logger.warning(msg)
-                invalid_hotkeys.append(msg)
-                continue
-
-            if (
-                mode == "hold"
-                and not accessibility_ok
-                and not (hk_is_fn or hk_is_capslock)
-            ):
-                msg = f"Hold Hotkey '{hk}' benötigt Bedienungshilfen-Zugriff – deaktiviert."
                 logger.warning(msg)
                 invalid_hotkeys.append(msg)
                 continue
@@ -1771,17 +1924,6 @@ class WhisperDaemon:
                 continue
 
             if mode == "toggle":
-                # Prefer pynput for modifier combos when possible (handles left/right modifiers
-                # and avoids Carbon limitations for some system-reserved combos).
-                if "+" in hk_str and input_monitoring_granted:
-                    logger.info(f"Hotkey aktiviert: {hk} (toggle, pynput)")
-                    if self._start_toggle_hotkey_listener(hk):
-                        continue
-                    msg = f"Toggle Hotkey Listener für '{hk}' konnte nicht gestartet werden."
-                    logger.error(msg)
-                    invalid_hotkeys.append(msg)
-
-                # Fallback: Carbon global hotkey (no Input Monitoring required).
                 def _handler() -> None:
                     self._on_hotkey()
 
@@ -1800,6 +1942,12 @@ class WhisperDaemon:
                 )
                 ok, err = reg.register()
                 if not ok:
+                    # Fallback: Quartz event tap (requires Input Monitoring).
+                    if input_monitoring_granted and self._start_toggle_hotkey_listener(hk):
+                        listener_kind = "quartz" if sys.platform == "darwin" else "pynput"
+                        logger.info(f"Hotkey aktiviert: {hk} (toggle, {listener_kind})")
+                        continue
+
                     msg = f"Hotkey '{hk}' konnte nicht registriert werden: {err}"
                     logger.error(msg)
                     invalid_hotkeys.append(msg)
@@ -1808,7 +1956,8 @@ class WhisperDaemon:
                 logger.info(f"Hotkey aktiviert: {hk} (toggle, carbon)")
                 self._toggle_hotkey_handlers.append(reg)
             else:
-                logger.info(f"Hotkey aktiviert: {hk} (hold, pynput)")
+                listener_kind = "quartz" if sys.platform == "darwin" else "pynput"
+                logger.info(f"Hotkey aktiviert: {hk} (hold, {listener_kind})")
                 if not self._start_hold_hotkey_listener(hk):
                     msg = (
                         f"Hold Hotkey Listener für '{hk}' konnte nicht gestartet werden "

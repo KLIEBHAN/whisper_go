@@ -124,7 +124,7 @@ class HotkeyRecorder:
         field,
         button,
         buttons_to_reset: list[object],
-        on_hotkey: Callable[[str], None],
+        on_hotkey: Callable[[str], object] | Callable[[str], None],
         placeholder: str = "Press desired hotkey…",
     ) -> None:
         if field is None or button is None:
@@ -158,10 +158,17 @@ class HotkeyRecorder:
         def _on_hotkey(hotkey_str: str) -> None:
             if not self._recording:
                 return
+            accepted = True
             try:
-                on_hotkey(hotkey_str)
+                result = on_hotkey(hotkey_str)
+                if result is False:
+                    accepted = False
             except Exception:
-                pass
+                accepted = False
+
+            if not accepted:
+                self.stop(cancelled=True)
+                return
 
             if self._target_field is not None:
                 try:
