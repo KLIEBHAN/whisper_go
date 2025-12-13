@@ -9,6 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+# Shared description text for permissions card (used in Wizard + Settings)
+PERMISSIONS_DESCRIPTION = (
+    "Microphone is required. Accessibility improves auto‑paste.\n"
+    "Input Monitoring enables Hold + some global hotkeys.\n"
+    "💡 Accessibility/Input Monitoring not working? Remove & re‑add the app."
+)
+
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
     from AppKit import NSColor  # type: ignore[import-not-found]
@@ -213,7 +220,9 @@ class PermissionsCard:
         mic_state = get_microphone_permission_state()
         if mic_state == "authorized":
             set_status(self._widgets.mic_status, "✅ Granted", ok_color)
-            set_action(self._widgets.mic_action, title="Open", enabled=False, hidden=True)
+            set_action(
+                self._widgets.mic_action, title="Open", enabled=False, hidden=True
+            )
         elif mic_state == "not_determined":
             set_status(self._widgets.mic_status, "⚠ Not requested yet", warn_color)
             set_action(
@@ -221,10 +230,14 @@ class PermissionsCard:
             )
         elif mic_state in ("denied", "restricted"):
             set_status(self._widgets.mic_status, "❌ Denied", err_color)
-            set_action(self._widgets.mic_action, title="Open", enabled=True, hidden=False)
+            set_action(
+                self._widgets.mic_action, title="Open", enabled=True, hidden=False
+            )
         else:
             set_status(self._widgets.mic_status, "Unknown", neutral_color)
-            set_action(self._widgets.mic_action, title="Open", enabled=True, hidden=False)
+            set_action(
+                self._widgets.mic_action, title="Open", enabled=True, hidden=False
+            )
 
         acc_ok = has_accessibility_permission()
         set_status(

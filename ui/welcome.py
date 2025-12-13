@@ -311,13 +311,9 @@ class WelcomeController:
 
     def _open_privacy_settings(self, anchor: str) -> None:
         """Öffnet System Settings → Privacy & Security (best effort)."""
-        import subprocess
+        from utils.permissions import open_privacy_settings
 
-        url = f"x-apple.systempreferences:com.apple.preference.security?{anchor}"
-        try:
-            subprocess.Popen(["open", url])
-        except Exception:
-            pass
+        open_privacy_settings(anchor)
 
     def _handle_setup_action(self, action: str) -> None:
         from utils.permissions import (
@@ -415,7 +411,7 @@ class WelcomeController:
 
     def _build_setup_permissions_card(self, y: int, parent_view=None) -> int:
         import objc  # type: ignore[import-not-found]
-        from ui.permissions_card import PermissionsCard
+        from ui.permissions_card import PERMISSIONS_DESCRIPTION, PermissionsCard
 
         parent_view = parent_view or self._content_view
 
@@ -438,11 +434,7 @@ class WelcomeController:
             outer_padding=WELCOME_PADDING,
             inner_padding=CARD_PADDING,
             title="Permissions",
-            description=(
-                "Microphone is required. Accessibility improves auto‑paste.\n"
-                "Input Monitoring enables Hold + some global hotkeys.\n"
-                "💡 Accessibility/Input Monitoring not working? Remove & re‑add the app."
-            ),
+            description=PERMISSIONS_DESCRIPTION,
             bind_action=bind_action,
         )
 
@@ -902,10 +894,12 @@ class WelcomeController:
         if current_mode in MODE_OPTIONS:
             mode_popup.selectItemWithTitle_(current_mode)
         # Update visibility when mode changes
-        mode_changed_handler = _ModeChangedHandler.alloc().initWithController_(self)
+        mode_changed_handler = _SimpleHandler.alloc().initWithController_method_(
+            self, "_update_local_settings_visibility"
+        )
         mode_popup.setTarget_(mode_changed_handler)
         mode_popup.setAction_(
-            objc.selector(mode_changed_handler.modeChanged_, signature=b"v@:@")
+            objc.selector(mode_changed_handler.performAction_, signature=b"v@:@")
         )
         self._mode_changed_handler = mode_changed_handler
         self._mode_popup = mode_popup
@@ -1044,10 +1038,12 @@ class WelcomeController:
         for preset in LOCAL_PRESET_OPTIONS:
             preset_popup.addItemWithTitle_(preset)
         preset_popup.selectItemWithTitle_("(none)")
-        preset_handler = _PresetChangedHandler.alloc().initWithController_(self)
+        preset_handler = _SimpleHandler.alloc().initWithController_method_(
+            self, "_apply_selected_local_preset"
+        )
         preset_popup.setTarget_(preset_handler)
         preset_popup.setAction_(
-            objc.selector(preset_handler.presetChanged_, signature=b"v@:@")
+            objc.selector(preset_handler.performAction_, signature=b"v@:@")
         )
         self._local_preset_changed_handler = preset_handler
         self._local_preset_popup = preset_popup
@@ -1542,10 +1538,12 @@ class WelcomeController:
         refresh_btn.setTitle_("Refresh")
         refresh_btn.setBezelStyle_(NSBezelStyleRounded)
         refresh_btn.setFont_(NSFont.systemFontOfSize_(11))
-        refresh_handler = _RefreshLogsHandler.alloc().initWithController_(self)
+        refresh_handler = _SimpleHandler.alloc().initWithController_method_(
+            self, "_refresh_logs"
+        )
         refresh_btn.setTarget_(refresh_handler)
         refresh_btn.setAction_(
-            objc.selector(refresh_handler.refreshLogs_, signature=b"v@:@")
+            objc.selector(refresh_handler.performAction_, signature=b"v@:@")
         )
         self._logs_refresh_handler = refresh_handler
         logs_container.addSubview_(refresh_btn)
@@ -2119,9 +2117,13 @@ class WelcomeController:
             NSFont.systemFontOfSize_weight_(btn_font_size, NSFontWeightMedium)
         )
 
-        save_handler = _SaveAllHandler.alloc().initWithController_(self)
+        save_handler = _SimpleHandler.alloc().initWithController_method_(
+            self, "_save_all_settings"
+        )
         save_btn.setTarget_(save_handler)
-        save_btn.setAction_(objc.selector(save_handler.saveAll_, signature=b"v@:@"))
+        save_btn.setAction_(
+            objc.selector(save_handler.performAction_, signature=b"v@:@")
+        )
         self._save_all_handler = save_handler
         self._save_btn = save_btn
         self._content_view.addSubview_(save_btn)
@@ -2136,9 +2138,13 @@ class WelcomeController:
             NSFont.systemFontOfSize_weight_(btn_font_size, NSFontWeightSemibold)
         )
 
-        start_handler = _StartButtonHandler.alloc().initWithController_(self)
+        start_handler = _SimpleHandler.alloc().initWithController_method_(
+            self, "_handle_start"
+        )
         start_btn.setTarget_(start_handler)
-        start_btn.setAction_(objc.selector(start_handler.startApp_, signature=b"v@:@"))
+        start_btn.setAction_(
+            objc.selector(start_handler.performAction_, signature=b"v@:@")
+        )
         self._start_handler = start_handler
 
         self._content_view.addSubview_(start_btn)
@@ -2482,78 +2488,42 @@ def _create_checkbox_handler_class():
     return CheckboxHandler
 
 
-def _create_start_handler_class():
-    """Erstellt NSObject-Subklasse für Start-Button."""
+def _create_simple_handler_class():
+    """Generic NSObject handler that calls a controller method by name.
+
+    Usage:
+        handler = _SimpleHandler.alloc().initWithController_method_(ctrl, "_refresh_logs")
+        btn.setTarget_(handler)
+        btn.setAction_(objc.selector(handler.performAction_, signature=b"v@:@"))
+    """
     from Foundation import NSObject  # type: ignore[import-not-found]
     import objc  # type: ignore[import-not-found]
 
-    class StartButtonHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(StartButtonHandler, self).init()
+    class SimpleHandler(NSObject):
+        def initWithController_method_(self, controller, method_name):
+            self = objc.super(SimpleHandler, self).init()
             if self is None:
                 return None
             self._controller = controller
+            self._method_name = method_name
             return self
 
         @objc.signature(b"v@:@")
-        def startApp_(self, _sender) -> None:
-            self._controller._handle_start()
+        def performAction_(self, _sender) -> None:
+            method = getattr(self._controller, self._method_name, None)
+            if method:
+                method()
 
-    return StartButtonHandler
+    return SimpleHandler
 
+
+_SimpleHandler = _create_simple_handler_class()
 
 _CheckboxHandler = _create_checkbox_handler_class()
-_StartButtonHandler = _create_start_handler_class()
-
-
-def _create_save_all_handler_class():
-    """Erstellt NSObject-Subklasse für Save & Apply Button."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class SaveAllHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(SaveAllHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            return self
-
-        @objc.signature(b"v@:@")
-        def saveAll_(self, _sender) -> None:
-            self._controller._save_all_settings()
-
-    return SaveAllHandler
-
-
-_SaveAllHandler = _create_save_all_handler_class()
-
-
-def _create_refresh_logs_handler_class():
-    """Erstellt NSObject-Subklasse für Logs-Refresh Button."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class RefreshLogsHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(RefreshLogsHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            return self
-
-        @objc.signature(b"v@:@")
-        def refreshLogs_(self, _sender) -> None:
-            self._controller._refresh_logs()
-
-    return RefreshLogsHandler
-
-
-_RefreshLogsHandler = _create_refresh_logs_handler_class()
 
 
 def _create_logs_auto_refresh_handler_class():
-    """Erstellt NSObject-Subklasse für Auto-Refresh Checkbox."""
+    """Erstellt NSObject-Subklasse für Auto-Refresh Checkbox (no-op target)."""
     from Foundation import NSObject  # type: ignore[import-not-found]
     import objc  # type: ignore[import-not-found]
 
@@ -2601,75 +2571,6 @@ def _create_open_logs_in_finder_handler_class():
 
 
 _OpenLogsInFinderHandler = _create_open_logs_in_finder_handler_class()
-
-
-def _create_restart_handler_class():
-    """Erstellt NSObject-Subklasse für Restart Button."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class RestartHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(RestartHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            return self
-
-        @objc.signature(b"v@:@")
-        def restartApp_(self, _sender) -> None:
-            self._controller._restart_application()
-
-    return RestartHandler
-
-
-_RestartButtonHandler = _create_restart_handler_class()
-
-
-def _create_mode_changed_handler_class():
-    """Erstellt NSObject-Subklasse für Mode-Dropdown-Änderungen."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class ModeChangedHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(ModeChangedHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            return self
-
-        @objc.signature(b"v@:@")
-        def modeChanged_(self, _sender) -> None:
-            self._controller._update_local_settings_visibility()
-
-    return ModeChangedHandler
-
-
-_ModeChangedHandler = _create_mode_changed_handler_class()
-
-
-def _create_preset_changed_handler_class():
-    """Erstellt NSObject-Subklasse für Preset-Dropdown-Änderungen."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class PresetChangedHandler(NSObject):
-        def initWithController_(self, controller):
-            self = objc.super(PresetChangedHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            return self
-
-        @objc.signature(b"v@:@")
-        def presetChanged_(self, _sender) -> None:
-            self._controller._apply_selected_local_preset()
-
-    return PresetChangedHandler
-
-
-_PresetChangedHandler = _create_preset_changed_handler_class()
 
 
 def _create_setup_action_handler_class():

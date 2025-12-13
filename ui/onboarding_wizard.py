@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from typing import Callable
 
 from utils.onboarding import (
@@ -515,7 +514,7 @@ class OnboardingWizardController:
 
     def _build_step_permissions(self, parent_view, content_h: int) -> None:
         import objc  # type: ignore[import-not-found]
-        from ui.permissions_card import PermissionsCard
+        from ui.permissions_card import PERMISSIONS_DESCRIPTION, PermissionsCard
 
         card_h = 250
         card_y = content_h - card_h - 10
@@ -534,11 +533,7 @@ class OnboardingWizardController:
             outer_padding=PADDING,
             inner_padding=CARD_PADDING,
             title="Permissions",
-            description=(
-                "Microphone is required. Accessibility improves auto‑paste.\n"
-                "Input Monitoring enables Hold + some global hotkeys.\n"
-                "💡 Accessibility/Input Monitoring not working? Remove & re‑add the app."
-            ),
+            description=PERMISSIONS_DESCRIPTION,
             bind_action=bind_action,
             after_refresh=self._render,
         )
@@ -1122,16 +1117,9 @@ class OnboardingWizardController:
             return
 
     def _open_privacy_settings(self, anchor: str) -> None:
-        url = f"x-apple.systempreferences:com.apple.preference.security?{anchor}"
-        try:
-            # Temporarily lower window level so System Settings appears in front
-            if self._window:
-                from AppKit import NSNormalWindowLevel  # type: ignore[import-not-found]
+        from utils.permissions import open_privacy_settings
 
-                self._window.setLevel_(NSNormalWindowLevel)
-            subprocess.Popen(["open", url])
-        except Exception:
-            pass
+        open_privacy_settings(anchor, window=self._window)
 
     def _refresh_permissions(self) -> None:
         card = self._permissions_card

@@ -28,9 +28,7 @@ _PERMISSION_MESSAGE_TOKENS = (
 )
 
 # Accessibility API laden
-_app_services = ctypes.cdll.LoadLibrary(
-    ctypes.util.find_library("ApplicationServices")
-)
+_app_services = ctypes.cdll.LoadLibrary(ctypes.util.find_library("ApplicationServices"))
 _app_services.AXIsProcessTrusted.restype = ctypes.c_bool
 
 
@@ -87,10 +85,10 @@ def check_microphone_permission(show_alert: bool = True, request: bool = False) 
         False wenn explizit verweigert/eingeschränkt.
     """
     state = get_microphone_permission_state()
-    
+
     if state == "authorized":
         return True
-        
+
     if state == "not_determined":
         # OS wird beim ersten Zugriff fragen
         if request:
@@ -101,19 +99,21 @@ def check_microphone_permission(show_alert: bool = True, request: bool = False) 
             except Exception:
                 pass
         return True
-        
+
     if state in ("denied", "restricted"):
         logger.error("Mikrofon-Zugriff verweigert!")
         return False
-        
+
     return True
 
 
-def check_accessibility_permission(show_alert: bool = True, request: bool = False) -> bool:
+def check_accessibility_permission(
+    show_alert: bool = True, request: bool = False
+) -> bool:
     """
     Prüft Accessibility-Berechtigung (für Auto-Paste via CMD+V).
     Zeigt keine modalen Popups (UI handled via Permissions page).
-    
+
     Returns:
         True wenn Zugriff erlaubt, False wenn nicht.
     """
@@ -130,12 +130,16 @@ def check_accessibility_permission(show_alert: bool = True, request: bool = Fals
             AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
         except Exception:
             pass
-    
-    logger.warning("Accessibility-Berechtigung fehlt - Auto-Paste wird nicht funktionieren")
+
+    logger.warning(
+        "Accessibility-Berechtigung fehlt - Auto-Paste wird nicht funktionieren"
+    )
     return False
 
 
-def check_input_monitoring_permission(show_alert: bool = True, request: bool = False) -> bool:
+def check_input_monitoring_permission(
+    show_alert: bool = True, request: bool = False
+) -> bool:
     """
     Prüft Input‑Monitoring/Eingabemonitoring‑Berechtigung (für globale Key‑Listener).
 
@@ -149,7 +153,7 @@ def check_input_monitoring_permission(show_alert: bool = True, request: bool = F
         True wenn Zugriff erlaubt, False wenn nicht.
     """
     try:
-        from Quartz import CGPreflightListenEventAccess, CGRequestListenEventAccess  # type: ignore[import-not-found]
+        from Quartz import CGRequestListenEventAccess  # type: ignore[import-not-found]
     except Exception:
         return True
 
@@ -158,7 +162,9 @@ def check_input_monitoring_permission(show_alert: bool = True, request: bool = F
     if ok:
         return True
 
-    logger.warning("Input‑Monitoring‑Berechtigung fehlt – globale Hotkeys funktionieren nicht")
+    logger.warning(
+        "Input‑Monitoring‑Berechtigung fehlt – globale Hotkeys funktionieren nicht"
+    )
 
     if request:
         try:
@@ -173,3 +179,27 @@ def is_permission_related_message(message: str | None) -> bool:
     """Best-effort check if a message is about missing system permissions."""
     msg = (message or "").lower()
     return any(token in msg for token in _PERMISSION_MESSAGE_TOKENS)
+
+
+def open_privacy_settings(anchor: str, *, window=None) -> None:
+    """Opens macOS System Settings → Privacy & Security.
+
+    Args:
+        anchor: Privacy section (e.g., "Privacy_Microphone", "Privacy_Accessibility")
+        window: Optional NSWindow to temporarily lower its level so Settings appears in front
+    """
+    import subprocess
+
+    url = f"x-apple.systempreferences:com.apple.preference.security?{anchor}"
+    try:
+        # Lower window level so System Settings appears in front
+        if window is not None:
+            try:
+                from AppKit import NSNormalWindowLevel  # type: ignore[import-not-found]
+
+                window.setLevel_(NSNormalWindowLevel)
+            except Exception:
+                pass
+        subprocess.Popen(["open", url])
+    except Exception:
+        pass
