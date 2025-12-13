@@ -14,6 +14,7 @@ from utils.onboarding import (
     step_index,
     total_steps,
 )
+from utils.hotkey_recording import HotkeyRecorder
 from utils.permissions import (
     check_accessibility_permission,
     check_input_monitoring_permission,
@@ -25,6 +26,7 @@ from utils.preferences import (
     get_env_setting,
     get_onboarding_choice,
     get_onboarding_step,
+    apply_hotkey_setting,
     save_env_setting,
     remove_env_setting,
     set_onboarding_choice,
@@ -110,12 +112,7 @@ class OnboardingWizardController:
         self._hold_hotkey_field = None
         self._toggle_record_btn = None
         self._hold_record_btn = None
-        self._hotkey_recording = False
-        self._hotkey_recording_kind: str | None = None
-        self._record_target_field = None
-        self._record_target_btn = None
-        self._record_prev_value: str | None = None
-        self._hotkey_monitor = None
+        self._hotkey_recorder = HotkeyRecorder()
 
         # Strong refs for ObjC handlers
         self._handler_refs: list[object] = []
@@ -986,26 +983,11 @@ class OnboardingWizardController:
         if action in ("hotkey_f19_toggle", "hotkey_fn_hold", "hotkey_opt_space"):
             self._stop_hotkey_recording(cancelled=True)
             if action == "hotkey_fn_hold":
-                save_env_setting("WHISPER_GO_HOLD_HOTKEY", "fn")
-                remove_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
+                self._apply_hotkey_change("hold", "fn")
             elif action == "hotkey_opt_space":
-                save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", "option+space")
-                remove_env_setting("WHISPER_GO_HOLD_HOTKEY")
+                self._apply_hotkey_change("toggle", "option+space")
             else:
-                save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", "f19")
-                remove_env_setting("WHISPER_GO_HOLD_HOTKEY")
-
-            # Remove legacy single-hotkey keys if present.
-            remove_env_setting("WHISPER_GO_HOTKEY")
-            remove_env_setting("WHISPER_GO_HOTKEY_MODE")
-
-            if self._on_settings_changed:
-                try:
-                    self._on_settings_changed()
-                except Exception:
-                    pass
-            self._sync_hotkey_fields_from_env()
-            self._render()
+                self._apply_hotkey_change("toggle", "f19")
             return
 
         if action.startswith("record_hotkey:"):
@@ -1073,7 +1055,7 @@ class OnboardingWizardController:
     # ---------------------------------------------------------------------
 
     def _sync_hotkey_fields_from_env(self) -> None:
-        if self._hotkey_recording:
+        if self._hotkey_recorder.recording:
             return
         try:
             toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
@@ -1086,13 +1068,9 @@ class OnboardingWizardController:
             return
 
     def _toggle_hotkey_recording(self, kind: str) -> None:
-        if self._hotkey_recording:
+        if self._hotkey_recorder.recording:
             self._stop_hotkey_recording(cancelled=True)
-        else:
-            self._start_hotkey_recording(kind)
-
-    def _start_hotkey_recording(self, kind: str) -> None:
-        from utils.hotkey_recording import add_local_hotkey_monitor
+            return
 
         if kind == "toggle":
             field = self._toggle_hotkey_field
@@ -1103,88 +1081,19 @@ class OnboardingWizardController:
         else:
             return
 
-        if field is None or btn is None:
-            return
-
-        self._record_target_field = field
-        self._record_target_btn = btn
-        self._hotkey_recording_kind = kind
-        self._record_prev_value = str(field.stringValue() or "")
-        self._hotkey_recording = True
-
-        if self._toggle_record_btn is not None:
-            self._toggle_record_btn.setTitle_("Record")
-        if self._hold_record_btn is not None:
-            self._hold_record_btn.setTitle_("Record")
-        btn.setTitle_("Press…")
-
-        try:
-            field.setStringValue_("")
-            field.setPlaceholderString_("Press desired hotkey…")
-        except Exception:
-            pass
-
-        def on_hotkey(hotkey_str: str) -> None:
-            if not self._hotkey_recording:
-                return
-            self._apply_recorded_hotkey(kind, hotkey_str)
-            if self._record_target_field is not None:
-                try:
-                    self._record_target_field.setStringValue_(hotkey_str.upper())
-                except Exception:
-                    pass
-            self._stop_hotkey_recording(cancelled=False)
-
-        def on_cancel() -> None:
-            self._stop_hotkey_recording(cancelled=True)
-
-        self._hotkey_monitor = add_local_hotkey_monitor(
-            on_hotkey=on_hotkey, on_cancel=on_cancel
+        buttons = [self._toggle_record_btn, self._hold_record_btn]
+        self._hotkey_recorder.start(
+            field=field,
+            button=btn,
+            buttons_to_reset=buttons,
+            on_hotkey=lambda hk: self._apply_hotkey_change(kind, hk),
         )
 
     def _stop_hotkey_recording(self, *, cancelled: bool = False) -> None:
-        from AppKit import NSEvent  # type: ignore[import-not-found]
+        self._hotkey_recorder.stop(cancelled=cancelled)
 
-        if cancelled and self._record_target_field is not None and self._record_prev_value is not None:
-            try:
-                self._record_target_field.setStringValue_(self._record_prev_value)
-            except Exception:
-                pass
-
-        self._hotkey_recording = False
-        self._hotkey_recording_kind = None
-        self._record_prev_value = None
-        if self._toggle_record_btn is not None:
-            self._toggle_record_btn.setTitle_("Record")
-        if self._hold_record_btn is not None:
-            self._hold_record_btn.setTitle_("Record")
-        if self._record_target_field is not None:
-            try:
-                self._record_target_field.setPlaceholderString_(None)
-            except Exception:
-                pass
-        self._record_target_field = None
-        self._record_target_btn = None
-        if self._hotkey_monitor is not None:
-            try:
-                NSEvent.removeMonitor_(self._hotkey_monitor)
-            except Exception:
-                pass
-            self._hotkey_monitor = None
-
-    def _apply_recorded_hotkey(self, kind: str, hotkey_str: str) -> None:
-        value = (hotkey_str or "").strip().lower()
-        if not value:
-            return
-
-        if kind == "hold":
-            save_env_setting("WHISPER_GO_HOLD_HOTKEY", value)
-        else:
-            save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", value)
-
-        # Remove legacy single-hotkey keys if present.
-        remove_env_setting("WHISPER_GO_HOTKEY")
-        remove_env_setting("WHISPER_GO_HOTKEY_MODE")
+    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> None:
+        apply_hotkey_setting(kind, hotkey_str)
 
         if self._on_settings_changed:
             try:

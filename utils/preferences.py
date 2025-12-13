@@ -95,6 +95,7 @@ def set_onboarding_seen(seen: bool = True) -> None:
     prefs["has_seen_onboarding"] = seen
     save_preferences(prefs)
 
+
 def get_onboarding_step() -> OnboardingStep:
     """Aktueller Wizard-Step (persistiert).
 
@@ -245,3 +246,22 @@ def remove_env_setting(key_name: str) -> None:
 
     env_path.write_text("\n".join(new_lines) + "\n" if new_lines else "")
     _invalidate_env_cache()
+
+
+def apply_hotkey_setting(kind: str, hotkey_str: str) -> None:
+    """Speichert Toggle/Hold Hotkey und entfernt Legacy Keys.
+
+    `kind` ist "toggle" oder "hold". Die jeweils andere Konfiguration bleibt unverändert.
+    """
+    value = (hotkey_str or "").strip().lower()
+    if not value:
+        return
+
+    if kind == "hold":
+        save_env_setting("WHISPER_GO_HOLD_HOTKEY", value)
+    else:
+        save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", value)
+
+    # Remove legacy single-hotkey keys if present.
+    remove_env_setting("WHISPER_GO_HOTKEY")
+    remove_env_setting("WHISPER_GO_HOTKEY_MODE")

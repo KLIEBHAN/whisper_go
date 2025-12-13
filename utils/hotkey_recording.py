@@ -9,6 +9,8 @@ from typing import Callable
 
 from utils.hotkey import KEY_CODE_MAP
 
+_REVERSE_KEY_CODE_MAP = {v: k for k, v in KEY_CODE_MAP.items()}
+
 
 def nsevent_to_hotkey_string(event) -> str | None:
     """Converts an NSEvent (key down / flags changed) to a canonical hotkey string.
@@ -33,14 +35,12 @@ def nsevent_to_hotkey_string(event) -> str | None:
     if event.type() == NSEventTypeFlagsChanged and keycode not in (63, 57):
         return None
 
-    reverse_map = {v: k for k, v in KEY_CODE_MAP.items()}
-
     if keycode == 63:
         key = "fn"
     elif keycode == 57:
         key = "capslock"
     else:
-        key = reverse_map.get(keycode)
+        key = _REVERSE_KEY_CODE_MAP.get(keycode)
 
     if not key:
         chars = event.charactersIgnoringModifiers()
@@ -104,5 +104,110 @@ def add_local_hotkey_monitor(
     return NSEvent.addLocalMonitorForEventsMatchingMask_handler_(mask, handler)
 
 
-__all__ = ["add_local_hotkey_monitor", "nsevent_to_hotkey_string"]
+class HotkeyRecorder:
+    """Reusable UI helper to record a hotkey via a local NSEvent monitor."""
 
+    def __init__(self) -> None:
+        self._recording = False
+        self._monitor = None
+        self._target_field = None
+        self._prev_value: str | None = None
+        self._buttons_to_reset: list[object] = []
+
+    @property
+    def recording(self) -> bool:
+        return bool(self._recording)
+
+    def start(
+        self,
+        *,
+        field,
+        button,
+        buttons_to_reset: list[object],
+        on_hotkey: Callable[[str], None],
+        placeholder: str = "Press desired hotkey…",
+    ) -> None:
+        if field is None or button is None:
+            return
+
+        # Cancel any existing recording session.
+        if self._recording:
+            self.stop(cancelled=True)
+
+        self._recording = True
+        self._target_field = field
+        self._prev_value = str(field.stringValue() or "")
+        self._buttons_to_reset = [b for b in buttons_to_reset if b is not None]
+
+        for b in self._buttons_to_reset:
+            try:
+                b.setTitle_("Record")
+            except Exception:
+                pass
+        try:
+            button.setTitle_("Press…")
+        except Exception:
+            pass
+
+        try:
+            field.setStringValue_("")
+            field.setPlaceholderString_(placeholder)
+        except Exception:
+            pass
+
+        def _on_hotkey(hotkey_str: str) -> None:
+            if not self._recording:
+                return
+            try:
+                on_hotkey(hotkey_str)
+            except Exception:
+                pass
+
+            if self._target_field is not None:
+                try:
+                    self._target_field.setStringValue_(hotkey_str.upper())
+                except Exception:
+                    pass
+            self.stop(cancelled=False)
+
+        def _on_cancel() -> None:
+            self.stop(cancelled=True)
+
+        self._monitor = add_local_hotkey_monitor(on_hotkey=_on_hotkey, on_cancel=_on_cancel)
+
+    def stop(self, *, cancelled: bool = False) -> None:
+        from AppKit import NSEvent  # type: ignore[import-not-found]
+
+        if cancelled and self._target_field is not None and self._prev_value is not None:
+            try:
+                self._target_field.setStringValue_(self._prev_value)
+            except Exception:
+                pass
+
+        if self._buttons_to_reset:
+            for b in self._buttons_to_reset:
+                try:
+                    b.setTitle_("Record")
+                except Exception:
+                    pass
+
+        if self._target_field is not None:
+            try:
+                self._target_field.setPlaceholderString_(None)
+            except Exception:
+                pass
+
+        if self._monitor is not None:
+            try:
+                NSEvent.removeMonitor_(self._monitor)
+            except Exception:
+                pass
+            self._monitor = None
+
+        self._recording = False
+        self._target_field = None
+        self._prev_value = None
+        self._buttons_to_reset = []
+
+
+__all__ = ["HotkeyRecorder", "add_local_hotkey_monitor", "nsevent_to_hotkey_string"]

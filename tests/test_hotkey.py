@@ -183,6 +183,16 @@ class TestParsePynputHotkey:
         assert keyboard.Key.shift in keys
         assert keyboard.Key.space in keys
 
+    def test_option_l_uses_virtual_keycode(self):
+        """Option+Letter sollte per VK erkannt werden (Option modifiziert sonst das Zeichen)."""
+        from pynput import keyboard  # type: ignore[import-not-found]
+        from whisper_daemon import WhisperDaemon
+        from utils.hotkey import KEY_CODE_MAP
+
+        keys = WhisperDaemon._parse_pynput_hotkey("option+l")
+        assert keyboard.Key.alt in keys
+        assert keyboard.KeyCode.from_vk(KEY_CODE_MAP["l"]) in keys
+
     def test_unknown_function_key_raises(self):
         """Unbekannte Funktionstaste wirft ValueError."""
         from whisper_daemon import WhisperDaemon

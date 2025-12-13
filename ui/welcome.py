@@ -8,8 +8,10 @@ import os
 
 from config import LOG_FILE
 from utils.env import parse_bool
+from utils.hotkey_recording import HotkeyRecorder
 from utils.presets import LOCAL_PRESET_BASE, LOCAL_PRESETS, LOCAL_PRESET_OPTIONS
 from utils.preferences import (
+    apply_hotkey_setting,
     get_api_key,
     get_env_setting,
     get_show_welcome_on_startup,
@@ -22,7 +24,7 @@ from utils.preferences import (
 from utils.vocabulary import load_vocabulary, save_vocabulary
 
 # Window-Konfiguration
-WELCOME_WIDTH = 500
+WELCOME_WIDTH = 600
 WELCOME_HEIGHT = 825  # Höhe für Tabbed Setup
 WELCOME_PADDING = 20
 FOOTER_HEIGHT = 60
@@ -112,12 +114,7 @@ class WelcomeController:
         self._restart_handler = None
         self._toggle_record_handler = None
         self._hold_record_handler = None
-        self._hotkey_recording = False
-        self._hotkey_recording_kind = None
-        self._record_target_field = None
-        self._record_target_btn = None
-        self._record_prev_value = None
-        self._hotkey_monitor = None
+        self._hotkey_recorder = HotkeyRecorder()
         # Setup/Onboarding Tab
         self._setup_action_handlers = []
         self._perm_mic_status_label = None
@@ -248,7 +245,7 @@ class WelcomeController:
             content_height = tab_height
 
         self._add_tab(tab_view, "Setup", self._build_setup_tab, content_height)
-        self._add_tab(tab_view, "General", self._build_general_tab, content_height)
+        self._add_tab(tab_view, "Hotkeys", self._build_hotkeys_tab, content_height)
         self._add_tab(tab_view, "Providers", self._build_providers_tab, content_height)
         self._add_tab(tab_view, "Advanced", self._build_advanced_tab, content_height)
         self._add_tab(tab_view, "Refine", self._build_refine_tab, content_height)
@@ -748,7 +745,7 @@ class WelcomeController:
 
         return card_y - CARD_SPACING
 
-    def _build_general_tab(self, parent_view, tab_height: int) -> None:
+    def _build_hotkeys_tab(self, parent_view, tab_height: int) -> None:
         y_pos = tab_height - WELCOME_PADDING
         self._build_hotkey_card(y_pos, parent_view)
 
@@ -807,7 +804,7 @@ class WelcomeController:
                 WELCOME_PADDING + CARD_PADDING, card_y + card_height - 28, 200, 18
             )
         )
-        title.setStringValue_("⌨️ Hotkey")
+        title.setStringValue_("⌨️ Hotkeys")
         title.setBezeled_(False)
         title.setDrawsBackground_(False)
         title.setEditable_(False)
@@ -2333,15 +2330,20 @@ class WelcomeController:
     # Hotkey Recording
     # =============================================================================
 
+    def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> None:
+        apply_hotkey_setting(kind, hotkey_str)
+
+        if callable(self._on_settings_changed_callback):
+            try:
+                self._on_settings_changed_callback()
+            except Exception:
+                pass
+
     def _toggle_hotkey_recording(self, kind: str) -> None:
         """Startet/stoppt Hotkey-Aufnahme für Toggle/Hold Feld."""
-        if self._hotkey_recording:
+        if self._hotkey_recorder.recording:
             self._stop_hotkey_recording(cancelled=True)
-        else:
-            self._start_hotkey_recording(kind)
-
-    def _start_hotkey_recording(self, kind: str) -> None:
-        from utils.hotkey_recording import add_local_hotkey_monitor
+            return
 
         if kind == "toggle":
             field = self._toggle_hotkey_field
@@ -2355,59 +2357,16 @@ class WelcomeController:
         if not field or not btn:
             return
 
-        self._record_target_field = field
-        self._record_target_btn = btn
-        self._hotkey_recording_kind = kind
-        self._record_prev_value = str(field.stringValue() or "")
-        self._hotkey_recording = True
-        if self._toggle_record_btn:
-            self._toggle_record_btn.setTitle_("Record")
-        if self._hold_record_btn:
-            self._hold_record_btn.setTitle_("Record")
-        btn.setTitle_("Press…")
-        field.setStringValue_("")
-        field.setPlaceholderString_("Press desired hotkey…")
-
-        def on_hotkey(hotkey_str: str) -> None:
-            if not self._hotkey_recording:
-                return
-            if self._record_target_field:
-                self._record_target_field.setStringValue_(hotkey_str.upper())
-            self._stop_hotkey_recording(cancelled=False)
-
-        def on_cancel() -> None:
-            self._stop_hotkey_recording(cancelled=True)
-
-        self._hotkey_monitor = add_local_hotkey_monitor(
-            on_hotkey=on_hotkey, on_cancel=on_cancel
+        buttons = [self._toggle_record_btn, self._hold_record_btn]
+        self._hotkey_recorder.start(
+            field=field,
+            button=btn,
+            buttons_to_reset=buttons,
+            on_hotkey=lambda hk: self._apply_hotkey_change(kind, hk),
         )
 
     def _stop_hotkey_recording(self, *, cancelled: bool = False) -> None:
-        from AppKit import NSEvent  # type: ignore[import-not-found]
-
-        if cancelled and self._record_target_field and self._record_prev_value is not None:
-            try:
-                self._record_target_field.setStringValue_(self._record_prev_value)
-            except Exception:
-                pass
-
-        self._hotkey_recording = False
-        self._record_prev_value = None
-        if self._toggle_record_btn:
-            self._toggle_record_btn.setTitle_("Record")
-        if self._hold_record_btn:
-            self._hold_record_btn.setTitle_("Record")
-        if self._record_target_field:
-            self._record_target_field.setPlaceholderString_(None)
-        self._record_target_field = None
-        self._record_target_btn = None
-        self._hotkey_recording_kind = None
-        if self._hotkey_monitor is not None:
-            try:
-                NSEvent.removeMonitor_(self._hotkey_monitor)
-            except Exception:
-                pass
-            self._hotkey_monitor = None
+        self._hotkey_recorder.stop(cancelled=cancelled)
 
 
 # =============================================================================

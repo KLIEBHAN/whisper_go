@@ -81,7 +81,6 @@ emergency_log("Imports successful")
 DEBOUNCE_INTERVAL = 0.3
 logger = logging.getLogger("whisper_go")
 
-
 # =============================================================================
 # WhisperDaemon: Hauptklasse
 # =============================================================================
@@ -158,7 +157,8 @@ class WhisperDaemon:
         # Test dictation run (in-app, no auto-paste)
         self._test_run_active = False
         self._test_run_callback = None
-        self._hold_listeners: list = []
+        # pynput key listeners (hold hotkeys + toggle fallbacks)
+        self._pynput_listeners: list = []
         self._toggle_hotkey_handlers: list = []
         self._fn_active = False
         self._caps_active = False
@@ -195,6 +195,14 @@ class WhisperDaemon:
             AppHelper.callAfter(fn)
         except Exception:  # pragma: no cover
             fn()
+
+    @staticmethod
+    def _safe_call(fn, *args, **kwargs) -> None:
+        """Best-effort invoke; never raises (used for UI callbacks)."""
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            pass
 
     def _start_recording_from_hold(self, source_id: str) -> None:
         """Startet Recording nur, wenn der Hold-Hotkey noch aktiv ist."""
@@ -554,23 +562,16 @@ class WhisperDaemon:
     def _start_test_dictation_run(self, callback, *, state_callback=None) -> None:
         """Internal helper to start a safe test dictation run."""
         if self._recording:
-            try:
-                callback("", "Already recording.")
-            except Exception:
-                pass
+            self._safe_call(callback, "", "Already recording.")
             return
         if self._worker_thread is not None and self._worker_thread.is_alive():
-            try:
-                callback("", "WhisperGo is busy — please wait a moment and try again.")
-            except Exception:
-                pass
+            self._safe_call(
+                callback, "", "WhisperGo is busy — please wait a moment and try again."
+            )
             return
 
         if callable(state_callback):
-            try:
-                state_callback("recording")
-            except Exception:
-                pass
+            self._safe_call(state_callback, "recording")
 
         self._test_run_active = True
         self._test_run_callback = callback
@@ -579,10 +580,7 @@ class WhisperDaemon:
     def _stop_test_dictation_run(self, *, state_callback=None) -> None:
         """Internal helper to stop an active test dictation run."""
         if callable(state_callback):
-            try:
-                state_callback("stopping")
-            except Exception:
-                pass
+            self._safe_call(state_callback, "stopping")
         self._stop_recording()
 
     def _finish_test_run(self, transcript: str, error: str | None) -> None:
@@ -590,10 +588,7 @@ class WhisperDaemon:
         self._test_run_active = False
         self._test_run_callback = None
         if cb:
-            try:
-                cb(transcript, error)
-            except Exception:
-                pass
+            self._safe_call(cb, transcript, error)
 
     def _handle_worker_error(self, err: Exception) -> None:
         if self._test_run_active:
@@ -640,6 +635,7 @@ class WhisperDaemon:
     def _parse_pynput_hotkey(hotkey_str: str):
         """Parst Hotkey-String in pynput-Key-Set."""
         from pynput import keyboard  # type: ignore[import-not-found]
+        from utils.hotkey import KEY_CODE_MAP
 
         parts = [p.strip().lower() for p in hotkey_str.split("+")]
         keys: set = set()
@@ -676,34 +672,74 @@ class WhisperDaemon:
             elif part in ("capslock", "caps_lock", "caps"):
                 keys.add(keyboard.Key.caps_lock)
             else:
-                # Normale Taste
-                keys.add(keyboard.KeyCode.from_char(part))
+                # Normale Taste: prefer virtual key codes so modified characters
+                # (e.g. Option+L) still match the underlying physical key.
+                if part in KEY_CODE_MAP:
+                    keys.add(keyboard.KeyCode.from_vk(int(KEY_CODE_MAP[part])))
+                elif len(part) == 1:
+                    keys.add(keyboard.KeyCode.from_char(part))
+                else:
+                    raise ValueError(f"Unbekannte Taste: {part}")
 
         return keys
 
     def _start_hold_hotkey_listener(self, hotkey_str: str | None = None) -> bool:
         """Startet pynput Listener für Hold-Mode für einen Hotkey."""
-        try:
-            from pynput import keyboard  # type: ignore[import-not-found]
-        except ImportError:
-            logger.error("Hold Hotkey Mode benötigt pynput")
-            return False
-
         target_hotkey = (hotkey_str or self.hotkey or "").strip()
         if not target_hotkey:
             return False
 
         try:
             hotkey_keys = self._parse_pynput_hotkey(target_hotkey)
-        except ValueError as e:
+        except Exception as e:
             logger.error(f"Hotkey Parsing fehlgeschlagen: {e}")
             return False
 
-        current_keys: set = set()
-        active = False
         source_id = f"hold:{target_hotkey.lower()}"
 
-        # Normalize left/right modifier keys to generic ones
+        def on_activate() -> None:
+            logger.debug("Hotkey hold down")
+            self._active_hold_sources.add(source_id)
+            self._call_on_main(lambda: self._start_recording_from_hold(source_id))
+
+        def on_deactivate() -> None:
+            logger.debug("Hotkey hold up")
+            self._active_hold_sources.discard(source_id)
+            if not self._active_hold_sources and self._recording_started_by_hold:
+                self._call_on_main(self._stop_recording_from_hotkey)
+
+        return self._start_pynput_hotkey_listener(
+            hotkey_keys,
+            description=f"Hold Hotkey '{target_hotkey}'",
+            on_activate=on_activate,
+            on_deactivate=on_deactivate,
+        )
+
+    def _start_toggle_hotkey_listener(self, hotkey_str: str) -> bool:
+        """Startet pynput Listener für Toggle-Mode (Fallback/Alternative zu Carbon)."""
+        target_hotkey = (hotkey_str or "").strip()
+        if not target_hotkey:
+            return False
+
+        try:
+            hotkey_keys = self._parse_pynput_hotkey(target_hotkey)
+        except Exception as e:
+            logger.error(f"Hotkey Parsing fehlgeschlagen: {e}")
+            return False
+
+        def on_activate() -> None:
+            self._call_on_main(self._on_hotkey)
+
+        return self._start_pynput_hotkey_listener(
+            hotkey_keys,
+            description=f"Toggle Hotkey '{target_hotkey}'",
+            on_activate=on_activate,
+            on_deactivate=None,
+        )
+
+    @staticmethod
+    def _make_pynput_key_normalizer(keyboard):
+        """Returns a function that normalizes pynput keys for hotkey matching."""
         ctrl_variants = tuple(
             k
             for k in (
@@ -748,7 +784,30 @@ class WhisperDaemon:
                 return keyboard.Key.shift
             if key in cmd_variants and key != keyboard.Key.cmd:
                 return keyboard.Key.cmd
+            if isinstance(key, keyboard.KeyCode) and getattr(key, "vk", None) is not None:
+                return keyboard.KeyCode.from_vk(int(key.vk))
             return key
+
+        return normalize_key
+
+    def _start_pynput_hotkey_listener(
+        self,
+        hotkey_keys: set,
+        *,
+        description: str,
+        on_activate,
+        on_deactivate=None,
+    ) -> bool:
+        """Starts a pynput listener for a hotkey combination (best-effort)."""
+        try:
+            from pynput import keyboard  # type: ignore[import-not-found]
+        except ImportError:
+            logger.error(f"{description} benötigt pynput")
+            return False
+
+        current_keys: set = set()
+        active = False
+        normalize_key = self._make_pynput_key_normalizer(keyboard)
 
         def on_press(key):
             nonlocal active
@@ -758,9 +817,7 @@ class WhisperDaemon:
             current_keys.add(nk)
             if not active and hotkey_keys.issubset(current_keys):
                 active = True
-                logger.debug("Hotkey hold down")
-                self._active_hold_sources.add(source_id)
-                self._call_on_main(lambda: self._start_recording_from_hold(source_id))
+                self._safe_call(on_activate)
 
         def on_release(key):
             nonlocal active
@@ -768,15 +825,18 @@ class WhisperDaemon:
             current_keys.discard(nk)
             if active and not hotkey_keys.issubset(current_keys):
                 active = False
-                logger.debug("Hotkey hold up")
-                self._active_hold_sources.discard(source_id)
-                if not self._active_hold_sources and self._recording_started_by_hold:
-                    self._call_on_main(self._stop_recording_from_hotkey)
+                if callable(on_deactivate):
+                    self._safe_call(on_deactivate)
 
-        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-        listener.daemon = True
-        listener.start()
-        self._hold_listeners.append(listener)
+        try:
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            listener.daemon = True
+            listener.start()
+        except Exception as e:
+            logger.error(f"{description} Listener konnte nicht gestartet werden: {e}")
+            return False
+
+        self._pynput_listeners.append(listener)
         return True
 
     def _start_recording(self, *, run_mode_override: str | None = None) -> None:
@@ -1557,7 +1617,7 @@ class WhisperDaemon:
 
     def _unregister_all_hotkeys(self) -> None:
         """Stoppt alle registrierten Hotkeys/Listener (best-effort)."""
-        # Toggle hotkeys (quickmachotkey)
+        # Toggle hotkeys (Carbon / best-effort)
         for handler in list(self._toggle_hotkey_handlers):
             unregister = getattr(handler, "unregister", None)
             if callable(unregister):
@@ -1567,15 +1627,15 @@ class WhisperDaemon:
                     pass
         self._toggle_hotkey_handlers.clear()
 
-        # Hold listeners (pynput)
-        for listener in list(self._hold_listeners):
+        # pynput listeners (hold + toggle fallback)
+        for listener in list(self._pynput_listeners):
             stop = getattr(listener, "stop", None)
             if callable(stop):
                 try:
                     stop()
                 except Exception:
                     pass
-        self._hold_listeners.clear()
+        self._pynput_listeners.clear()
 
         # Modifier taps (Quartz)
         if self._modifier_taps:
@@ -1656,17 +1716,7 @@ class WhisperDaemon:
 
         # Berechtigungen prüfen (ohne modale Alerts während Settings-Änderungen)
         accessibility_ok = check_accessibility_permission(show_alert=False)
-        requires_input_monitoring = any(
-            mode == "hold" or hk.strip().lower() in ("fn", "capslock", "caps_lock")
-            for mode, hk in deduped
-        )
-        input_monitoring_ok = (
-            check_input_monitoring_permission(show_alert=False)
-            if requires_input_monitoring
-            else True
-        )
-
-        from quickmachotkey import quickHotKey
+        input_monitoring_granted = check_input_monitoring_permission(show_alert=False)
 
         invalid_hotkeys: list[str] = []
         invalid_hotkeys.extend(duplicate_msgs)
@@ -1676,7 +1726,7 @@ class WhisperDaemon:
             hk_is_fn = hk_str == "fn"
             hk_is_capslock = hk_str in ("capslock", "caps_lock")
 
-            if not input_monitoring_ok and (
+            if not input_monitoring_granted and (
                 mode == "hold" or hk_is_fn or hk_is_capslock
             ):
                 msg = f"Hotkey '{hk}' benötigt Eingabemonitoring‑Zugriff – deaktiviert."
@@ -1721,6 +1771,20 @@ class WhisperDaemon:
                 continue
 
             if mode == "toggle":
+                # Prefer pynput for modifier combos when possible (handles left/right modifiers
+                # and avoids Carbon limitations for some system-reserved combos).
+                if "+" in hk_str and input_monitoring_granted:
+                    logger.info(f"Hotkey aktiviert: {hk} (toggle, pynput)")
+                    if self._start_toggle_hotkey_listener(hk):
+                        continue
+                    msg = f"Toggle Hotkey Listener für '{hk}' konnte nicht gestartet werden."
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
+
+                # Fallback: Carbon global hotkey (no Input Monitoring required).
+                def _handler() -> None:
+                    self._on_hotkey()
+
                 try:
                     virtual_key, modifier_mask = parse_hotkey(hk)
                 except ValueError as e:
@@ -1729,17 +1793,20 @@ class WhisperDaemon:
                     invalid_hotkeys.append(msg)
                     continue
 
-                logger.info(
-                    f"Hotkey aktiviert: {hk} (toggle)"
+                from utils.carbon_hotkey import CarbonHotKeyRegistration
+
+                reg = CarbonHotKeyRegistration(
+                    virtual_key=virtual_key, modifier_mask=modifier_mask, callback=_handler
                 )
+                ok, err = reg.register()
+                if not ok:
+                    msg = f"Hotkey '{hk}' konnte nicht registriert werden: {err}"
+                    logger.error(msg)
+                    invalid_hotkeys.append(msg)
+                    continue
 
-                def _handler() -> None:
-                    self._on_hotkey()
-
-                decorated = quickHotKey(
-                    virtualKey=virtual_key, modifierMask=modifier_mask
-                )(_handler)  # type: ignore[arg-type]
-                self._toggle_hotkey_handlers.append(decorated)
+                logger.info(f"Hotkey aktiviert: {hk} (toggle, carbon)")
+                self._toggle_hotkey_handlers.append(reg)
             else:
                 logger.info(f"Hotkey aktiviert: {hk} (hold, pynput)")
                 if not self._start_hold_hotkey_listener(hk):
@@ -1749,14 +1816,7 @@ class WhisperDaemon:
                     )
                     logger.error(msg)
                     invalid_hotkeys.append(msg)
-                    try:
-                        virtual_key, modifier_mask = parse_hotkey(hk)
-                        decorated = quickHotKey(
-                            virtualKey=virtual_key, modifierMask=modifier_mask
-                        )(lambda: self._on_hotkey())  # type: ignore[arg-type]
-                        self._toggle_hotkey_handlers.append(decorated)
-                    except Exception:
-                        pass
+                    # No fallback: keep semantics predictable.
 
         if show_alerts and invalid_hotkeys:
             try:

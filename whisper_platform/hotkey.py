@@ -1,7 +1,7 @@
 """Hotkey-Listener Implementierungen.
 
 Plattformspezifische globale Hotkey-Registrierung.
-macOS: QuickMacHotKey (Carbon API, keine Accessibility)
+macOS: Carbon (RegisterEventHotKey via quickmachotkey bindings)
 Windows: pynput
 """
 
@@ -31,7 +31,7 @@ HotkeyCallback = Callable[[], None]
 
 
 class MacOSHotkeyListener:
-    """macOS Hotkey-Listener via QuickMacHotKey.
+    """macOS Hotkey-Listener via Carbon.
 
     Nutzt die Carbon API (RegisterEventHotKey) für systemweite Hotkeys.
     Keine Accessibility-Berechtigung erforderlich!
@@ -40,10 +40,10 @@ class MacOSHotkeyListener:
     def __init__(self, hotkey: str, callback: HotkeyCallback) -> None:
         self.hotkey = hotkey
         self.callback = callback
-        self._hotkey_id = None
+        self._registration = None
         self._registered = False
 
-        # Parse Hotkey für QuickMacHotKey
+        # Parse Hotkey für Carbon (RegisterEventHotKey)
         self.virtual_key, self.modifier_mask = parse_hotkey(hotkey)
 
     def register(self) -> None:
@@ -51,22 +51,29 @@ class MacOSHotkeyListener:
         if self._registered:
             return
 
-        try:
-            from QuickMacHotKey import quickHotKey  # type: ignore[import-not-found]
-            self._hotkey_id = quickHotKey(
-                virtualKey=self.virtual_key,
-                modifierMask=self.modifier_mask,
-                handler=self.callback
-            )
-            self._registered = True
-            logger.info(f"Hotkey '{self.hotkey}' registriert")
-        except Exception as e:
-            logger.error(f"Hotkey-Registrierung fehlgeschlagen: {e}")
-            raise
+        from utils.carbon_hotkey import CarbonHotKeyRegistration
+
+        reg = CarbonHotKeyRegistration(
+            virtual_key=self.virtual_key,
+            modifier_mask=self.modifier_mask,
+            callback=self.callback,
+        )
+        ok, err = reg.register()
+        if not ok:
+            raise RuntimeError(err or "RegisterEventHotKey failed")
+        self._registration = reg
+        self._registered = True
+        logger.info(f"Hotkey '{self.hotkey}' registriert")
 
     def unregister(self) -> None:
         """Deregistriert den Hotkey."""
-        # QuickMacHotKey hat keine explizite Deregistrierung
+        reg = self._registration
+        self._registration = None
+        if reg is not None:
+            try:
+                reg.unregister()
+            except Exception:
+                pass
         self._registered = False
 
     def run(self) -> None:

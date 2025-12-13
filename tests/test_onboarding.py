@@ -1,5 +1,6 @@
 import utils.preferences as prefs
 from utils.onboarding import OnboardingChoice, OnboardingStep
+from ui.onboarding_wizard import OnboardingWizardController
 
 
 def _isolate_prefs(tmp_path, monkeypatch):
@@ -38,3 +39,34 @@ def test_onboarding_choice_roundtrip(tmp_path, monkeypatch):
     prefs.set_onboarding_choice(None)
     assert prefs.get_onboarding_choice() is None
 
+
+def test_hotkey_preset_updates_toggle_without_clearing_hold(tmp_path, monkeypatch):
+    _isolate_prefs(tmp_path, monkeypatch)
+    prefs.save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", "option+space")
+    prefs.save_env_setting("WHISPER_GO_HOLD_HOTKEY", "fn")
+
+    wizard = OnboardingWizardController(persist_progress=False)
+    monkeypatch.setattr(wizard, "_stop_hotkey_recording", lambda *a, **k: None)
+    wizard._handle_action("hotkey_f19_toggle")
+
+    env = prefs.read_env_file()
+    assert env.get("WHISPER_GO_TOGGLE_HOTKEY") == "f19"
+    assert env.get("WHISPER_GO_HOLD_HOTKEY") == "fn"
+
+
+def test_hotkey_preset_updates_hold_without_clearing_toggle(tmp_path, monkeypatch):
+    _isolate_prefs(tmp_path, monkeypatch)
+    prefs.save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", "f19")
+    prefs.save_env_setting("WHISPER_GO_HOLD_HOTKEY", "capslock")
+    prefs.save_env_setting("WHISPER_GO_HOTKEY", "f13")
+    prefs.save_env_setting("WHISPER_GO_HOTKEY_MODE", "toggle")
+
+    wizard = OnboardingWizardController(persist_progress=False)
+    monkeypatch.setattr(wizard, "_stop_hotkey_recording", lambda *a, **k: None)
+    wizard._handle_action("hotkey_fn_hold")
+
+    env = prefs.read_env_file()
+    assert env.get("WHISPER_GO_TOGGLE_HOTKEY") == "f19"
+    assert env.get("WHISPER_GO_HOLD_HOTKEY") == "fn"
+    assert "WHISPER_GO_HOTKEY" not in env
+    assert "WHISPER_GO_HOTKEY_MODE" not in env
