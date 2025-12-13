@@ -7,6 +7,7 @@ Erscheint beim ersten Start und kann über Menubar aufgerufen werden.
 import os
 
 from config import LOG_FILE
+from ui.hotkey_card import HotkeyCard
 from utils.env import parse_bool
 from utils.hotkey_recording import HotkeyRecorder
 from utils.presets import LOCAL_PRESET_BASE, LOCAL_PRESETS, LOCAL_PRESET_OPTIONS
@@ -77,11 +78,6 @@ class WelcomeController:
 
         # UI-Referenzen (werden in _build_* Methoden gesetzt)
         self._startup_checkbox = None
-        self._toggle_hotkey_field = None
-        self._hold_hotkey_field = None
-        self._toggle_record_btn = None
-        self._hold_record_btn = None
-        self._hotkey_status_label = None
         self._mode_popup = None
         self._lang_popup = None
         self._refine_checkbox = None
@@ -109,18 +105,28 @@ class WelcomeController:
         self._vocab_text_view = None
         self._vocab_warning_label = None
         self._logs_text_view = None
+        self._logs_scroll_view = None
         self._logs_refresh_handler = None
+        self._logs_auto_refresh_handler = None
+        self._logs_auto_checkbox = None
+        self._logs_auto_refresh_timer = None
+        self._logs_finder_handler = None
+        # Logs/Transcripts segmented control
+        self._logs_segment_control = None
+        self._logs_segment_handler = None
+        self._logs_container = None
+        self._transcripts_container = None
+        self._transcripts_text_view = None
+        self._transcripts_scroll_view = None
+        self._transcripts_clear_handler = None
         self._mode_changed_handler = None
         self._save_btn = None
         self._restart_handler = None
-        self._toggle_record_handler = None
-        self._hold_record_handler = None
+        self._hotkey_card: HotkeyCard | None = None
         self._hotkey_recorder = HotkeyRecorder()
         # Setup/Onboarding Tab
         self._setup_action_handlers = []
-        self._perm_mic_status_label = None
-        self._perm_access_status_label = None
-        self._perm_input_status_label = None
+        self._setup_permissions_card = None
         self._setup_preset_status_label = None
         self._onboarding_wizard_callback = None
         # API-Key-Felder werden dynamisch via setattr gesetzt:
@@ -250,7 +256,9 @@ class WelcomeController:
         self._add_tab(tab_view, "Providers", self._build_providers_tab, content_height)
         self._add_tab(tab_view, "Advanced", self._build_advanced_tab, content_height)
         self._add_tab(tab_view, "Refine", self._build_refine_tab, content_height)
-        self._add_tab(tab_view, "Vocabulary", self._build_vocabulary_tab, content_height)
+        self._add_tab(
+            tab_view, "Vocabulary", self._build_vocabulary_tab, content_height
+        )
         self._add_tab(tab_view, "Logs", self._build_logs_tab, content_height)
         self._add_tab(tab_view, "About", self._build_about_tab, content_height)
 
@@ -289,7 +297,9 @@ class WelcomeController:
             self, "open_onboarding_wizard"
         )
         wizard_btn.setTarget_(wizard_handler)
-        wizard_btn.setAction_(objc.selector(wizard_handler.performAction_, signature=b"v@:@"))
+        wizard_btn.setAction_(
+            objc.selector(wizard_handler.performAction_, signature=b"v@:@")
+        )
         self._setup_action_handlers.append(wizard_handler)
         parent_view.addSubview_(wizard_btn)
 
@@ -314,6 +324,7 @@ class WelcomeController:
             check_accessibility_permission,
             check_input_monitoring_permission,
             check_microphone_permission,
+            get_microphone_permission_state,
         )
 
         if action == "open_onboarding_wizard":
@@ -324,35 +335,25 @@ class WelcomeController:
                     pass
             return
 
-        if action == "refresh_permissions":
-            self._refresh_setup_permissions()
+        if action == "perm_mic":
+            mic_state = get_microphone_permission_state()
+            if mic_state == "not_determined":
+                check_microphone_permission(show_alert=False, request=True)
+            else:
+                self._open_privacy_settings("Privacy_Microphone")
+            self._kick_setup_permission_auto_refresh()
             return
 
-        if action == "open_microphone":
-            self._open_privacy_settings("Privacy_Microphone")
-            return
-
-        if action == "open_accessibility":
-            self._open_privacy_settings("Privacy_Accessibility")
-            return
-
-        if action == "open_input_monitoring":
-            self._open_privacy_settings("Privacy_ListenEvent")
-            return
-
-        if action == "request_microphone":
-            check_microphone_permission(show_alert=False, request=True)
-            self._refresh_setup_permissions()
-            return
-
-        if action == "request_accessibility":
+        if action == "perm_access":
             check_accessibility_permission(show_alert=False, request=True)
-            self._refresh_setup_permissions()
+            self._open_privacy_settings("Privacy_Accessibility")
+            self._kick_setup_permission_auto_refresh()
             return
 
-        if action == "request_input_monitoring":
+        if action == "perm_input":
             check_input_monitoring_permission(show_alert=False, request=True)
-            self._refresh_setup_permissions()
+            self._open_privacy_settings("Privacy_ListenEvent")
+            self._kick_setup_permission_auto_refresh()
             return
 
         if action == "apply_mlx_large_preset":
@@ -371,53 +372,38 @@ class WelcomeController:
                 )
             return
 
+        if action == "goto_hotkeys_tab":
+            # Tab index 1 = Hotkeys (Setup=0, Hotkeys=1, Providers=2, ...)
+            if self._tab_view is not None:
+                self._tab_view.selectTabViewItemAtIndex_(1)
+            return
+
     def _refresh_setup_permissions(self) -> None:
-        from AppKit import NSColor  # type: ignore[import-not-found]
+        card = self._setup_permissions_card
+        if card is None:
+            return
+        try:
+            card.refresh()
+        except Exception:
+            pass
 
-        from utils.permissions import (
-            check_accessibility_permission,
-            check_input_monitoring_permission,
-            get_microphone_permission_state,
-        )
+    def _stop_setup_permission_auto_refresh(self) -> None:
+        card = self._setup_permissions_card
+        if card is None:
+            return
+        try:
+            card.stop_auto_refresh()
+        except Exception:
+            pass
 
-        ok_color = _get_color(120, 255, 150)
-        warn_color = _get_color(255, 200, 90)
-        err_color = _get_color(255, 120, 120)
-        neutral_color = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
-
-        def set_status(field, text: str, color) -> None:
-            if field is None:
-                return
-            try:
-                field.setStringValue_(text)
-                field.setTextColor_(color)
-            except Exception:
-                pass
-
-        mic_state = get_microphone_permission_state()
-        if mic_state == "authorized":
-            set_status(self._perm_mic_status_label, "✅ Granted", ok_color)
-        elif mic_state == "not_determined":
-            set_status(self._perm_mic_status_label, "⚠ Not requested yet", warn_color)
-        elif mic_state in ("denied", "restricted"):
-            set_status(self._perm_mic_status_label, "❌ Denied", err_color)
-        else:
-            set_status(self._perm_mic_status_label, "Unknown", neutral_color)
-
-        acc_ok = check_accessibility_permission(show_alert=False)
-        set_status(
-            self._perm_access_status_label,
-            "✅ Granted" if acc_ok else "⚠ Not granted",
-            ok_color if acc_ok else warn_color,
-        )
-
-        input_ok = check_input_monitoring_permission(show_alert=False)
-        set_status(
-            self._perm_input_status_label,
-            "✅ Granted" if input_ok else "⚠ Not granted",
-            ok_color if input_ok else warn_color,
-        )
-        return
+    def _kick_setup_permission_auto_refresh(self) -> None:
+        card = self._setup_permissions_card
+        if card is None:
+            return
+        try:
+            card.kick_auto_refresh()
+        except Exception:
+            pass
 
     def _select_tab(self, label: str) -> None:
         if self._tab_view is None:
@@ -428,166 +414,36 @@ class WelcomeController:
             pass
 
     def _build_setup_permissions_card(self, y: int, parent_view=None) -> int:
-        from AppKit import (  # type: ignore[import-not-found]
-            NSBezelStyleRounded,
-            NSButton,
-            NSColor,
-            NSFont,
-            NSFontWeightMedium,
-            NSFontWeightSemibold,
-            NSMakeRect,
-            NSTextField,
-        )
         import objc  # type: ignore[import-not-found]
+        from ui.permissions_card import PermissionsCard
 
         parent_view = parent_view or self._content_view
 
-        card_height = 220
-        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_height = 190
         card_y = y - card_height - CARD_SPACING
 
-        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
-        parent_view.addSubview_(card)
-
-        base_x = WELCOME_PADDING + CARD_PADDING
-        right_edge = WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING
-
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 28, 320, 18)
-        )
-        title.setStringValue_("✅ Quickstart (macOS)")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
-
-        desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 46, card_width - 2 * CARD_PADDING, 14)
-        )
-        desc.setStringValue_("Grant these once so dictation + auto‑paste work reliably.")
-        desc.setBezeled_(False)
-        desc.setDrawsBackground_(False)
-        desc.setEditable_(False)
-        desc.setSelectable_(False)
-        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-        parent_view.addSubview_(desc)
-
-        row_height = 30
-        row_y = card_y + card_height - 84
-        label_w = 130
-        status_x = base_x + label_w + 8
-        button_w = 72
-        button_h = 22
-        button_spacing = 8
-        request_x = right_edge - button_w
-        open_x = request_x - button_spacing - button_w
-        status_w = max(80, open_x - status_x - 8)
-
-        def add_row(
-            row_y: int,
-            label_text: str,
-            status_field_attr: str,
-            open_action: str,
-            request_action: str,
-        ) -> None:
-            label = NSTextField.alloc().initWithFrame_(
-                NSMakeRect(base_x, row_y + 4, label_w, 16)
+        def bind_action(btn, action: str) -> None:
+            handler = _SetupActionHandler.alloc().initWithController_action_(
+                self, action
             )
-            label.setStringValue_(label_text)
-            label.setBezeled_(False)
-            label.setDrawsBackground_(False)
-            label.setEditable_(False)
-            label.setSelectable_(False)
-            label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.75))
-            parent_view.addSubview_(label)
+            btn.setTarget_(handler)
+            btn.setAction_(objc.selector(handler.performAction_, signature=b"v@:@"))
+            self._setup_action_handlers.append(handler)
 
-            status_field = NSTextField.alloc().initWithFrame_(
-                NSMakeRect(status_x, row_y + 2, status_w, 18)
-            )
-            status_field.setStringValue_("…")
-            status_field.setBezeled_(False)
-            status_field.setDrawsBackground_(False)
-            status_field.setEditable_(False)
-            status_field.setSelectable_(False)
-            status_field.setFont_(NSFont.systemFontOfSize_(11))
-            status_field.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-            parent_view.addSubview_(status_field)
-            setattr(self, status_field_attr, status_field)
-
-            open_btn = NSButton.alloc().initWithFrame_(
-                NSMakeRect(open_x, row_y, button_w, button_h)
-            )
-            open_btn.setTitle_("Open")
-            open_btn.setBezelStyle_(NSBezelStyleRounded)
-            open_btn.setFont_(NSFont.systemFontOfSize_(11))
-            open_handler = _SetupActionHandler.alloc().initWithController_action_(
-                self, open_action
-            )
-            open_btn.setTarget_(open_handler)
-            open_btn.setAction_(
-                objc.selector(open_handler.performAction_, signature=b"v@:@")
-            )
-            self._setup_action_handlers.append(open_handler)
-            parent_view.addSubview_(open_btn)
-
-            req_btn = NSButton.alloc().initWithFrame_(
-                NSMakeRect(request_x, row_y, button_w, button_h)
-            )
-            req_btn.setTitle_("Request")
-            req_btn.setBezelStyle_(NSBezelStyleRounded)
-            req_btn.setFont_(NSFont.systemFontOfSize_(11))
-            req_handler = _SetupActionHandler.alloc().initWithController_action_(
-                self, request_action
-            )
-            req_btn.setTarget_(req_handler)
-            req_btn.setAction_(
-                objc.selector(req_handler.performAction_, signature=b"v@:@")
-            )
-            self._setup_action_handlers.append(req_handler)
-            parent_view.addSubview_(req_btn)
-
-        add_row(
-            row_y,
-            "Microphone",
-            "_perm_mic_status_label",
-            "open_microphone",
-            "request_microphone",
+        self._setup_permissions_card = PermissionsCard.build(
+            parent_view=parent_view,
+            window_width=WELCOME_WIDTH,
+            card_y=card_y,
+            card_height=card_height,
+            outer_padding=WELCOME_PADDING,
+            inner_padding=CARD_PADDING,
+            title="Permissions",
+            description=(
+                "Microphone is required. Accessibility improves auto‑paste.\n"
+                "Input Monitoring enables Hold + some global hotkeys."
+            ),
+            bind_action=bind_action,
         )
-        add_row(
-            row_y - row_height,
-            "Input Monitoring",
-            "_perm_input_status_label",
-            "open_input_monitoring",
-            "request_input_monitoring",
-        )
-        add_row(
-            row_y - 2 * row_height,
-            "Accessibility",
-            "_perm_access_status_label",
-            "open_accessibility",
-            "request_accessibility",
-        )
-
-        refresh_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(right_edge - 90, card_y + 10, 90, 24)
-        )
-        refresh_btn.setTitle_("Refresh")
-        refresh_btn.setBezelStyle_(NSBezelStyleRounded)
-        refresh_btn.setFont_(NSFont.systemFontOfSize_(11))
-        refresh_handler = _SetupActionHandler.alloc().initWithController_action_(
-            self, "refresh_permissions"
-        )
-        refresh_btn.setTarget_(refresh_handler)
-        refresh_btn.setAction_(
-            objc.selector(refresh_handler.performAction_, signature=b"v@:@")
-        )
-        self._setup_action_handlers.append(refresh_handler)
-        parent_view.addSubview_(refresh_btn)
 
         return card_y - CARD_SPACING
 
@@ -627,7 +483,9 @@ class WelcomeController:
         parent_view.addSubview_(title)
 
         desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 46, card_width - 2 * CARD_PADDING, 14)
+            NSMakeRect(
+                base_x, card_y + card_height - 46, card_width - 2 * CARD_PADDING, 14
+            )
         )
         desc.setStringValue_("One click presets for fast local dictation (MLX/Metal).")
         desc.setBezeled_(False)
@@ -641,9 +499,7 @@ class WelcomeController:
         btn_w = 150
         btn_h = 28
         btn_y = card_y + 56
-        btn1 = NSButton.alloc().initWithFrame_(
-            NSMakeRect(base_x, btn_y, btn_w, btn_h)
-        )
+        btn1 = NSButton.alloc().initWithFrame_(NSMakeRect(base_x, btn_y, btn_w, btn_h))
         btn1.setTitle_("Use MLX Large")
         btn1.setBezelStyle_(NSBezelStyleRounded)
         btn1.setFont_(NSFont.systemFontOfSize_(12))
@@ -686,6 +542,8 @@ class WelcomeController:
 
     def _build_setup_howto_card(self, y: int, parent_view=None) -> int:
         from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
             NSColor,
             NSFont,
             NSFontWeightMedium,
@@ -693,19 +551,38 @@ class WelcomeController:
             NSMakeRect,
             NSTextField,
         )
+        import objc  # type: ignore[import-not-found]
 
         parent_view = parent_view or self._content_view
 
-        card_height = 125
+        # Hotkeys aus .env auslesen
+        toggle_hk = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip().upper()
+        hold_hk = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip().upper()
+
+        # Hotkey-Info aufbauen (beide anzeigen wenn gesetzt)
+        hotkey_parts = []
+        if toggle_hk:
+            hotkey_parts.append(f"Toggle: {toggle_hk}")
+        if hold_hk:
+            hotkey_parts.append(f"Hold: {hold_hk}")
+
+        if hotkey_parts:
+            hotkey_info = " • ".join(hotkey_parts)
+        else:
+            hotkey_info = "No hotkey configured"
+
+        card_height = 105
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height - CARD_SPACING
         card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
         parent_view.addSubview_(card)
 
         base_x = WELCOME_PADDING + CARD_PADDING
+        content_w = card_width - 2 * CARD_PADDING
 
+        # Titel
         title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 28, 320, 18)
+            NSMakeRect(base_x, card_y + card_height - 28, 80, 18)
         )
         title.setStringValue_("🎤 Try it")
         title.setBezeled_(False)
@@ -716,13 +593,26 @@ class WelcomeController:
         title.setTextColor_(NSColor.whiteColor())
         parent_view.addSubview_(title)
 
+        # Hotkey-Info rechts neben Titel
+        hotkey_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x + 80, card_y + card_height - 28, content_w - 80, 18)
+        )
+        hotkey_label.setStringValue_(hotkey_info)
+        hotkey_label.setBezeled_(False)
+        hotkey_label.setDrawsBackground_(False)
+        hotkey_label.setEditable_(False)
+        hotkey_label.setSelectable_(False)
+        hotkey_label.setFont_(NSFont.systemFontOfSize_(11))
+        hotkey_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(hotkey_label)
+
+        # Beschreibung
         body = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 28, card_width - 2 * CARD_PADDING, 64)
+            NSMakeRect(base_x, card_y + card_height - 60, content_w, 28)
         )
         body.setStringValue_(
-            "1) Press your hotkey and speak.\n"
-            "2) Release / toggle to stop.\n"
-            "3) WhisperGo copies + pastes the text into the frontmost app."
+            "Press/hold your hotkey and speak. WhisperGo transcribes and "
+            "pastes the text into the frontmost app."
         )
         body.setBezeled_(False)
         body.setDrawsBackground_(False)
@@ -732,16 +622,37 @@ class WelcomeController:
         body.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
         parent_view.addSubview_(body)
 
-        hint = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 10, card_width - 2 * CARD_PADDING, 14)
+        # Footer-Zeile: Button links, Hint rechts
+        footer_y = card_y + 12
+
+        # "Change Hotkey" Button
+        change_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x, footer_y, 130, 24)
         )
-        hint.setStringValue_("If paste fails: grant Accessibility. If hotkeys fail: grant Input Monitoring.")
+        change_btn.setTitle_("Change Hotkey…")
+        change_btn.setBezelStyle_(NSBezelStyleRounded)
+        change_btn.setFont_(NSFont.systemFontOfSize_(11))
+        h_change = _SetupActionHandler.alloc().initWithController_action_(
+            self, "goto_hotkeys_tab"
+        )
+        change_btn.setTarget_(h_change)
+        change_btn.setAction_(objc.selector(h_change.performAction_, signature=b"v@:@"))
+        self._setup_action_handlers.append(h_change)
+        parent_view.addSubview_(change_btn)
+
+        # Hint rechts vom Button
+        hint = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x + 140, footer_y + 5, content_w - 140, 14)
+        )
+        hint.setStringValue_(
+            "Paste fails? Grant Accessibility. Hotkeys fail? Grant Input Monitoring."
+        )
         hint.setBezeled_(False)
         hint.setDrawsBackground_(False)
         hint.setEditable_(False)
         hint.setSelectable_(False)
         hint.setFont_(NSFont.systemFontOfSize_(10))
-        hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.55))
+        hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.45))
         parent_view.addSubview_(hint)
 
         return card_y - CARD_SPACING
@@ -776,210 +687,38 @@ class WelcomeController:
         self._build_about_card(y_pos, parent_view)
 
     def _build_hotkey_card(self, y: int, parent_view=None) -> int:
-        """Erstellt Hotkey-Karte mit Eingabefeld und Restart-Button."""
-        from AppKit import (  # type: ignore[import-not-found]
-            NSBezelStyleRounded,
-            NSButton,
-            NSColor,
-            NSFont,
-            NSFontWeightMedium,
-            NSFontWeightSemibold,
-            NSMakeRect,
-            NSTextAlignmentCenter,
-            NSTextField,
-        )
+        """Erstellt Hotkey-Karte mit HotkeyCard-Komponente."""
         import objc  # type: ignore[import-not-found]
 
-        # 3 Zeilen: Toggle + Hold + Restart
-        card_height = 150
-        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        card_height = 220  # Erhöht für Preset-Buttons
         card_y = y - card_height - CARD_SPACING
-
         parent_view = parent_view or self._content_view
-        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
-        parent_view.addSubview_(card)
 
-        # Section-Titel
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(
-                WELCOME_PADDING + CARD_PADDING, card_y + card_height - 28, 200, 18
+        def bind_action(btn, action: str) -> None:
+            # Route preset/record actions to _handle_hotkey_action
+            handler = _HotkeyActionHandler.alloc().initWithController_action_(
+                self, action
             )
-        )
-        title.setStringValue_("⌨️ Hotkeys")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
+            btn.setTarget_(handler)
+            btn.setAction_(objc.selector(handler.performAction_, signature=b"v@:@"))
+            self._setup_action_handlers.append(handler)
 
-        # Beschreibung
-        desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(
-                WELCOME_PADDING + CARD_PADDING, card_y + card_height - 46, 350, 14
-            )
+        self._hotkey_card = HotkeyCard.build(
+            parent_view=parent_view,
+            window_width=WELCOME_WIDTH,
+            card_y=card_y,
+            card_height=card_height,
+            outer_padding=WELCOME_PADDING,
+            inner_padding=CARD_PADDING,
+            title="⌨️ Hotkeys",
+            description="Press to start/stop recording.\nChanges apply immediately.",
+            bind_action=bind_action,
+            hotkey_recorder=self._hotkey_recorder,
+            on_hotkey_change=self._apply_hotkey_change,
+            on_after_change=self._on_settings_changed,
+            show_presets=True,
+            show_hint=True,
         )
-        desc.setStringValue_("Press to start/stop recording")
-        desc.setBezeled_(False)
-        desc.setDrawsBackground_(False)
-        desc.setEditable_(False)
-        desc.setSelectable_(False)
-        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
-        parent_view.addSubview_(desc)
-
-        # Toggle + Hold Hotkeys (parallel möglich)
-        button_width = 60
-        button_spacing = 8
-        label_width = 70
-        buttons_total = button_width + button_spacing
-        base_x = WELCOME_PADDING + CARD_PADDING
-        field_x = base_x + label_width + 8
-        field_width = (
-            card_width
-            - 2 * CARD_PADDING
-            - label_width
-            - 8
-            - buttons_total
-        )
-
-        legacy_hotkey_env = get_env_setting("WHISPER_GO_HOTKEY")
-        legacy_hotkey = legacy_hotkey_env or self.hotkey
-        legacy_mode = (get_env_setting("WHISPER_GO_HOTKEY_MODE") or "toggle").lower()
-        toggle_default = get_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
-        hold_default = get_env_setting("WHISPER_GO_HOLD_HOTKEY")
-        if toggle_default is None and hold_default is None:
-            if legacy_hotkey_env is None:
-                # Fresh install default: Fn/Globe as hold hotkey
-                hold_default = "fn"
-                toggle_default = ""
-            elif legacy_mode == "hold":
-                hold_default = legacy_hotkey
-                toggle_default = ""
-            else:
-                toggle_default = legacy_hotkey
-                hold_default = ""
-
-        # Toggle Hotkey Feld (oben)
-        toggle_y = card_y + 76
-        toggle_label = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, toggle_y + 4, label_width, 16)
-        )
-        toggle_label.setStringValue_("Toggle:")
-        toggle_label.setBezeled_(False)
-        toggle_label.setDrawsBackground_(False)
-        toggle_label.setEditable_(False)
-        toggle_label.setSelectable_(False)
-        toggle_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        toggle_label.setTextColor_(
-            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7)
-        )
-        parent_view.addSubview_(toggle_label)
-
-        toggle_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(field_x, toggle_y, field_width, 24)
-        )
-        toggle_field.setPlaceholderString_("Toggle hotkey")
-        toggle_field.setStringValue_((toggle_default or "").upper())
-        toggle_field.setFont_(NSFont.systemFontOfSize_(13))
-        toggle_field.setAlignment_(NSTextAlignmentCenter)
-        parent_view.addSubview_(toggle_field)
-        self._toggle_hotkey_field = toggle_field
-
-        record_x = WELCOME_WIDTH - WELCOME_PADDING - CARD_PADDING - button_width
-
-        toggle_record_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(record_x, toggle_y, button_width, 24)
-        )
-        toggle_record_btn.setTitle_("Record")
-        toggle_record_btn.setBezelStyle_(NSBezelStyleRounded)
-        toggle_record_btn.setFont_(NSFont.systemFontOfSize_(11))
-        toggle_record_handler = _RecordHotkeyHandler.alloc().initWithController_kind_(
-            self, "toggle"
-        )
-        toggle_record_btn.setTarget_(toggle_record_handler)
-        toggle_record_btn.setAction_(
-            objc.selector(toggle_record_handler.recordHotkey_, signature=b"v@:@")
-        )
-        self._toggle_record_handler = toggle_record_handler
-        self._toggle_record_btn = toggle_record_btn
-        parent_view.addSubview_(toggle_record_btn)
-
-        # Hold Hotkey Feld (unten)
-        hold_y = card_y + 44
-        hold_label = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, hold_y + 4, label_width, 16)
-        )
-        hold_label.setStringValue_("Hold:")
-        hold_label.setBezeled_(False)
-        hold_label.setDrawsBackground_(False)
-        hold_label.setEditable_(False)
-        hold_label.setSelectable_(False)
-        hold_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        hold_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
-        parent_view.addSubview_(hold_label)
-
-        hold_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(field_x, hold_y, field_width, 24)
-        )
-        hold_field.setPlaceholderString_("Hold hotkey (Push‑to‑Talk)")
-        hold_field.setStringValue_((hold_default or "").upper())
-        hold_field.setFont_(NSFont.systemFontOfSize_(13))
-        hold_field.setAlignment_(NSTextAlignmentCenter)
-        parent_view.addSubview_(hold_field)
-        self._hold_hotkey_field = hold_field
-
-        hold_record_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(record_x, hold_y, button_width, 24)
-        )
-        hold_record_btn.setTitle_("Record")
-        hold_record_btn.setBezelStyle_(NSBezelStyleRounded)
-        hold_record_btn.setFont_(NSFont.systemFontOfSize_(11))
-        hold_record_handler = _RecordHotkeyHandler.alloc().initWithController_kind_(
-            self, "hold"
-        )
-        hold_record_btn.setTarget_(hold_record_handler)
-        hold_record_btn.setAction_(
-            objc.selector(hold_record_handler.recordHotkey_, signature=b"v@:@")
-        )
-        self._hold_record_handler = hold_record_handler
-        self._hold_record_btn = hold_record_btn
-        parent_view.addSubview_(hold_record_btn)
-
-        # Restart-Button (gilt für beide Hotkeys)
-        restart_width = button_width * 2 + button_spacing
-        restart_x = record_x - button_width - button_spacing
-        restart_y = card_y + 12
-        restart_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(restart_x, restart_y, restart_width, 24)
-        )
-        restart_btn.setTitle_("Restart")
-        restart_btn.setBezelStyle_(NSBezelStyleRounded)
-        restart_btn.setFont_(NSFont.systemFontOfSize_(11))
-
-        restart_handler = _RestartButtonHandler.alloc().initWithController_(self)
-        restart_btn.setTarget_(restart_handler)
-        restart_btn.setAction_(
-            objc.selector(restart_handler.restartApp_, signature=b"v@:@")
-        )
-        self._restart_handler = restart_handler
-        parent_view.addSubview_(restart_btn)
-
-        # Status / validation feedback (inline, no modal required)
-        status_width = max(80, restart_x - base_x - 8)
-        status = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, restart_y + 4, status_width, 16)
-        )
-        status.setStringValue_("")
-        status.setBezeled_(False)
-        status.setDrawsBackground_(False)
-        status.setEditable_(False)
-        status.setSelectable_(False)
-        status.setFont_(NSFont.systemFontOfSize_(10))
-        status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-        parent_view.addSubview_(status)
-        self._hotkey_status_label = status
 
         return card_y - CARD_SPACING
 
@@ -1029,9 +768,7 @@ class WelcomeController:
         row_y -= row_spacing
 
         # Groq (for refine)
-        self._build_api_row_compact(
-            row_y, "Groq", "GROQ_API_KEY", "groq", parent_view
-        )
+        self._build_api_row_compact(row_y, "Groq", "GROQ_API_KEY", "groq", parent_view)
         row_y -= row_spacing
 
         # OpenAI (for refine)
@@ -1274,9 +1011,7 @@ class WelcomeController:
         desc = NSTextField.alloc().initWithFrame_(
             NSMakeRect(base_x, card_y + card_height - 46, control_width, 14)
         )
-        desc.setStringValue_(
-            "Tweaks for local transcription (Whisper / Faster / MLX)."
-        )
+        desc.setStringValue_("Tweaks for local transcription (Whisper / Faster / MLX).")
         desc.setBezeled_(False)
         desc.setDrawsBackground_(False)
         desc.setEditable_(False)
@@ -1326,7 +1061,9 @@ class WelcomeController:
         device_popup.setFont_(NSFont.systemFontOfSize_(11))
         for d in DEVICE_OPTIONS:
             device_popup.addItemWithTitle_(d)
-        current_device = (get_env_setting("WHISPER_GO_DEVICE") or "auto").strip().lower()
+        current_device = (
+            (get_env_setting("WHISPER_GO_DEVICE") or "auto").strip().lower()
+        )
         if current_device not in DEVICE_OPTIONS:
             current_device = "auto"
         device_popup.selectItemWithTitle_(current_device)
@@ -1359,7 +1096,9 @@ class WelcomeController:
         fast_popup.setFont_(NSFont.systemFontOfSize_(11))
         for v in BOOL_OVERRIDE_OPTIONS:
             fast_popup.addItemWithTitle_(v)
-        fast_popup.selectItemWithTitle_(_bool_override_from_env("WHISPER_GO_LOCAL_FAST"))
+        fast_popup.selectItemWithTitle_(
+            _bool_override_from_env("WHISPER_GO_LOCAL_FAST")
+        )
         self._local_fast_popup = fast_popup
         parent_view.addSubview_(fast_popup)
         current_y -= row_height
@@ -1408,7 +1147,9 @@ class WelcomeController:
         )
         temp_field.setFont_(NSFont.systemFontOfSize_(11))
         temp_field.setPlaceholderString_("e.g. 0.0 or 0.0,0.2,0.4")
-        temp_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_TEMPERATURE") or "")
+        temp_field.setStringValue_(
+            get_env_setting("WHISPER_GO_LOCAL_TEMPERATURE") or ""
+        )
         self._temperature_field = temp_field
         parent_view.addSubview_(temp_field)
         current_y -= row_height
@@ -1420,7 +1161,9 @@ class WelcomeController:
         )
         compute_field.setFont_(NSFont.systemFontOfSize_(11))
         compute_field.setPlaceholderString_("default (e.g. int8, int8_float16)")
-        compute_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_COMPUTE_TYPE") or "")
+        compute_field.setStringValue_(
+            get_env_setting("WHISPER_GO_LOCAL_COMPUTE_TYPE") or ""
+        )
         self._compute_type_field = compute_field
         parent_view.addSubview_(compute_field)
         current_y -= row_height
@@ -1432,7 +1175,9 @@ class WelcomeController:
         )
         threads_field.setFont_(NSFont.systemFontOfSize_(11))
         threads_field.setPlaceholderString_("0 = auto")
-        threads_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_CPU_THREADS") or "")
+        threads_field.setStringValue_(
+            get_env_setting("WHISPER_GO_LOCAL_CPU_THREADS") or ""
+        )
         self._cpu_threads_field = threads_field
         parent_view.addSubview_(threads_field)
         current_y -= row_height
@@ -1444,7 +1189,9 @@ class WelcomeController:
         )
         workers_field.setFont_(NSFont.systemFontOfSize_(11))
         workers_field.setPlaceholderString_("1")
-        workers_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_NUM_WORKERS") or "")
+        workers_field.setStringValue_(
+            get_env_setting("WHISPER_GO_LOCAL_NUM_WORKERS") or ""
+        )
         self._num_workers_field = workers_field
         parent_view.addSubview_(workers_field)
         current_y -= row_height
@@ -1685,19 +1432,21 @@ class WelcomeController:
     def _build_logs_card(
         self, y: int, parent_view=None, tab_height: int | None = None
     ) -> int:
-        """Erstellt Logs Tab mit aktuellem Log-Auszug."""
+        """Erstellt Logs/Transcripts Tab mit Segmented Control."""
         from AppKit import (  # type: ignore[import-not-found]
             NSBezelBorder,
             NSBezelStyleRounded,
             NSButton,
             NSColor,
             NSFont,
-            NSFontWeightMedium,
-            NSFontWeightSemibold,
             NSMakeRect,
             NSScrollView,
+            NSSegmentedControl,
+            NSSegmentStyleTexturedRounded,
             NSTextField,
             NSTextView,
+            NSSwitchButton,
+            NSView,
         )
         import objc  # type: ignore[import-not-found]
 
@@ -1714,22 +1463,80 @@ class WelcomeController:
         base_x = WELCOME_PADDING + CARD_PADDING
         content_width = card_width - 2 * CARD_PADDING
 
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 28, 120, 18)
+        # Segmented Control: Logs | Transcripts
+        segment_y = card_y + card_height - 30
+        segment = NSSegmentedControl.alloc().initWithFrame_(
+            NSMakeRect(base_x, segment_y, 180, 22)
         )
-        title.setStringValue_("🪵 Logs")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
+        segment.setSegmentCount_(2)
+        segment.setLabel_forSegment_("🪵 Logs", 0)
+        segment.setLabel_forSegment_("📝 Transcripts", 1)
+        segment.setWidth_forSegment_(85, 0)
+        segment.setWidth_forSegment_(95, 1)
+        segment.setSelectedSegment_(0)
+        try:
+            segment.setSegmentStyle_(NSSegmentStyleTexturedRounded)
+        except Exception:
+            pass
+        segment_handler = _LogsSegmentHandler.alloc().initWithController_(self)
+        segment.setTarget_(segment_handler)
+        segment.setAction_(
+            objc.selector(segment_handler.segmentChanged_, signature=b"v@:@")
+        )
+        self._logs_segment_control = segment
+        self._logs_segment_handler = segment_handler
+        parent_view.addSubview_(segment)
 
-        refresh_btn = NSButton.alloc().initWithFrame_(
+        # Content area dimensions
+        content_y = card_y + 16
+        content_height = card_height - 56
+
+        # ===== LOGS CONTAINER =====
+        logs_container = NSView.alloc().initWithFrame_(
+            NSMakeRect(base_x, content_y, content_width, content_height)
+        )
+        self._logs_container = logs_container
+        parent_view.addSubview_(logs_container)
+
+        # Auto-refresh Checkbox (in logs container header)
+        auto_checkbox = NSButton.alloc().initWithFrame_(
+            NSMakeRect(content_width - 230, content_height - 22, 100, 20)
+        )
+        auto_checkbox.setButtonType_(NSSwitchButton)
+        auto_checkbox.setTitle_("Auto-refresh")
+        auto_checkbox.setFont_(NSFont.systemFontOfSize_(10))
+        auto_checkbox.setState_(1)
+        auto_handler = _LogsAutoRefreshHandler.alloc().initWithController_(self)
+        auto_checkbox.setTarget_(auto_handler)
+        auto_checkbox.setAction_(
+            objc.selector(auto_handler.toggleAutoRefresh_, signature=b"v@:@")
+        )
+        self._logs_auto_refresh_handler = auto_handler
+        self._logs_auto_checkbox = auto_checkbox
+        logs_container.addSubview_(auto_checkbox)
+
+        # Finder Button
+        btn_w = 65
+        btn_spacing = 4
+        finder_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(
-                base_x + content_width - 70, card_y + card_height - 32, 70, 22
+                content_width - btn_w * 2 - btn_spacing, content_height - 24, btn_w, 22
             )
+        )
+        finder_btn.setTitle_("Finder")
+        finder_btn.setBezelStyle_(NSBezelStyleRounded)
+        finder_btn.setFont_(NSFont.systemFontOfSize_(11))
+        finder_handler = _OpenLogsInFinderHandler.alloc().initWithController_(self)
+        finder_btn.setTarget_(finder_handler)
+        finder_btn.setAction_(
+            objc.selector(finder_handler.openInFinder_, signature=b"v@:@")
+        )
+        self._logs_finder_handler = finder_handler
+        logs_container.addSubview_(finder_btn)
+
+        # Refresh Button
+        refresh_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(content_width - btn_w, content_height - 24, btn_w, 22)
         )
         refresh_btn.setTitle_("Refresh")
         refresh_btn.setBezelStyle_(NSBezelStyleRounded)
@@ -1740,12 +1547,25 @@ class WelcomeController:
             objc.selector(refresh_handler.refreshLogs_, signature=b"v@:@")
         )
         self._logs_refresh_handler = refresh_handler
-        parent_view.addSubview_(refresh_btn)
+        logs_container.addSubview_(refresh_btn)
 
-        scroll_y = card_y + 16
-        scroll_height = card_height - 56
+        # Log-Pfad
+        path_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(0, content_height - 20, content_width - 240, 14)
+        )
+        path_label.setStringValue_(str(LOG_FILE))
+        path_label.setBezeled_(False)
+        path_label.setDrawsBackground_(False)
+        path_label.setEditable_(False)
+        path_label.setSelectable_(True)
+        path_label.setFont_(NSFont.systemFontOfSize_(9))
+        path_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.4))
+        logs_container.addSubview_(path_label)
+
+        # Logs ScrollView
+        scroll_height = content_height - 32
         scroll = NSScrollView.alloc().initWithFrame_(
-            NSMakeRect(base_x, scroll_y, content_width, scroll_height)
+            NSMakeRect(0, 0, content_width, scroll_height)
         )
         scroll.setBorderType_(NSBezelBorder)
         scroll.setHasVerticalScroller_(True)
@@ -1754,11 +1574,12 @@ class WelcomeController:
             scroll.setDrawsBackground_(False)
         except Exception:
             pass
+        self._logs_scroll_view = scroll
 
         text_view = NSTextView.alloc().initWithFrame_(
             NSMakeRect(0, 0, content_width, scroll_height)
         )
-        text_view.setFont_(NSFont.userFixedPitchFontOfSize_(11))
+        text_view.setFont_(NSFont.userFixedPitchFontOfSize_(10))
         text_view.setTextColor_(NSColor.whiteColor())
         try:
             text_view.setDrawsBackground_(False)
@@ -1771,36 +1592,223 @@ class WelcomeController:
         tc = text_view.textContainer()
         if tc is not None:
             tc.setWidthTracksTextView_(True)
-
         text_view.setString_(self._get_logs_text())
         scroll.setDocumentView_(text_view)
-        parent_view.addSubview_(scroll)
-
+        logs_container.addSubview_(scroll)
         self._logs_text_view = text_view
+
+        # ===== TRANSCRIPTS CONTAINER =====
+        transcripts_container = NSView.alloc().initWithFrame_(
+            NSMakeRect(base_x, content_y, content_width, content_height)
+        )
+        transcripts_container.setHidden_(True)  # Initially hidden
+        self._transcripts_container = transcripts_container
+        parent_view.addSubview_(transcripts_container)
+
+        # Clear History Button
+        clear_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(content_width - btn_w, content_height - 24, btn_w, 22)
+        )
+        clear_btn.setTitle_("Clear")
+        clear_btn.setBezelStyle_(NSBezelStyleRounded)
+        clear_btn.setFont_(NSFont.systemFontOfSize_(11))
+        clear_handler = _ClearTranscriptsHandler.alloc().initWithController_(self)
+        clear_btn.setTarget_(clear_handler)
+        clear_btn.setAction_(
+            objc.selector(clear_handler.clearTranscripts_, signature=b"v@:@")
+        )
+        self._transcripts_clear_handler = clear_handler
+        transcripts_container.addSubview_(clear_btn)
+
+        # Refresh Transcripts Button
+        refresh_t_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                content_width - btn_w * 2 - btn_spacing, content_height - 24, btn_w, 22
+            )
+        )
+        refresh_t_btn.setTitle_("Refresh")
+        refresh_t_btn.setBezelStyle_(NSBezelStyleRounded)
+        refresh_t_btn.setFont_(NSFont.systemFontOfSize_(11))
+        refresh_t_btn.setTarget_(clear_handler)
+        refresh_t_btn.setAction_(
+            objc.selector(clear_handler.refreshTranscripts_, signature=b"v@:@")
+        )
+        transcripts_container.addSubview_(refresh_t_btn)
+
+        # Transcripts count label
+        count_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(0, content_height - 20, content_width - 150, 14)
+        )
+        count_label.setStringValue_("Recent transcriptions")
+        count_label.setBezeled_(False)
+        count_label.setDrawsBackground_(False)
+        count_label.setEditable_(False)
+        count_label.setSelectable_(False)
+        count_label.setFont_(NSFont.systemFontOfSize_(11))
+        count_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        transcripts_container.addSubview_(count_label)
+
+        # Transcripts ScrollView
+        t_scroll = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_width, scroll_height)
+        )
+        t_scroll.setBorderType_(NSBezelBorder)
+        t_scroll.setHasVerticalScroller_(True)
+        t_scroll.setHasHorizontalScroller_(False)
+        try:
+            t_scroll.setDrawsBackground_(False)
+        except Exception:
+            pass
+        self._transcripts_scroll_view = t_scroll
+
+        t_text_view = NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_width, scroll_height)
+        )
+        t_text_view.setFont_(NSFont.systemFontOfSize_(11))
+        t_text_view.setTextColor_(NSColor.whiteColor())
+        try:
+            t_text_view.setDrawsBackground_(False)
+        except Exception:
+            pass
+        t_text_view.setEditable_(False)
+        t_text_view.setSelectable_(True)
+        t_text_view.setVerticallyResizable_(True)
+        t_text_view.setHorizontallyResizable_(False)
+        tc = t_text_view.textContainer()
+        if tc is not None:
+            tc.setWidthTracksTextView_(True)
+        t_text_view.setString_(self._get_transcripts_text())
+        t_scroll.setDocumentView_(t_text_view)
+        transcripts_container.addSubview_(t_scroll)
+        self._transcripts_text_view = t_text_view
+
+        # Initial scroll and auto-refresh
+        self._scroll_logs_to_bottom()
+        self._start_logs_auto_refresh()
 
         return card_y - CARD_SPACING
 
-    def _get_logs_text(self, max_chars: int = 12000) -> str:
+    def _get_transcripts_text(self) -> str:
+        """Lädt und formatiert die Transkript-Historie."""
+        from utils.history import get_recent_transcripts
+
+        try:
+            entries = get_recent_transcripts(count=50)
+            if not entries:
+                return (
+                    "No transcriptions yet.\n\nYour transcribed texts will appear here."
+                )
+
+            lines = []
+            for entry in entries:
+                ts = entry.get("timestamp", "")[:19].replace("T", " ")
+                text = entry.get("text", "").strip()
+                mode = entry.get("mode", "")
+                lang = entry.get("language", "")
+
+                header = f"[{ts}]"
+                if mode or lang:
+                    meta = " ".join(filter(None, [mode, lang]))
+                    header += f" ({meta})"
+
+                lines.append(header)
+                lines.append(text)
+                lines.append("")
+
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Could not load transcripts: {e}"
+
+    def _refresh_transcripts(self) -> None:
+        """Aktualisiert die Transkript-Anzeige."""
+        if self._transcripts_text_view:
+            try:
+                self._transcripts_text_view.setString_(self._get_transcripts_text())
+                self._scroll_transcripts_to_top()
+            except Exception:
+                pass
+
+    def _scroll_transcripts_to_top(self) -> None:
+        """Scrollt die Transcripts-Ansicht nach oben (neueste zuerst)."""
+        if self._transcripts_text_view:
+            try:
+                self._transcripts_text_view.scrollRangeToVisible_((0, 0))
+            except Exception:
+                pass
+
+    def _clear_transcripts(self) -> None:
+        """Löscht die Transkript-Historie."""
+        from utils.history import clear_history
+
+        clear_history()
+        self._refresh_transcripts()
+
+    def _switch_logs_segment(self, segment_index: int) -> None:
+        """Wechselt zwischen Logs und Transcripts Ansicht."""
+        if self._logs_container and self._transcripts_container:
+            if segment_index == 0:  # Logs
+                self._logs_container.setHidden_(False)
+                self._transcripts_container.setHidden_(True)
+            else:  # Transcripts
+                self._logs_container.setHidden_(True)
+                self._transcripts_container.setHidden_(False)
+                self._refresh_transcripts()
+
+    def _get_logs_text(self, max_chars: int = 15000) -> str:
         """Liest einen Ausschnitt der aktuellen Log-Datei."""
         try:
             if not LOG_FILE.exists():
-                return "No logs yet."
+                return "No logs yet.\n\nLog file will appear at:\n" + str(LOG_FILE)
             text = LOG_FILE.read_text(encoding="utf-8", errors="ignore")
             if len(text) > max_chars:
-                return text[-max_chars:]
+                return "... (truncated)\n\n" + text[-max_chars:]
             return text
         except Exception as e:
             return f"Could not read logs: {e}"
 
     def _refresh_logs(self) -> None:
+        """Aktualisiert die Log-Anzeige und scrollt nach unten."""
         if self._logs_text_view:
             try:
                 self._logs_text_view.setString_(self._get_logs_text())
+                self._scroll_logs_to_bottom()
             except Exception:
                 pass
 
+    def _scroll_logs_to_bottom(self) -> None:
+        """Scrollt die Log-Ansicht ans Ende."""
+        if self._logs_text_view:
+            try:
+                length = len(self._logs_text_view.string())
+                self._logs_text_view.scrollRangeToVisible_((length, 0))
+            except Exception:
+                pass
+
+    def _start_logs_auto_refresh(self) -> None:
+        """Startet den Auto-Refresh Timer für Logs (alle 2 Sekunden)."""
+        from Foundation import NSTimer  # type: ignore[import-not-found]
+
+        self._stop_logs_auto_refresh()
+
+        def tick(_timer) -> None:
+            if self._logs_auto_checkbox and self._logs_auto_checkbox.state():
+                self._refresh_logs()
+
+        self._logs_auto_refresh_timer = (
+            NSTimer.scheduledTimerWithTimeInterval_repeats_block_(2.0, True, tick)
+        )
+
+    def _stop_logs_auto_refresh(self) -> None:
+        """Stoppt den Auto-Refresh Timer."""
+        if hasattr(self, "_logs_auto_refresh_timer") and self._logs_auto_refresh_timer:
+            try:
+                self._logs_auto_refresh_timer.invalidate()
+            except Exception:
+                pass
+            self._logs_auto_refresh_timer = None
+
     def _build_about_card(self, y: int, parent_view=None) -> int:
-        """Erstellt About Tab."""
+        """Erstellt About Tab mit umfassender App-Beschreibung."""
         from AppKit import (  # type: ignore[import-not-found]
             NSColor,
             NSFont,
@@ -1812,7 +1820,7 @@ class WelcomeController:
 
         parent_view = parent_view or self._content_view
 
-        card_height = 220
+        card_height = 380
         card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
         card_y = y - card_height
 
@@ -1821,49 +1829,101 @@ class WelcomeController:
 
         base_x = WELCOME_PADDING + CARD_PADDING
         content_width = card_width - 2 * CARD_PADDING
+        current_y = card_y + card_height - 28
 
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_height - 28, 200, 18)
-        )
-        title.setStringValue_("About WhisperGo")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
+        def add_title(text: str, y_pos: int, size: int = 13) -> int:
+            label = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(base_x, y_pos, content_width, 18)
+            )
+            label.setStringValue_(text)
+            label.setBezeled_(False)
+            label.setDrawsBackground_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setFont_(NSFont.systemFontOfSize_weight_(size, NSFontWeightSemibold))
+            label.setTextColor_(NSColor.whiteColor())
+            parent_view.addSubview_(label)
+            return y_pos - 20
 
-        body = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 64, content_width, 96)
-        )
-        body.setStringValue_(
-            "WhisperGo runs in the menu bar and transcribes via Local Whisper or "
-            "Deepgram. Custom vocabulary improves recognition for names and terms."
-        )
-        body.setBezeled_(False)
-        body.setDrawsBackground_(False)
-        body.setEditable_(False)
-        body.setSelectable_(False)
-        body.setFont_(NSFont.systemFontOfSize_weight_(12, NSFontWeightMedium))
-        body.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.8))
-        try:
-            body.setLineBreakMode_(0)
-            body.setUsesSingleLineMode_(False)
-        except Exception:
-            pass
-        parent_view.addSubview_(body)
+        def add_text(text: str, y_pos: int, height: int = 36) -> int:
+            label = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(base_x, y_pos - height + 16, content_width, height)
+            )
+            label.setStringValue_(text)
+            label.setBezeled_(False)
+            label.setDrawsBackground_(False)
+            label.setEditable_(False)
+            label.setSelectable_(False)
+            label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.8))
+            try:
+                label.setLineBreakMode_(0)
+                label.setUsesSingleLineMode_(False)
+            except Exception:
+                pass
+            parent_view.addSubview_(label)
+            return y_pos - height
 
+        # Haupttitel
+        current_y = add_title("WhisperGo", current_y, 14)
+
+        # Tagline
+        current_y = add_text(
+            "Ultra-fast voice input for macOS. "
+            "Transcribes audio using multiple providers or local Whisper with ultra-low latency.",
+            current_y,
+            32,
+        )
+
+        current_y -= 8
+
+        # Features Section
+        current_y = add_title("✨ Features", current_y, 12)
+        current_y = add_text(
+            "• Real-time Streaming (Deepgram, ~300ms latency)\n"
+            "• Multiple Providers: Deepgram, OpenAI, Groq, Local Whisper\n"
+            "• LLM Post-processing: Grammar, punctuation, voice commands\n"
+            "• Context Awareness: Adapts style to active app (email/chat/code)\n"
+            "• Custom Vocabulary for names and technical terms\n"
+            "• Visual Feedback: Menu bar status + animated overlay",
+            current_y,
+            80,
+        )
+
+        current_y -= 8
+
+        # Providers Section
+        current_y = add_title("🚀 Providers", current_y, 12)
+        current_y = add_text(
+            "• Deepgram: ~300ms ⚡ WebSocket streaming (recommended)\n"
+            "• Groq: ~1s, Whisper on LPU hardware\n"
+            "• OpenAI: ~2-3s, GPT-4o Transcribe, highest quality\n"
+            "• Local: Offline via Whisper/MLX/Faster-Whisper",
+            current_y,
+            56,
+        )
+
+        current_y -= 8
+
+        # Links Section
+        current_y = add_title("📁 Resources", current_y, 12)
         hint = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 32, content_width, 16)
+            NSMakeRect(base_x, current_y - 32, content_width, 32)
         )
-        hint.setStringValue_("Docs: README.md  •  Config: ~/.whisper_go/")
+        hint.setStringValue_(
+            "Config: ~/.whisper_go/\n" "GitHub: github.com/KLIEBHAN/whisper_go"
+        )
         hint.setBezeled_(False)
         hint.setDrawsBackground_(False)
         hint.setEditable_(False)
-        hint.setSelectable_(False)
+        hint.setSelectable_(True)  # Selectable für Copy
         hint.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        try:
+            hint.setLineBreakMode_(0)
+            hint.setUsesSingleLineMode_(False)
+        except Exception:
+            pass
         parent_view.addSubview_(hint)
 
         return card_y - CARD_SPACING
@@ -1898,9 +1958,7 @@ class WelcomeController:
             return
         count = len(self._get_current_keywords())
         if count > 100:
-            msg = (
-                f"Warning: {count} keywords. Deepgram uses first 100, Local uses first 50."
-            )
+            msg = f"Warning: {count} keywords. Deepgram: first 100, Local: first 50."
         elif count > 50:
             msg = f"Note: {count} keywords. Local uses first 50; Deepgram first 100."
         else:
@@ -2090,6 +2148,11 @@ class WelcomeController:
         """Setzt Callback der aufgerufen wird wenn Settings gespeichert werden."""
         self._on_settings_changed_callback = callback
 
+    def _on_settings_changed(self) -> None:
+        """Wrapper für Settings-Changed-Callback (für HotkeyCard)."""
+        if self._on_settings_changed_callback:
+            self._on_settings_changed_callback()
+
     def set_onboarding_wizard_callback(self, callback) -> None:
         """Setzt Callback zum Öffnen des separaten Setup-Wizards."""
         self._onboarding_wizard_callback = callback
@@ -2103,9 +2166,19 @@ class WelcomeController:
 
             NSApp.activateIgnoringOtherApps_(True)
 
+    def hide(self) -> None:
+        """Versteckt Window temporär (ohne zu schließen)."""
+        self._stop_hotkey_recording(cancelled=True)
+        if self._window:
+            self._window.orderOut_(None)
+        self._stop_setup_permission_auto_refresh()
+
     def close(self) -> None:
         """Schließt Window und markiert Onboarding als gesehen."""
         set_onboarding_seen(True)
+        self._stop_hotkey_recording(cancelled=True)
+        self._stop_setup_permission_auto_refresh()
+        self._stop_logs_auto_refresh()
         if self._window:
             self._window.close()
 
@@ -2117,26 +2190,13 @@ class WelcomeController:
         self.close()
 
     def _save_all_settings(self) -> None:
-        """Speichert alle Einstellungen in die .env Datei."""
+        """Speichert alle Einstellungen in die .env Datei.
+
+        Note: Hotkeys werden direkt via HotkeyCard gespeichert (nicht hier).
+        """
         import logging
 
         log = logging.getLogger(__name__)
-
-        # Toggle Hotkey
-        if self._toggle_hotkey_field:
-            hotkey = self._toggle_hotkey_field.stringValue().strip().lower()
-            if hotkey:
-                save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", hotkey)
-            else:
-                remove_env_setting("WHISPER_GO_TOGGLE_HOTKEY")
-
-        # Hold Hotkey
-        if self._hold_hotkey_field:
-            hotkey = self._hold_hotkey_field.stringValue().strip().lower()
-            if hotkey:
-                save_env_setting("WHISPER_GO_HOLD_HOTKEY", hotkey)
-            else:
-                remove_env_setting("WHISPER_GO_HOLD_HOTKEY")
 
         # API Keys (alle 4 Provider)
         api_keys = [
@@ -2343,43 +2403,42 @@ class WelcomeController:
         )
 
     # =============================================================================
-    # Hotkey Recording
+    # Hotkey Recording (delegated to HotkeyCard)
     # =============================================================================
 
-    def _set_hotkey_status(self, level: str, message: str | None) -> None:
-        if self._hotkey_status_label is None:
-            return
-        if not message:
-            try:
-                self._hotkey_status_label.setStringValue_("")
-            except Exception:
-                pass
+    def _handle_hotkey_action(self, action: str) -> None:
+        """Handles actions from HotkeyCard (presets and recording)."""
+        if not self._hotkey_card:
             return
 
-        from AppKit import NSColor  # type: ignore[import-not-found]
+        # Preset buttons
+        if action in ("hotkey_f19_toggle", "hotkey_fn_hold", "hotkey_opt_space"):
+            preset = action.replace("hotkey_", "")
+            self._hotkey_card.apply_preset(preset)
+            return
 
-        color = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
-        if level == "ok":
-            color = _get_color(120, 255, 150)
-        elif level == "warning":
-            color = _get_color(255, 200, 90)
-        elif level == "error":
-            color = _get_color(255, 120, 120)
-
-        try:
-            self._hotkey_status_label.setStringValue_(message)
-            self._hotkey_status_label.setTextColor_(color)
-        except Exception:
-            pass
+        # Record buttons
+        if action.startswith("record_hotkey:"):
+            kind = action.split(":", 1)[1].strip().lower()
+            if kind in ("toggle", "hold"):
+                self._hotkey_card.toggle_recording(kind)
 
     def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> bool:
         from utils.hotkey_validation import validate_hotkey_change
-        from utils.alerts import show_error_alert
+        from utils.permissions import is_permission_related_message
 
         normalized, level, message = validate_hotkey_change(kind, hotkey_str)
         if level == "error":
-            show_error_alert("Ungültiger Hotkey", message or "Hotkey konnte nicht gesetzt werden.")
-            self._set_hotkey_status("error", message)
+            # No permission-related popups: the Setup → Permissions card covers this.
+            if not is_permission_related_message(message):
+                from utils.alerts import show_error_alert
+
+                show_error_alert(
+                    "Ungültiger Hotkey",
+                    message or "Hotkey konnte nicht gesetzt werden.",
+                )
+            if self._hotkey_card:
+                self._hotkey_card.set_status("error", message or "")
             return False
 
         apply_hotkey_setting(kind, normalized)
@@ -2389,40 +2448,17 @@ class WelcomeController:
                 self._on_settings_changed_callback()
             except Exception:
                 pass
-        if level == "warning":
-            self._set_hotkey_status("warning", message)
-        else:
-            self._set_hotkey_status("ok", "✓ Saved")
+
+        if self._hotkey_card:
+            if level == "warning":
+                self._hotkey_card.set_status("warning", message or "")
+            else:
+                self._hotkey_card.set_status("ok", "✓ Saved")
         return True
 
-    def _toggle_hotkey_recording(self, kind: str) -> None:
-        """Startet/stoppt Hotkey-Aufnahme für Toggle/Hold Feld."""
-        if self._hotkey_recorder.recording:
-            self._stop_hotkey_recording(cancelled=True)
-            return
-
-        if kind == "toggle":
-            field = self._toggle_hotkey_field
-            btn = self._toggle_record_btn
-        elif kind == "hold":
-            field = self._hold_hotkey_field
-            btn = self._hold_record_btn
-        else:
-            return
-
-        if not field or not btn:
-            return
-
-        buttons = [self._toggle_record_btn, self._hold_record_btn]
-        self._hotkey_recorder.start(
-            field=field,
-            button=btn,
-            buttons_to_reset=buttons,
-            on_hotkey=lambda hk: self._apply_hotkey_change(kind, hk),
-        )
-
     def _stop_hotkey_recording(self, *, cancelled: bool = False) -> None:
-        self._hotkey_recorder.stop(cancelled=cancelled)
+        if self._hotkey_card:
+            self._hotkey_card.stop_recording(cancelled=cancelled)
 
 
 # =============================================================================
@@ -2513,6 +2549,57 @@ def _create_refresh_logs_handler_class():
 _RefreshLogsHandler = _create_refresh_logs_handler_class()
 
 
+def _create_logs_auto_refresh_handler_class():
+    """Erstellt NSObject-Subklasse für Auto-Refresh Checkbox."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class LogsAutoRefreshHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(LogsAutoRefreshHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def toggleAutoRefresh_(self, _sender) -> None:
+            # Checkbox-Zustand wird direkt im Timer-Callback geprüft
+            pass
+
+    return LogsAutoRefreshHandler
+
+
+_LogsAutoRefreshHandler = _create_logs_auto_refresh_handler_class()
+
+
+def _create_open_logs_in_finder_handler_class():
+    """Erstellt NSObject-Subklasse für Open in Finder Button."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+    import subprocess
+
+    class OpenLogsInFinderHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(OpenLogsInFinderHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def openInFinder_(self, _sender) -> None:
+            try:
+                subprocess.Popen(["open", "-R", str(LOG_FILE)])
+            except Exception:
+                pass
+
+    return OpenLogsInFinderHandler
+
+
+_OpenLogsInFinderHandler = _create_open_logs_in_finder_handler_class()
+
+
 def _create_restart_handler_class():
     """Erstellt NSObject-Subklasse für Restart Button."""
     from Foundation import NSObject  # type: ignore[import-not-found]
@@ -2534,30 +2621,6 @@ def _create_restart_handler_class():
 
 
 _RestartButtonHandler = _create_restart_handler_class()
-
-
-def _create_record_hotkey_handler_class():
-    """Erstellt NSObject-Subklasse für Record-Hotkey Button."""
-    from Foundation import NSObject  # type: ignore[import-not-found]
-    import objc  # type: ignore[import-not-found]
-
-    class RecordHotkeyHandler(NSObject):
-        def initWithController_kind_(self, controller, kind):
-            self = objc.super(RecordHotkeyHandler, self).init()
-            if self is None:
-                return None
-            self._controller = controller
-            self._kind = kind
-            return self
-
-        @objc.signature(b"v@:@")
-        def recordHotkey_(self, _sender) -> None:
-            self._controller._toggle_hotkey_recording(self._kind)
-
-    return RecordHotkeyHandler
-
-
-_RecordHotkeyHandler = _create_record_hotkey_handler_class()
 
 
 def _create_mode_changed_handler_class():
@@ -2628,3 +2691,78 @@ def _create_setup_action_handler_class():
 
 
 _SetupActionHandler = _create_setup_action_handler_class()
+
+
+def _create_hotkey_action_handler_class():
+    """Erstellt NSObject-Subklasse für HotkeyCard Buttons."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class HotkeyActionHandler(NSObject):
+        def initWithController_action_(self, controller, action):
+            self = objc.super(HotkeyActionHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            self._action = action
+            return self
+
+        @objc.signature(b"v@:@")
+        def performAction_(self, _sender) -> None:
+            self._controller._handle_hotkey_action(self._action)
+
+    return HotkeyActionHandler
+
+
+_HotkeyActionHandler = _create_hotkey_action_handler_class()
+
+
+def _create_logs_segment_handler_class():
+    """Erstellt NSObject-Subklasse für Logs/Transcripts Segmented Control."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class LogsSegmentHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(LogsSegmentHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def segmentChanged_(self, sender) -> None:
+            segment = sender.selectedSegment()
+            self._controller._switch_logs_segment(segment)
+
+    return LogsSegmentHandler
+
+
+_LogsSegmentHandler = _create_logs_segment_handler_class()
+
+
+def _create_clear_transcripts_handler_class():
+    """Erstellt NSObject-Subklasse für Clear/Refresh Transcripts Buttons."""
+    from Foundation import NSObject  # type: ignore[import-not-found]
+    import objc  # type: ignore[import-not-found]
+
+    class ClearTranscriptsHandler(NSObject):
+        def initWithController_(self, controller):
+            self = objc.super(ClearTranscriptsHandler, self).init()
+            if self is None:
+                return None
+            self._controller = controller
+            return self
+
+        @objc.signature(b"v@:@")
+        def clearTranscripts_(self, _sender) -> None:
+            self._controller._clear_transcripts()
+
+        @objc.signature(b"v@:@")
+        def refreshTranscripts_(self, _sender) -> None:
+            self._controller._refresh_transcripts()
+
+    return ClearTranscriptsHandler
+
+
+_ClearTranscriptsHandler = _create_clear_transcripts_handler_class()

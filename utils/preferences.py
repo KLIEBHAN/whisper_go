@@ -152,8 +152,20 @@ def set_onboarding_choice(choice: OnboardingChoice | str | None) -> None:
 
 
 def is_onboarding_complete() -> bool:
-    """True wenn Wizard abgeschlossen ist."""
+    """True wenn Wizard abgeschlossen UND .env existiert.
+
+    Wenn .env fehlt (User hat es gelöscht oder Fresh Install),
+    behandeln wir das Onboarding als nicht abgeschlossen - auch wenn
+    preferences.json 'done' sagt. So startet der Wizard erneut.
+    """
+    if not env_file_exists():
+        return False
     return get_onboarding_step() == OnboardingStep.DONE
+
+
+def env_file_exists() -> bool:
+    """True wenn die .env Datei existiert."""
+    return ENV_FILE.exists()
 
 
 def get_show_welcome_on_startup() -> bool:

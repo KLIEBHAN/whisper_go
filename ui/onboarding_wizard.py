@@ -14,6 +14,7 @@ from utils.onboarding import (
     step_index,
     total_steps,
 )
+from ui.hotkey_card import HotkeyCard
 from utils.hotkey_recording import HotkeyRecorder
 from utils.permissions import (
     check_accessibility_permission,
@@ -27,8 +28,8 @@ from utils.preferences import (
     get_onboarding_choice,
     get_onboarding_step,
     apply_hotkey_setting,
-    save_env_setting,
     remove_env_setting,
+    save_env_setting,
     set_onboarding_choice,
     set_onboarding_step,
     set_onboarding_seen,
@@ -45,6 +46,8 @@ PADDING = 20
 FOOTER_HEIGHT = 54
 CARD_PADDING = 16
 CARD_CORNER_RADIUS = 12
+
+LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
 
 
 def _get_color(r: int, g: int, b: int, a: float = 1.0):
@@ -78,15 +81,30 @@ class OnboardingWizardController:
         self._on_settings_changed: Callable[[], None] | None = None
         self._on_test_dictation_start: Callable[[], None] | None = None
         self._on_test_dictation_stop: Callable[[], None] | None = None
+        self._on_test_dictation_cancel: Callable[[], None] | None = None
         self._on_enable_test_hotkey_mode: Callable[[], None] | None = None
         self._on_disable_test_hotkey_mode: Callable[[], None] | None = None
 
-        self._choice: OnboardingChoice | None = get_onboarding_choice()
-        self._step: OnboardingStep = (
-            get_onboarding_step() if persist_progress else OnboardingStep.CHOOSE_GOAL
-        )
-        if self._step == OnboardingStep.DONE:
-            self._step = OnboardingStep.CHEAT_SHEET
+        # Determine initial step and choice:
+        # - If .env doesn't exist → always start fresh (settings are gone)
+        # - If persist_progress=True AND there's saved progress → continue
+        # - Otherwise start fresh (first run or manual re-run from settings)
+        from utils.preferences import env_file_exists
+
+        has_env = env_file_exists()
+        saved_step = get_onboarding_step() if persist_progress and has_env else None
+        saved_choice = get_onboarding_choice() if persist_progress and has_env else None
+
+        if saved_step and saved_step != OnboardingStep.CHOOSE_GOAL:
+            # Continue from saved progress (user restarted mid-wizard)
+            self._step = saved_step
+            self._choice = saved_choice
+            if self._step == OnboardingStep.DONE:
+                self._step = OnboardingStep.CHEAT_SHEET
+        else:
+            # Fresh start: no .env, no saved progress, or manual re-run
+            self._step = OnboardingStep.CHOOSE_GOAL
+            self._choice = None
 
         self._step_label = None
         self._progress_label = None
@@ -95,25 +113,27 @@ class OnboardingWizardController:
         self._skip_btn = None
         self._step_views: dict[OnboardingStep, object] = {}
 
-        # Permissions status labels
-        self._perm_mic_status_label = None
-        self._perm_access_status_label = None
-        self._perm_input_status_label = None
+        # Permissions UI (shared component)
+        self._permissions_card = None
 
         # Test dictation widgets/state
-        self._test_btn = None
         self._test_status_label = None
+        self._test_hotkey_label = None
         self._test_text_view = None
         self._test_successful = False
         self._test_state = "idle"  # idle|recording|stopping
 
-        # Hotkey recording widgets/state
-        self._toggle_hotkey_field = None
-        self._hold_hotkey_field = None
-        self._toggle_record_btn = None
-        self._hold_record_btn = None
-        self._hotkey_status_label = None
+        # Hotkey card (shared component)
+        self._hotkey_card: HotkeyCard | None = None
         self._hotkey_recorder = HotkeyRecorder()
+
+        # Summary step (dynamic labels)
+        self._summary_provider_label = None
+        self._summary_hotkey_label = None
+        self._summary_perm_label = None
+
+        # Language selector
+        self._lang_popup = None
 
         # Strong refs for ObjC handlers
         self._handler_refs: list[object] = []
@@ -130,9 +150,16 @@ class OnboardingWizardController:
     def set_on_settings_changed(self, callback: Callable[[], None]) -> None:
         self._on_settings_changed = callback
 
-    def set_test_dictation_callbacks(self, *, start: Callable[[], None], stop: Callable[[], None]) -> None:
+    def set_test_dictation_callbacks(
+        self,
+        *,
+        start: Callable[[], None],
+        stop: Callable[[], None],
+        cancel: Callable[[], None] | None = None,
+    ) -> None:
         self._on_test_dictation_start = start
         self._on_test_dictation_stop = stop
+        self._on_test_dictation_cancel = cancel or stop  # Fallback to stop
 
     def set_test_hotkey_mode_callbacks(
         self, *, enable: Callable[[], None], disable: Callable[[], None]
@@ -156,6 +183,7 @@ class OnboardingWizardController:
 
     def close(self) -> None:
         self._stop_hotkey_recording()
+        self._stop_permission_auto_refresh()
         if callable(self._on_disable_test_hotkey_mode):
             try:
                 self._on_disable_test_hotkey_mode()
@@ -163,6 +191,15 @@ class OnboardingWizardController:
                 pass
         if self._window:
             self._window.close()
+
+    def _ensure_window_focus(self) -> None:
+        """Ensures the wizard window has keyboard focus after step changes."""
+        if not self._window:
+            return
+        try:
+            self._window.makeKeyAndOrderFront_(None)
+        except Exception:
+            pass
 
     # ---------------------------------------------------------------------
     # Window + Layout
@@ -172,6 +209,7 @@ class OnboardingWizardController:
         from AppKit import (  # type: ignore[import-not-found]
             NSBackingStoreBuffered,
             NSClosableWindowMask,
+            NSFloatingWindowLevel,
             NSMakeRect,
             NSScreen,
             NSTitledWindowMask,
@@ -195,6 +233,8 @@ class OnboardingWizardController:
         )
         self._window.setTitle_("WhisperGo Setup Wizard")
         self._window.setReleasedWhenClosed_(False)
+        # Wizard always stays on top during setup
+        self._window.setLevel_(NSFloatingWindowLevel)
 
         content_frame = NSMakeRect(0, 0, WIZARD_WIDTH, WIZARD_HEIGHT)
         visual_effect = NSVisualEffectView.alloc().initWithFrame_(content_frame)
@@ -268,11 +308,19 @@ class OnboardingWizardController:
             self._content_view.addSubview_(view)
             self._step_views[step] = view
 
-        self._build_step_choose_goal(self._step_views[OnboardingStep.CHOOSE_GOAL], content_h)
-        self._build_step_permissions(self._step_views[OnboardingStep.PERMISSIONS], content_h)
+        self._build_step_choose_goal(
+            self._step_views[OnboardingStep.CHOOSE_GOAL], content_h
+        )
+        self._build_step_permissions(
+            self._step_views[OnboardingStep.PERMISSIONS], content_h
+        )
         self._build_step_hotkey(self._step_views[OnboardingStep.HOTKEY], content_h)
-        self._build_step_test_dictation(self._step_views[OnboardingStep.TEST_DICTATION], content_h)
-        self._build_step_cheat_sheet(self._step_views[OnboardingStep.CHEAT_SHEET], content_h)
+        self._build_step_test_dictation(
+            self._step_views[OnboardingStep.TEST_DICTATION], content_h
+        )
+        self._build_step_cheat_sheet(
+            self._step_views[OnboardingStep.CHEAT_SHEET], content_h
+        )
 
     def _build_footer(self) -> None:
         from AppKit import (  # type: ignore[import-not-found]
@@ -316,9 +364,7 @@ class OnboardingWizardController:
         self._content_view.addSubview_(back_btn)
         self._back_btn = back_btn
 
-        skip_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(PADDING, y, 120, btn_h)
-        )
+        skip_btn = NSButton.alloc().initWithFrame_(NSMakeRect(PADDING, y, 120, btn_h))
         skip_btn.setTitle_("Skip for now")
         skip_btn.setBezelStyle_(NSBezelStyleRounded)
         skip_btn.setFont_(NSFont.systemFontOfSize_(12))
@@ -342,12 +388,13 @@ class OnboardingWizardController:
             NSFontWeightMedium,
             NSFontWeightSemibold,
             NSMakeRect,
+            NSPopUpButton,
             NSTextField,
         )
         import objc  # type: ignore[import-not-found]
 
         card_w = WIZARD_WIDTH - 2 * PADDING
-        card_h = 270
+        card_h = 310
         card_y = content_h - card_h - 10
         card = _create_card(PADDING, card_y, card_w, card_h)
         parent_view.addSubview_(card)
@@ -367,9 +414,11 @@ class OnboardingWizardController:
         parent_view.addSubview_(title)
 
         desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 46, card_w - 2 * CARD_PADDING, 14)
+            NSMakeRect(base_x, card_y + card_h - 72, card_w - 2 * CARD_PADDING, 34)
         )
-        desc.setStringValue_("Pick a default — you can change everything later in Settings.")
+        desc.setStringValue_(
+            "Pick a default — you can change everything later in Settings."
+        )
         desc.setBezeled_(False)
         desc.setDrawsBackground_(False)
         desc.setEditable_(False)
@@ -383,7 +432,9 @@ class OnboardingWizardController:
         start_y = card_y + card_h - 98
 
         def add_choice(label: str, subtitle: str, action: str, y_pos: int) -> None:
-            btn = NSButton.alloc().initWithFrame_(NSMakeRect(base_x, y_pos, btn_w, btn_h))
+            btn = NSButton.alloc().initWithFrame_(
+                NSMakeRect(base_x, y_pos, btn_w, btn_h)
+            )
             btn.setTitle_(label)
             btn.setBezelStyle_(NSBezelStyleRounded)
             btn.setFont_(NSFont.systemFontOfSize_(13))
@@ -407,7 +458,7 @@ class OnboardingWizardController:
 
         add_choice(
             "Fast",
-            "Ultra low latency (Deepgram streaming if configured; otherwise fast local).",
+            "Ultra low latency (Deepgram streaming if configured).",
             "choose_fast",
             start_y,
         )
@@ -424,269 +475,108 @@ class OnboardingWizardController:
             start_y - 140,
         )
 
-    def _build_step_permissions(self, parent_view, content_h: int) -> None:
-        from AppKit import (  # type: ignore[import-not-found]
-            NSBezelStyleRounded,
-            NSButton,
-            NSColor,
-            NSFont,
-            NSFontWeightMedium,
-            NSFontWeightSemibold,
-            NSMakeRect,
-            NSTextField,
+        # Language selector
+        lang_y = card_y + 16
+        lang_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, lang_y + 2, 70, 18)
         )
-        import objc  # type: ignore[import-not-found]
+        lang_label.setStringValue_("Language:")
+        lang_label.setBezeled_(False)
+        lang_label.setDrawsBackground_(False)
+        lang_label.setEditable_(False)
+        lang_label.setSelectable_(False)
+        lang_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        lang_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(lang_label)
 
-        card_w = WIZARD_WIDTH - 2 * PADDING
+        lang_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(base_x + 74, lang_y, 120, 22)
+        )
+        lang_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for lang in LANGUAGE_OPTIONS:
+            lang_popup.addItemWithTitle_(lang)
+        current_lang = get_env_setting("WHISPER_GO_LANGUAGE") or "auto"
+        if current_lang in LANGUAGE_OPTIONS:
+            lang_popup.selectItemWithTitle_(current_lang)
+        self._lang_popup = lang_popup
+        parent_view.addSubview_(lang_popup)
+
+        lang_hint = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x + 200, lang_y + 3, btn_w - 200, 16)
+        )
+        lang_hint.setStringValue_("auto = detect from speech")
+        lang_hint.setBezeled_(False)
+        lang_hint.setDrawsBackground_(False)
+        lang_hint.setEditable_(False)
+        lang_hint.setSelectable_(False)
+        lang_hint.setFont_(NSFont.systemFontOfSize_(10))
+        lang_hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
+        parent_view.addSubview_(lang_hint)
+
+    def _build_step_permissions(self, parent_view, content_h: int) -> None:
+        import objc  # type: ignore[import-not-found]
+        from ui.permissions_card import PermissionsCard
+
         card_h = 250
         card_y = content_h - card_h - 10
-        card = _create_card(PADDING, card_y, card_w, card_h)
-        parent_view.addSubview_(card)
 
-        base_x = PADDING + CARD_PADDING
-        right_edge = WIZARD_WIDTH - PADDING - CARD_PADDING
-
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 28, 320, 18)
-        )
-        title.setStringValue_("Permissions")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
-
-        desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 46, card_w - 2 * CARD_PADDING, 14)
-        )
-        desc.setStringValue_("Grant these once so dictation + auto‑paste work reliably.")
-        desc.setBezeled_(False)
-        desc.setDrawsBackground_(False)
-        desc.setEditable_(False)
-        desc.setSelectable_(False)
-        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-        parent_view.addSubview_(desc)
-
-        label_w = 130
-        status_x = base_x + label_w + 8
-        btn_w = 72
-        btn_h = 22
-        spacing = 8
-        req_x = right_edge - btn_w
-        open_x = req_x - spacing - btn_w
-        status_w = max(80, open_x - status_x - 8)
-
-        def add_row(
-            row_y: int,
-            label_text: str,
-            status_attr: str,
-            open_anchor: str,
-            request_action: str,
-        ) -> None:
-            label = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x, row_y + 4, label_w, 16))
-            label.setStringValue_(label_text)
-            label.setBezeled_(False)
-            label.setDrawsBackground_(False)
-            label.setEditable_(False)
-            label.setSelectable_(False)
-            label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.75))
-            parent_view.addSubview_(label)
-
-            status = NSTextField.alloc().initWithFrame_(NSMakeRect(status_x, row_y + 2, status_w, 18))
-            status.setStringValue_("…")
-            status.setBezeled_(False)
-            status.setDrawsBackground_(False)
-            status.setEditable_(False)
-            status.setSelectable_(False)
-            status.setFont_(NSFont.systemFontOfSize_(11))
-            status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-            parent_view.addSubview_(status)
-            setattr(self, status_attr, status)
-
-            open_btn = NSButton.alloc().initWithFrame_(NSMakeRect(open_x, row_y, btn_w, btn_h))
-            open_btn.setTitle_("Open")
-            open_btn.setBezelStyle_(NSBezelStyleRounded)
-            open_btn.setFont_(NSFont.systemFontOfSize_(11))
-            h_open = _WizardActionHandler.alloc().initWithController_action_(self, f"open:{open_anchor}")
-            open_btn.setTarget_(h_open)
-            open_btn.setAction_(objc.selector(h_open.performAction_, signature=b"v@:@"))
-            self._handler_refs.append(h_open)
-            parent_view.addSubview_(open_btn)
-
-            req_btn = NSButton.alloc().initWithFrame_(NSMakeRect(req_x, row_y, btn_w, btn_h))
-            req_btn.setTitle_("Request")
-            req_btn.setBezelStyle_(NSBezelStyleRounded)
-            req_btn.setFont_(NSFont.systemFontOfSize_(11))
-            h_req = _WizardActionHandler.alloc().initWithController_action_(self, request_action)
-            req_btn.setTarget_(h_req)
-            req_btn.setAction_(objc.selector(h_req.performAction_, signature=b"v@:@"))
-            self._handler_refs.append(h_req)
-            parent_view.addSubview_(req_btn)
-
-        row_y = card_y + card_h - 84
-        add_row(row_y, "Microphone", "_perm_mic_status_label", "Privacy_Microphone", "request_mic")
-        add_row(row_y - 32, "Accessibility", "_perm_access_status_label", "Privacy_Accessibility", "request_access")
-        add_row(row_y - 64, "Input Monitoring", "_perm_input_status_label", "Privacy_ListenEvent", "request_input")
-
-        refresh_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 16, 120, 24)
-        )
-        refresh_btn.setTitle_("Refresh")
-        refresh_btn.setBezelStyle_(NSBezelStyleRounded)
-        refresh_btn.setFont_(NSFont.systemFontOfSize_(11))
-        h_refresh = _WizardActionHandler.alloc().initWithController_action_(self, "refresh_perms")
-        refresh_btn.setTarget_(h_refresh)
-        refresh_btn.setAction_(objc.selector(h_refresh.performAction_, signature=b"v@:@"))
-        self._handler_refs.append(h_refresh)
-        parent_view.addSubview_(refresh_btn)
-
-    def _build_step_hotkey(self, parent_view, content_h: int) -> None:
-        from AppKit import (  # type: ignore[import-not-found]
-            NSBezelStyleRounded,
-            NSButton,
-            NSColor,
-            NSFont,
-            NSFontWeightMedium,
-            NSFontWeightSemibold,
-            NSMakeRect,
-            NSTextAlignmentCenter,
-            NSTextField,
-        )
-        import objc  # type: ignore[import-not-found]
-
-        card_w = WIZARD_WIDTH - 2 * PADDING
-        card_h = min(340, max(250, content_h - 20))
-        card_y = content_h - card_h - 10
-        card = _create_card(PADDING, card_y, card_w, card_h)
-        parent_view.addSubview_(card)
-
-        base_x = PADDING + CARD_PADDING
-        content_w = card_w - 2 * CARD_PADDING
-
-        title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 28, 320, 18)
-        )
-        title.setStringValue_("Hotkey")
-        title.setBezeled_(False)
-        title.setDrawsBackground_(False)
-        title.setEditable_(False)
-        title.setSelectable_(False)
-        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
-        title.setTextColor_(NSColor.whiteColor())
-        parent_view.addSubview_(title)
-
-        desc = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 72, content_w, 34)
-        )
-        desc.setStringValue_(
-            "Pick a hotkey.\nHotkey changes apply immediately."
-        )
-        desc.setBezeled_(False)
-        desc.setDrawsBackground_(False)
-        desc.setEditable_(False)
-        desc.setSelectable_(False)
-        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-        parent_view.addSubview_(desc)
-
-        btn_w = content_w
-        btn_h = 32
-        btn_y = card_y + card_h - 120
-
-        def add_btn(label: str, action: str, y_pos: int) -> None:
-            btn = NSButton.alloc().initWithFrame_(NSMakeRect(base_x, y_pos, btn_w, btn_h))
-            btn.setTitle_(label)
-            btn.setBezelStyle_(NSBezelStyleRounded)
-            btn.setFont_(NSFont.systemFontOfSize_(12))
+        def bind_action(btn, action: str) -> None:
             h = _WizardActionHandler.alloc().initWithController_action_(self, action)
             btn.setTarget_(h)
             btn.setAction_(objc.selector(h.performAction_, signature=b"v@:@"))
             self._handler_refs.append(h)
-            parent_view.addSubview_(btn)
 
-        add_btn("Use F19 (Toggle)", "hotkey_f19_toggle", btn_y)
-        add_btn("Use Fn/Globe (Hold)", "hotkey_fn_hold", btn_y - 42)
-        add_btn("Use Option+Space (Toggle)", "hotkey_opt_space", btn_y - 84)
+        self._permissions_card = PermissionsCard.build(
+            parent_view=parent_view,
+            window_width=WIZARD_WIDTH,
+            card_y=card_y,
+            card_height=card_h,
+            outer_padding=PADDING,
+            inner_padding=CARD_PADDING,
+            title="Permissions",
+            description=(
+                "Microphone is required. Accessibility improves auto‑paste.\n"
+                "Input Monitoring enables Hold + some global hotkeys."
+            ),
+            bind_action=bind_action,
+            after_refresh=self._render,
+        )
 
-        # Custom hotkeys (record)
-        label_w = 64
-        record_w = 80
-        field_x = base_x + label_w + 8
-        field_w = max(120, btn_w - label_w - 8 - record_w - 8)
-        record_x = field_x + field_w + 8
+    def _build_step_hotkey(self, parent_view, content_h: int) -> None:
+        import objc  # type: ignore[import-not-found]
 
-        toggle_y = card_y + 80
-        hold_y = card_y + 46
+        card_h = min(300, max(250, content_h - 20))
+        card_y = content_h - card_h - 10
 
-        def add_row(kind: str, title_text: str, y_pos: int) -> tuple[object, object]:
-            label = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x, y_pos + 4, label_w, 16))
-            label.setStringValue_(title_text)
-            label.setBezeled_(False)
-            label.setDrawsBackground_(False)
-            label.setEditable_(False)
-            label.setSelectable_(False)
-            label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-            label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.75))
-            parent_view.addSubview_(label)
-
-            field = NSTextField.alloc().initWithFrame_(NSMakeRect(field_x, y_pos, field_w, 24))
-            field.setPlaceholderString_("Record…")
-            field.setFont_(NSFont.systemFontOfSize_(13))
-            field.setAlignment_(NSTextAlignmentCenter)
-            field.setEditable_(False)
-            field.setSelectable_(True)
-            parent_view.addSubview_(field)
-
-            rec_btn = NSButton.alloc().initWithFrame_(NSMakeRect(record_x, y_pos, record_w, 24))
-            rec_btn.setTitle_("Record")
-            rec_btn.setBezelStyle_(NSBezelStyleRounded)
-            rec_btn.setFont_(NSFont.systemFontOfSize_(11))
-            h = _WizardActionHandler.alloc().initWithController_action_(self, f"record_hotkey:{kind}")
-            rec_btn.setTarget_(h)
-            rec_btn.setAction_(objc.selector(h.performAction_, signature=b"v@:@"))
+        def bind_action(btn, action: str) -> None:
+            h = _WizardActionHandler.alloc().initWithController_action_(self, action)
+            btn.setTarget_(h)
+            btn.setAction_(objc.selector(h.performAction_, signature=b"v@:@"))
             self._handler_refs.append(h)
-            parent_view.addSubview_(rec_btn)
 
-            return field, rec_btn
-
-        self._toggle_hotkey_field, self._toggle_record_btn = add_row("toggle", "Toggle:", toggle_y)
-        self._hold_hotkey_field, self._hold_record_btn = add_row("hold", "Hold:", hold_y)
-        self._sync_hotkey_fields_from_env()
-
-        hint = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 4, btn_w, 16)
+        self._hotkey_card = HotkeyCard.build(
+            parent_view=parent_view,
+            window_width=WIZARD_WIDTH,
+            card_y=card_y,
+            card_height=card_h,
+            outer_padding=PADDING,
+            inner_padding=CARD_PADDING,
+            title="Hotkey",
+            description=(
+                "Set your hotkey to start transcription.\n"
+                "Toggle: Press → speak → press again.  Hold: Hold → speak → release."
+            ),
+            bind_action=bind_action,
+            hotkey_recorder=self._hotkey_recorder,
+            on_hotkey_change=self._apply_hotkey_change,
+            on_after_change=self._render,
+            show_presets=True,
+            show_hint=True,
         )
-        hint.setStringValue_("Tip: Hold is push‑to‑talk (may require Input Monitoring).")
-        hint.setBezeled_(False)
-        hint.setDrawsBackground_(False)
-        hint.setEditable_(False)
-        hint.setSelectable_(False)
-        hint.setFont_(NSFont.systemFontOfSize_(10))
-        hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.55))
-        parent_view.addSubview_(hint)
-
-        status = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 22, btn_w, 16)
-        )
-        status.setStringValue_("")
-        status.setBezeled_(False)
-        status.setDrawsBackground_(False)
-        status.setEditable_(False)
-        status.setSelectable_(False)
-        status.setFont_(NSFont.systemFontOfSize_(10))
-        status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
-        parent_view.addSubview_(status)
-        self._hotkey_status_label = status
 
     def _build_step_test_dictation(self, parent_view, content_h: int) -> None:
         from AppKit import (  # type: ignore[import-not-found]
             NSBezelBorder,
-            NSBezelStyleRounded,
-            NSButton,
             NSColor,
             NSFont,
             NSFontWeightMedium,
@@ -696,7 +586,6 @@ class OnboardingWizardController:
             NSTextField,
             NSTextView,
         )
-        import objc  # type: ignore[import-not-found]
 
         card_w = WIZARD_WIDTH - 2 * PADDING
         card_h = min(380, content_h - 20)
@@ -707,7 +596,9 @@ class OnboardingWizardController:
         base_x = PADDING + CARD_PADDING
         content_w = card_w - 2 * CARD_PADDING
 
-        title = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x, card_y + card_h - 28, 320, 18))
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_h - 28, 320, 18)
+        )
         title.setStringValue_("Test dictation (safe)")
         title.setBezeled_(False)
         title.setDrawsBackground_(False)
@@ -720,9 +611,12 @@ class OnboardingWizardController:
         top_y = card_y + card_h
         desc_h = 34
         desc_y = (top_y - 28) - 6 - desc_h
-        desc = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x, desc_y, content_w, desc_h))
+        desc = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, desc_y, content_w, desc_h)
+        )
         desc.setStringValue_(
-            "This will not auto‑paste.\nUse your hotkey to start/stop. Transcript appears here."
+            "This will not auto‑paste.\n"
+            "Use your hotkeys to start/stop. Transcript appears here."
         )
         desc.setBezeled_(False)
         desc.setDrawsBackground_(False)
@@ -732,19 +626,29 @@ class OnboardingWizardController:
         desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
         parent_view.addSubview_(desc)
 
-        controls_y = desc_y - 10 - 30
-        test_btn = NSButton.alloc().initWithFrame_(NSMakeRect(base_x, controls_y, 170, 30))
-        test_btn.setTitle_("Start Test")
-        test_btn.setBezelStyle_(NSBezelStyleRounded)
-        test_btn.setFont_(NSFont.systemFontOfSize_(12))
-        h = _WizardActionHandler.alloc().initWithController_action_(self, "test_toggle")
-        test_btn.setTarget_(h)
-        test_btn.setAction_(objc.selector(h.performAction_, signature=b"v@:@"))
-        self._handler_refs.append(h)
-        parent_view.addSubview_(test_btn)
-        self._test_btn = test_btn
+        hotkeys_h = 46
+        hotkeys_y = desc_y - 10 - hotkeys_h
+        hotkeys = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, hotkeys_y, content_w, hotkeys_h)
+        )
+        hotkeys.setStringValue_("")
+        hotkeys.setBezeled_(False)
+        hotkeys.setDrawsBackground_(False)
+        hotkeys.setEditable_(False)
+        hotkeys.setSelectable_(False)
+        hotkeys.setFont_(NSFont.systemFontOfSize_(11))
+        hotkeys.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        try:
+            hotkeys.setUsesSingleLineMode_(False)
+        except Exception:
+            pass
+        parent_view.addSubview_(hotkeys)
+        self._test_hotkey_label = hotkeys
 
-        status = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x + 180, controls_y + 5, content_w - 180, 20))
+        status_y = hotkeys_y - 8 - 18
+        status = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, status_y, content_w, 18)
+        )
         status.setStringValue_("Press your hotkey to start")
         status.setBezeled_(False)
         status.setDrawsBackground_(False)
@@ -756,9 +660,11 @@ class OnboardingWizardController:
         self._test_status_label = status
 
         scroll_y = card_y + 18
-        scroll_top = controls_y - 12
+        scroll_top = status_y - 12
         scroll_h = max(140, int(scroll_top - scroll_y))
-        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(base_x, scroll_y, content_w, scroll_h))
+        scroll = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(base_x, scroll_y, content_w, scroll_h)
+        )
         scroll.setBorderType_(NSBezelBorder)
         scroll.setHasVerticalScroller_(True)
         scroll.setHasHorizontalScroller_(False)
@@ -767,7 +673,9 @@ class OnboardingWizardController:
         except Exception:
             pass
 
-        text_view = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, content_w, scroll_h))
+        text_view = NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_w, scroll_h)
+        )
         text_view.setFont_(NSFont.systemFontOfSize_(12))
         text_view.setTextColor_(NSColor.whiteColor())
         try:
@@ -787,6 +695,8 @@ class OnboardingWizardController:
 
     def _build_step_cheat_sheet(self, parent_view, content_h: int) -> None:
         from AppKit import (  # type: ignore[import-not-found]
+            NSBezelStyleRounded,
+            NSButton,
             NSColor,
             NSFont,
             NSFontWeightMedium,
@@ -794,19 +704,22 @@ class OnboardingWizardController:
             NSMakeRect,
             NSTextField,
         )
+        import objc  # type: ignore[import-not-found]
 
         card_w = WIZARD_WIDTH - 2 * PADDING
-        card_h = 240
+        card_h = 280
         card_y = content_h - card_h - 10
         card = _create_card(PADDING, card_y, card_w, card_h)
         parent_view.addSubview_(card)
 
         base_x = PADDING + CARD_PADDING
+        content_w = card_w - 2 * CARD_PADDING
 
+        # Titel
         title = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + card_h - 28, 320, 18)
+            NSMakeRect(base_x, card_y + card_h - 28, content_w, 18)
         )
-        title.setStringValue_("Cheat sheet")
+        title.setStringValue_("✅ Your configuration")
         title.setBezeled_(False)
         title.setDrawsBackground_(False)
         title.setEditable_(False)
@@ -815,23 +728,163 @@ class OnboardingWizardController:
         title.setTextColor_(NSColor.whiteColor())
         parent_view.addSubview_(title)
 
-        body = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 56, card_w - 2 * CARD_PADDING, 140)
+        row_h = 28
+        label_w = 90
+        value_x = base_x + label_w
+        value_w = content_w - label_w
+        row_y = card_y + card_h - 60
+
+        def add_label(y: int, text: str):
+            lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(base_x, y, label_w, 16))
+            lbl.setStringValue_(text)
+            lbl.setBezeled_(False)
+            lbl.setDrawsBackground_(False)
+            lbl.setEditable_(False)
+            lbl.setSelectable_(False)
+            lbl.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+            lbl.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+            parent_view.addSubview_(lbl)
+
+        def add_value(y: int):
+            val = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(value_x, y, value_w, 16)
+            )
+            val.setStringValue_("")
+            val.setBezeled_(False)
+            val.setDrawsBackground_(False)
+            val.setEditable_(False)
+            val.setSelectable_(False)
+            val.setFont_(NSFont.systemFontOfSize_(11))
+            val.setTextColor_(NSColor.whiteColor())
+            parent_view.addSubview_(val)
+            return val
+
+        # Provider row
+        add_label(row_y, "Provider:")
+        self._summary_provider_label = add_value(row_y)
+        row_y -= row_h
+
+        # Hotkeys row
+        add_label(row_y, "Hotkeys:")
+        self._summary_hotkey_label = add_value(row_y)
+        row_y -= row_h
+
+        # Permissions row
+        add_label(row_y, "Permissions:")
+        self._summary_perm_label = add_value(row_y)
+
+        # Abschluss-Text
+        ready_y = card_y + 50
+        ready = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, ready_y, content_w, 50)
         )
-        body.setStringValue_(
-            "• Press your hotkey and speak.\n"
-            "• Release / toggle to stop.\n"
-            "• WhisperGo copies + pastes into the frontmost app.\n\n"
-            "If paste fails: grant Accessibility.\n"
-            "If Fn/Hold hotkey fails: grant Input Monitoring."
+        ready.setStringValue_(
+            "You're ready to go! Press your hotkey anywhere to start dictating. "
+            "WhisperGo will transcribe your speech and paste automatically.\n\n"
+            "You can change all settings anytime via the menu bar icon."
         )
-        body.setBezeled_(False)
-        body.setDrawsBackground_(False)
-        body.setEditable_(False)
-        body.setSelectable_(False)
-        body.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
-        body.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
-        parent_view.addSubview_(body)
+        ready.setBezeled_(False)
+        ready.setDrawsBackground_(False)
+        ready.setEditable_(False)
+        ready.setSelectable_(False)
+        ready.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        ready.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(ready)
+
+        more_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 22, 95, 16)
+        )
+        more_label.setStringValue_("More settings:")
+        more_label.setBezeled_(False)
+        more_label.setDrawsBackground_(False)
+        more_label.setEditable_(False)
+        more_label.setSelectable_(False)
+        more_label.setFont_(NSFont.systemFontOfSize_(11))
+        more_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(more_label)
+
+        open_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x + 96, card_y + 18, 150, 24)
+        )
+        open_btn.setTitle_("Open Settings…")
+        open_btn.setBezelStyle_(NSBezelStyleRounded)
+        open_btn.setFont_(NSFont.systemFontOfSize_(11))
+        h_open = _WizardActionHandler.alloc().initWithController_action_(
+            self, "open_settings"
+        )
+        open_btn.setTarget_(h_open)
+        open_btn.setAction_(objc.selector(h_open.performAction_, signature=b"v@:@"))
+        self._handler_refs.append(h_open)
+        parent_view.addSubview_(open_btn)
+
+        # Initial update
+        self._update_summary()
+
+    def _update_summary(self) -> None:
+        """Aktualisiert die Summary-Labels mit aktuellen Werten."""
+        from utils.permissions import (
+            has_accessibility_permission,
+            has_input_monitoring_permission,
+        )
+
+        ok_color = _get_color(120, 255, 150)
+        warn_color = _get_color(255, 200, 90)
+
+        # Provider
+        mode = (get_env_setting("WHISPER_GO_MODE") or "deepgram").strip()
+        mode_display = {
+            "deepgram": "Deepgram (Cloud, fastest)",
+            "openai": "OpenAI Whisper (Cloud)",
+            "groq": "Groq (Cloud, fast)",
+            "local": "Local (Private, offline)",
+        }.get(mode, mode.title())
+
+        if self._summary_provider_label:
+            try:
+                self._summary_provider_label.setStringValue_(mode_display)
+            except Exception:
+                pass
+
+        # Hotkeys
+        toggle_hk = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip().upper()
+        hold_hk = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip().upper()
+        hotkey_parts = []
+        if toggle_hk:
+            hotkey_parts.append(f"Toggle: {toggle_hk}")
+        if hold_hk:
+            hotkey_parts.append(f"Hold: {hold_hk}")
+        hotkey_display = " • ".join(hotkey_parts) if hotkey_parts else "Not configured"
+
+        if self._summary_hotkey_label:
+            try:
+                self._summary_hotkey_label.setStringValue_(hotkey_display)
+                self._summary_hotkey_label.setTextColor_(
+                    ok_color if hotkey_parts else warn_color
+                )
+            except Exception:
+                pass
+
+        # Permissions
+        mic_ok = get_microphone_permission_state() == "authorized"
+        access_ok = has_accessibility_permission()
+        input_ok = has_input_monitoring_permission()
+        perm_parts = []
+        if mic_ok:
+            perm_parts.append("🎤 Mic ✓")
+        if access_ok:
+            perm_parts.append("♿ Accessibility ✓")
+        if input_ok:
+            perm_parts.append("⌨️ Input ✓")
+        perm_display = "  ".join(perm_parts) if perm_parts else "No permissions granted"
+
+        if self._summary_perm_label:
+            try:
+                self._summary_perm_label.setStringValue_(perm_display)
+                self._summary_perm_label.setTextColor_(
+                    ok_color if mic_ok else warn_color
+                )
+            except Exception:
+                pass
 
     # ---------------------------------------------------------------------
     # Actions + State
@@ -855,22 +908,42 @@ class OnboardingWizardController:
         if self._step == OnboardingStep.HOTKEY and step != OnboardingStep.HOTKEY:
             self._stop_hotkey_recording(cancelled=True)
         if (
+            self._step == OnboardingStep.PERMISSIONS
+            and step != OnboardingStep.PERMISSIONS
+        ):
+            self._stop_permission_auto_refresh()
+        if (
             self._step == OnboardingStep.TEST_DICTATION
             and step != OnboardingStep.TEST_DICTATION
-            and callable(self._on_disable_test_hotkey_mode)
         ):
-            try:
-                self._on_disable_test_hotkey_mode()
-            except Exception:
-                pass
+            # Cancel any active test dictation run and disable hotkey routing.
+            # Use cancel (not stop) to discard pending results.
+            if callable(self._on_test_dictation_cancel):
+                try:
+                    self._on_test_dictation_cancel()
+                except Exception:
+                    pass
+            if callable(self._on_disable_test_hotkey_mode):
+                try:
+                    self._on_disable_test_hotkey_mode()
+                except Exception:
+                    pass
         self._step = step
         self._persist_step(step)
         self._render()
-        if step == OnboardingStep.TEST_DICTATION and callable(self._on_enable_test_hotkey_mode):
+        if step == OnboardingStep.PERMISSIONS:
+            self._refresh_permissions()
+        if step == OnboardingStep.CHEAT_SHEET:
+            self._update_summary()
+        if step == OnboardingStep.TEST_DICTATION and callable(
+            self._on_enable_test_hotkey_mode
+        ):
             try:
                 self._on_enable_test_hotkey_mode()
             except Exception:
                 pass
+        # Ensure wizard window has focus after step change.
+        self._ensure_window_focus()
 
     def _can_advance(self) -> bool:
         if self._step == OnboardingStep.CHOOSE_GOAL:
@@ -924,6 +997,34 @@ class OnboardingWizardController:
 
         if step == OnboardingStep.HOTKEY:
             self._sync_hotkey_fields_from_env()
+        if step == OnboardingStep.TEST_DICTATION:
+            self._update_test_dictation_hotkeys()
+
+    def _update_test_dictation_hotkeys(self) -> None:
+        label = self._test_hotkey_label
+        if label is None:
+            return
+
+        toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
+        hold = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip()
+
+        def disp(value: str) -> str:
+            return (value or "").strip().upper()
+
+        lines: list[str] = []
+        if toggle:
+            lines.append(
+                f"Toggle: {disp(toggle)} — press once to start, press again to stop."
+            )
+        if hold:
+            lines.append(f"Hold: {disp(hold)} — hold to record, release to stop.")
+        if not lines:
+            lines.append("No hotkeys configured. Go back and set a hotkey first.")
+
+        try:
+            label.setStringValue_("\n".join(lines))
+        except Exception:
+            pass
 
     def _handle_action(self, action: str) -> None:
         if action == "back":
@@ -935,15 +1036,17 @@ class OnboardingWizardController:
             if not self._can_advance():
                 return
             if self._step == OnboardingStep.CHEAT_SHEET:
-                self._complete()
+                self._complete(open_settings=False)
                 return
             self._set_step(next_step(self._step))
-            if self._step == OnboardingStep.PERMISSIONS:
-                self._refresh_permissions()
             return
 
         if action == "skip":
-            self._complete()
+            self._complete(open_settings=False)
+            return
+
+        if action == "open_settings":
+            self._complete(open_settings=True)
             return
 
         # Choose goal
@@ -963,6 +1066,14 @@ class OnboardingWizardController:
                 self._choice = OnboardingChoice.ADVANCED
                 set_onboarding_choice(self._choice)
 
+            # Save selected language
+            if self._lang_popup:
+                lang = self._lang_popup.titleOfSelectedItem()
+                if lang and lang != "auto":
+                    save_env_setting("WHISPER_GO_LANGUAGE", lang)
+                else:
+                    remove_env_setting("WHISPER_GO_LANGUAGE")
+
             if self._on_settings_changed:
                 try:
                     self._on_settings_changed()
@@ -973,35 +1084,30 @@ class OnboardingWizardController:
             return
 
         # Permissions actions
-        if action.startswith("open:"):
-            anchor = action.split(":", 1)[1]
-            self._open_privacy_settings(anchor)
+        if action == "perm_mic":
+            mic_state = get_microphone_permission_state()
+            if mic_state == "not_determined":
+                check_microphone_permission(show_alert=False, request=True)
+            else:
+                self._open_privacy_settings("Privacy_Microphone")
+            self._kick_permission_auto_refresh()
             return
-        if action == "request_mic":
-            check_microphone_permission(show_alert=False, request=True)
-            self._refresh_permissions()
-            return
-        if action == "request_access":
+        if action == "perm_access":
             check_accessibility_permission(show_alert=False, request=True)
-            self._refresh_permissions()
+            self._open_privacy_settings("Privacy_Accessibility")
+            self._kick_permission_auto_refresh()
             return
-        if action == "request_input":
+        if action == "perm_input":
             check_input_monitoring_permission(show_alert=False, request=True)
-            self._refresh_permissions()
-            return
-        if action == "refresh_perms":
-            self._refresh_permissions()
+            self._open_privacy_settings("Privacy_ListenEvent")
+            self._kick_permission_auto_refresh()
             return
 
-        # Hotkey presets (saved to .env, applied immediately)
+        # Hotkey presets (delegated to HotkeyCard)
         if action in ("hotkey_f19_toggle", "hotkey_fn_hold", "hotkey_opt_space"):
-            self._stop_hotkey_recording(cancelled=True)
-            if action == "hotkey_fn_hold":
-                self._apply_hotkey_change("hold", "fn")
-            elif action == "hotkey_opt_space":
-                self._apply_hotkey_change("toggle", "option+space")
-            else:
-                self._apply_hotkey_change("toggle", "f19")
+            if self._hotkey_card:
+                preset = action.replace("hotkey_", "")  # f19_toggle, fn_hold, opt_space
+                self._hotkey_card.apply_preset(preset)
             return
 
         if action.startswith("record_hotkey:"):
@@ -1010,8 +1116,8 @@ class OnboardingWizardController:
                 self._toggle_hotkey_recording(kind)
             return
 
-        if action == "test_toggle":
-            self._toggle_test_dictation()
+        if action == "goto_hotkey":
+            self._set_step(OnboardingStep.HOTKEY)
             return
 
     def _open_privacy_settings(self, anchor: str) -> None:
@@ -1022,121 +1128,67 @@ class OnboardingWizardController:
             pass
 
     def _refresh_permissions(self) -> None:
-        from AppKit import NSColor  # type: ignore[import-not-found]
+        card = self._permissions_card
+        if card is None:
+            return
+        try:
+            card.refresh()
+        except Exception:
+            pass
 
-        ok_color = _get_color(120, 255, 150)
-        warn_color = _get_color(255, 200, 90)
-        err_color = _get_color(255, 120, 120)
-        neutral_color = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+    def _stop_permission_auto_refresh(self) -> None:
+        card = self._permissions_card
+        if card is None:
+            return
+        try:
+            card.stop_auto_refresh()
+        except Exception:
+            pass
 
-        def set_status(field, text: str, color) -> None:
-            if field is None:
-                return
-            try:
-                field.setStringValue_(text)
-                field.setTextColor_(color)
-            except Exception:
-                pass
-
-        mic_state = get_microphone_permission_state()
-        if mic_state == "authorized":
-            set_status(self._perm_mic_status_label, "✅ Granted", ok_color)
-        elif mic_state == "not_determined":
-            set_status(self._perm_mic_status_label, "⚠ Not requested yet", warn_color)
-        elif mic_state in ("denied", "restricted"):
-            set_status(self._perm_mic_status_label, "❌ Denied", err_color)
-        else:
-            set_status(self._perm_mic_status_label, "Unknown", neutral_color)
-
-        acc_ok = check_accessibility_permission(show_alert=False)
-        set_status(
-            self._perm_access_status_label,
-            "✅ Granted" if acc_ok else "⚠ Not granted",
-            ok_color if acc_ok else warn_color,
-        )
-
-        input_ok = check_input_monitoring_permission(show_alert=False)
-        set_status(
-            self._perm_input_status_label,
-            "✅ Granted" if input_ok else "⚠ Not granted",
-            ok_color if input_ok else warn_color,
-        )
-
-        self._render()
+    def _kick_permission_auto_refresh(self) -> None:
+        card = self._permissions_card
+        if card is None:
+            return
+        try:
+            card.kick_auto_refresh()
+        except Exception:
+            pass
 
     # ---------------------------------------------------------------------
-    # Hotkey recording
+    # Hotkey recording (delegated to HotkeyCard)
     # ---------------------------------------------------------------------
 
     def _sync_hotkey_fields_from_env(self) -> None:
-        if self._hotkey_recorder.recording:
-            return
-        try:
-            toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
-            hold = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip()
-            if self._toggle_hotkey_field is not None:
-                self._toggle_hotkey_field.setStringValue_(toggle.upper())
-            if self._hold_hotkey_field is not None:
-                self._hold_hotkey_field.setStringValue_(hold.upper())
-        except Exception:
-            return
+        if self._hotkey_card:
+            self._hotkey_card.sync_from_env()
 
     def _toggle_hotkey_recording(self, kind: str) -> None:
-        if self._hotkey_recorder.recording:
-            self._stop_hotkey_recording(cancelled=True)
-            return
-
-        if kind == "toggle":
-            field = self._toggle_hotkey_field
-            btn = self._toggle_record_btn
-        elif kind == "hold":
-            field = self._hold_hotkey_field
-            btn = self._hold_record_btn
-        else:
-            return
-
-        buttons = [self._toggle_record_btn, self._hold_record_btn]
-        self._hotkey_recorder.start(
-            field=field,
-            button=btn,
-            buttons_to_reset=buttons,
-            on_hotkey=lambda hk: self._apply_hotkey_change(kind, hk),
-        )
+        if self._hotkey_card:
+            self._hotkey_card.toggle_recording(kind)
 
     def _stop_hotkey_recording(self, *, cancelled: bool = False) -> None:
-        self._hotkey_recorder.stop(cancelled=cancelled)
+        if self._hotkey_card:
+            self._hotkey_card.stop_recording(cancelled=cancelled)
 
     def _set_hotkey_status(self, level: str, message: str | None) -> None:
-        if self._hotkey_status_label is None:
-            return
-        if not message:
-            try:
-                self._hotkey_status_label.setStringValue_("")
-            except Exception:
-                pass
-            return
-
-        color = _get_color(180, 180, 180)
-        if level == "ok":
-            color = _get_color(120, 255, 150)
-        elif level == "warning":
-            color = _get_color(255, 200, 90)
-        elif level == "error":
-            color = _get_color(255, 120, 120)
-        try:
-            self._hotkey_status_label.setStringValue_(message)
-            self._hotkey_status_label.setTextColor_(color)
-        except Exception:
-            pass
+        if self._hotkey_card:
+            self._hotkey_card.set_status(level, message or "")
 
     def _apply_hotkey_change(self, kind: str, hotkey_str: str) -> bool:
         from utils.hotkey_validation import validate_hotkey_change
 
         normalized, level, message = validate_hotkey_change(kind, hotkey_str)
         if level == "error":
-            from utils.alerts import show_error_alert
+            from utils.permissions import is_permission_related_message
 
-            show_error_alert("Ungültiger Hotkey", message or "Hotkey konnte nicht gesetzt werden.")
+            # No permission-related popups: the dedicated Permissions step covers this.
+            if not is_permission_related_message(message):
+                from utils.alerts import show_error_alert
+
+                show_error_alert(
+                    "Ungültiger Hotkey",
+                    message or "Hotkey konnte nicht gesetzt werden.",
+                )
             self._set_hotkey_status("error", message)
             self._sync_hotkey_fields_from_env()
             self._render()
@@ -1163,65 +1215,6 @@ class OnboardingWizardController:
     # Test dictation
     # ---------------------------------------------------------------------
 
-    def _toggle_test_dictation(self) -> None:
-        if self._test_btn is None:
-            return
-        if self._test_state == "stopping":
-            return
-        if self._test_state == "recording":
-            if callable(self._on_test_dictation_stop):
-                try:
-                    self._on_test_dictation_stop()
-                except Exception:
-                    pass
-            self._test_state = "stopping"
-            try:
-                self._test_btn.setEnabled_(False)
-            except Exception:
-                pass
-            if self._test_status_label is not None:
-                self._test_status_label.setStringValue_("Processing…")
-            return
-
-        # Start
-        self._test_successful = False
-        self._test_state = "recording"
-        self._render()
-        if self._test_text_view is not None:
-            try:
-                self._test_text_view.setString_("")
-            except Exception:
-                pass
-        if self._test_status_label is not None:
-            self._test_status_label.setStringValue_("Listening…")
-        self._test_btn.setTitle_("Stop")
-        try:
-            self._test_btn.setEnabled_(True)
-        except Exception:
-            pass
-
-        if callable(self._on_test_dictation_start):
-            try:
-                self._on_test_dictation_start()
-            except Exception as e:
-                self._test_state = "idle"
-                if self._test_status_label is not None:
-                    self._test_status_label.setStringValue_(f"Error: {e}")
-                self._test_btn.setTitle_("Start Test")
-                try:
-                    self._test_btn.setEnabled_(True)
-                except Exception:
-                    pass
-        else:
-            self._test_state = "idle"
-            if self._test_status_label is not None:
-                self._test_status_label.setStringValue_("Test dictation not available.")
-            self._test_btn.setTitle_("Start Test")
-            try:
-                self._test_btn.setEnabled_(True)
-            except Exception:
-                pass
-
     def on_test_dictation_hotkey_state(self, state: str) -> None:
         """Keeps the test step UI in sync when the user uses the hotkey."""
         if self._step != OnboardingStep.TEST_DICTATION:
@@ -1239,12 +1232,6 @@ class OnboardingWizardController:
                     pass
             if self._test_status_label is not None:
                 self._test_status_label.setStringValue_("Listening…")
-            if self._test_btn is not None:
-                try:
-                    self._test_btn.setTitle_("Stop")
-                    self._test_btn.setEnabled_(True)
-                except Exception:
-                    pass
             self._render()
             return
 
@@ -1252,24 +1239,15 @@ class OnboardingWizardController:
             if self._test_state != "recording":
                 return
             self._test_state = "stopping"
-            if self._test_btn is not None:
-                try:
-                    self._test_btn.setEnabled_(False)
-                except Exception:
-                    pass
             if self._test_status_label is not None:
                 self._test_status_label.setStringValue_("Processing…")
             self._render()
             return
 
-    def on_test_dictation_result(self, transcript: str, error: str | None = None) -> None:
+    def on_test_dictation_result(
+        self, transcript: str, error: str | None = None
+    ) -> None:
         self._test_state = "idle"
-        if self._test_btn is not None:
-            try:
-                self._test_btn.setTitle_("Start Test")
-                self._test_btn.setEnabled_(True)
-            except Exception:
-                pass
 
         if error:
             self._test_successful = False
@@ -1295,14 +1273,20 @@ class OnboardingWizardController:
     # Completion
     # ---------------------------------------------------------------------
 
-    def _complete(self) -> None:
+    def _complete(self, *, open_settings: bool = False) -> None:
+        """Completes the wizard and optionally opens settings.
+
+        Args:
+            open_settings: If True, opens the Settings window after closing.
+                          Only True when user clicks "Open Settings...".
+        """
         # Persist completion for first-run flow.
         set_onboarding_step(OnboardingStep.DONE)
         set_onboarding_seen(True)
         try:
             self.close()
         finally:
-            if self._on_complete:
+            if open_settings and self._on_complete:
                 try:
                     self._on_complete()
                 except Exception:
