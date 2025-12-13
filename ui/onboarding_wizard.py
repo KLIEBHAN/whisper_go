@@ -363,11 +363,11 @@ class OnboardingWizardController:
         self._content_view.addSubview_(back_btn)
         self._back_btn = back_btn
 
-        skip_btn = NSButton.alloc().initWithFrame_(NSMakeRect(PADDING, y, 120, btn_h))
-        skip_btn.setTitle_("Skip for now")
+        skip_btn = NSButton.alloc().initWithFrame_(NSMakeRect(PADDING, y, 80, btn_h))
+        skip_btn.setTitle_("Cancel")
         skip_btn.setBezelStyle_(NSBezelStyleRounded)
         skip_btn.setFont_(NSFont.systemFontOfSize_(12))
-        h_skip = _WizardActionHandler.alloc().initWithController_action_(self, "skip")
+        h_skip = _WizardActionHandler.alloc().initWithController_action_(self, "cancel")
         skip_btn.setTarget_(h_skip)
         skip_btn.setAction_(objc.selector(h_skip.performAction_, signature=b"v@:@"))
         self._handler_refs.append(h_skip)
@@ -691,11 +691,17 @@ class OnboardingWizardController:
         parent_view.addSubview_(scroll)
         self._test_text_view = text_view
 
-        # Skip test button (bottom of card)
+        # Skip test link (top right of card, next to title)
+        skip_btn_w = 70
         skip_test_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(base_x, card_y + 4, 80, 20)
+            NSMakeRect(
+                base_x + content_w - skip_btn_w,  # Right-aligned
+                card_y + card_h - 28,  # Same Y as title
+                skip_btn_w,
+                18,
+            )
         )
-        skip_test_btn.setTitle_("Skip test →")
+        skip_test_btn.setTitle_("Skip →")
         skip_test_btn.setBezelStyle_(0)  # Borderless
         skip_test_btn.setBordered_(False)
         skip_test_btn.setFont_(NSFont.systemFontOfSize_(11))
@@ -1063,8 +1069,8 @@ class OnboardingWizardController:
             self._set_step(next_step(self._step))
             return
 
-        if action == "skip":
-            self._complete(open_settings=False)
+        if action == "cancel":
+            self._complete(open_settings=True)
             return
 
         if action == "skip_test":
