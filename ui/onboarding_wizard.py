@@ -571,8 +571,10 @@ class OnboardingWizardController:
         )
 
     def _build_step_test_dictation(self, parent_view, content_h: int) -> None:
+        import objc  # type: ignore[import-not-found]
         from AppKit import (  # type: ignore[import-not-found]
             NSBezelBorder,
+            NSButton,
             NSColor,
             NSFont,
             NSFontWeightMedium,
@@ -688,6 +690,30 @@ class OnboardingWizardController:
         scroll.setDocumentView_(text_view)
         parent_view.addSubview_(scroll)
         self._test_text_view = text_view
+
+        # Skip test button (bottom of card)
+        skip_test_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 4, 80, 20)
+        )
+        skip_test_btn.setTitle_("Skip test →")
+        skip_test_btn.setBezelStyle_(0)  # Borderless
+        skip_test_btn.setBordered_(False)
+        skip_test_btn.setFont_(NSFont.systemFontOfSize_(11))
+        try:
+            skip_test_btn.setContentTintColor_(
+                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5)
+            )
+        except Exception:
+            pass
+        h_skip = _WizardActionHandler.alloc().initWithController_action_(
+            self, "skip_test"
+        )
+        skip_test_btn.setTarget_(h_skip)
+        skip_test_btn.setAction_(
+            objc.selector(h_skip.performAction_, signature=b"v@:@")
+        )
+        self._handler_refs.append(h_skip)
+        parent_view.addSubview_(skip_test_btn)
 
     def _build_step_cheat_sheet(self, parent_view, content_h: int) -> None:
         from AppKit import (  # type: ignore[import-not-found]
@@ -1039,6 +1065,11 @@ class OnboardingWizardController:
 
         if action == "skip":
             self._complete(open_settings=False)
+            return
+
+        if action == "skip_test":
+            # Skip the test dictation and go to next step
+            self._set_step(next_step(self._step))
             return
 
         if action == "open_settings":
