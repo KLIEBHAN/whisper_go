@@ -1,4 +1,4 @@
-# Plan: WhisperGo Onboarding/Welcome Window
+# Plan: PulseScribe Onboarding/Welcome Window
 
 > **Status:** ✅ Implementiert
 > **Erstellt:** 2025-12-11
@@ -35,10 +35,10 @@ Erstelle eine native macOS Übersichtsseite (Welcome Window), die:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    WhisperGo Setup                    ✕ │
+│                    PulseScribe Setup                  ✕ │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│  🎤 Welcome to WhisperGo                               │
+│  🎤 Welcome to PulseScribe                             │
 │                                                         │
 │  ─────────────────────────────────────────────────────  │
 │                                                         │
@@ -72,7 +72,7 @@ Erstelle eine native macOS Übersichtsseite (Welcome Window), die:
 │  • Voice commands: "new paragraph", "comma", etc.      │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────────────────────────┐  │
-│  │ [ ] Show    │  │        [Start WhisperGo]        │  │
+│  │ [ ] Show    │  │       [Start PulseScribe]       │  │
 │  │ at startup  │  └─────────────────────────────────┘  │
 │  └─────────────┘                                       │
 └─────────────────────────────────────────────────────────┘
@@ -87,7 +87,7 @@ Erstelle eine native macOS Übersichtsseite (Welcome Window), die:
 ### 1. `utils/preferences.py` (NEU)
 
 ```python
-"""Persistente Einstellungen für WhisperGo."""
+"""Persistente Einstellungen für PulseScribe."""
 import json
 from pathlib import Path
 from config import USER_CONFIG_DIR
@@ -148,7 +148,7 @@ def save_api_key(key_name: str, value: str) -> None:
 
 ```python
 class WelcomeController:
-    """Welcome/Setup Window für WhisperGo."""
+    """Welcome/Setup Window für PulseScribe."""
 
     def __init__(self, hotkey: str, config: dict):
         self.hotkey = hotkey

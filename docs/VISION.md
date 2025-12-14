@@ -1,4 +1,4 @@
-# whisper_go Vision
+# PulseScribe Vision
 
 > Eine minimalistische, Open-Source Alternative zu [Wispr Flow](https://wisprflow.ai) – systemweite Spracheingabe für macOS.
 
@@ -18,7 +18,7 @@ Bestehende Diktat-Tools sind:
 
 ## Die Lösung
 
-**whisper_go** – ein schlankes Tool das:
+**PulseScribe** – ein schlankes Tool das:
 
 1. Per **Hotkey** aktiviert wird
 2. Sprache in **Text** umwandelt (via Whisper)
@@ -65,7 +65,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                      whisper_go                           │
+│                      pulsescribe                          │
 ├──────────────┬────────────────────────────────────────────┤
 │ Trigger      │ Hotkey (Global) / Raycast / CLI            │
 ├──────────────┼────────────────────────────────────────────┤
@@ -86,7 +86,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 Das Projekt ist vollständig modularisiert:
 
 ```
-whisper_go/
+pulsescribe/
 ├── transcribe.py                  # CLI Entry Point
 ├── pulsescribe_daemon.py          # Unified Daemon (Orchestrator)
 ├── build_app.spec                 # PyInstaller Spec für PulseScribe.app

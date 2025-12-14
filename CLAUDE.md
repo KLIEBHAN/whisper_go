@@ -9,7 +9,7 @@ Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
 ## Architektur
 
 ```
-whisper_go/
+pulsescribe/
 ├── transcribe.py          # CLI Orchestrierung (Wrapper)
 ├── pulsescribe_daemon.py  # Unified Daemon (Hotkey + Recording + UI)
 ├── start_daemon.command   # macOS Login Item für Auto-Start

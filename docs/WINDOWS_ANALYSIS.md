@@ -1,6 +1,6 @@
-# Windows-Support Aufwandsanalyse für whisper_go
+# Windows-Support Aufwandsanalyse für PulseScribe
 
-> **Ziel:** Bewertung des Aufwands, whisper_go auf Windows zu portieren
+> **Ziel:** Bewertung des Aufwands, PulseScribe auf Windows zu portieren
 
 ---
 
@@ -19,7 +19,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      whisper_go                              │
+│                      pulsescribe                             │
 ├──────────────────┬──────────────────────────────────────────┤
 │ Komponente       │ macOS-Abhängigkeit                       │
 ├──────────────────┼──────────────────────────────────────────┤
@@ -191,7 +191,7 @@ if sys.platform == "win32":
     import win32api
 
     # Stop-Event statt Signal
-    STOP_EVENT_NAME = "Global\\WhisperGoStop"
+    STOP_EVENT_NAME = "Global\\PulseScribeStop"
     stop_event = win32event.CreateEvent(None, True, False, STOP_EVENT_NAME)
 
     # Daemon starten
@@ -261,7 +261,7 @@ root.wm_attributes('-transparentcolor', 'black')  # Click-through
 ```python
 import rumps  # macOS-only
 
-class WhisperGoMenuBar(rumps.App):
+class PulseScribeMenuBar(rumps.App):
     def __init__(self):
         super().__init__("🎤 Bereit", quit_button="Beenden")
 ```
@@ -274,9 +274,9 @@ from PIL import Image
 
 def create_tray():
     icon = pystray.Icon(
-        "whisper_go",
+        "pulsescribe",
         Image.open("icon.png"),
-        "Whisper Go",
+        "PulseScribe",
         menu=pystray.Menu(
             pystray.MenuItem("Status: Bereit", None, enabled=False),
             pystray.MenuItem("Beenden", lambda: icon.stop())
@@ -506,7 +506,7 @@ Entwickler D: 2.4 Clipboard
 
 - [ ] **1.1.2 Temp-Pfade abstrahieren** ← _benötigt 0.2_ | _parallel zu 1.1.1, 1.3_
   - [ ] `get_temp_dir()` → `/tmp` (macOS) / `%TEMP%` (Windows)
-  - [ ] Alle hardcodierten `/tmp/whisper_go.*` Pfade ersetzen
+  - [ ] Alle hardcodierten `/tmp/pulsescribe.*` Pfade ersetzen
   - [ ] Tests: Pfade auf beiden Plattformen verifizieren
 
 #### 1.2 Daemon & IPC (12–16h) 🔴 _Kritischer Pfad_
@@ -520,7 +520,7 @@ Entwickler D: 2.4 Clipboard
 - [ ] **1.2.2 Stop-Signal abstrahieren** ← _benötigt 1.2.1_ | 🔴 _blockiert 2.2_
   - [ ] Interface: `send_stop_signal(pid: int) -> bool`
   - [ ] macOS: `os.kill(pid, signal.SIGUSR1)`
-  - [ ] Windows: Named Event (`Global\\WhisperGoStop_{pid}`)
+  - [ ] Windows: Named Event (`Global\\PulseScribeStop_{pid}`)
   - [ ] Polling-Mechanismus als Fallback
   - [ ] Tests: Daemon stoppt zuverlässig
 
@@ -817,9 +817,9 @@ pynput           # Hotkeys
 Die Portierung basiert auf der neuen modularen Architektur:
 
 ```
-whisper_go/
+pulsescribe/
 ├── transcribe.py              # CLI Entry Point (Wrapper)
-├── whisper_platform/          # 🔑 Plattform-Abstraktion Layer
+├── pulsescribe_platform/      # 🔑 Plattform-Abstraktion Layer
 │   ├── __init__.py            # Platform-Detection + Factory
 │   ├── base.py                # Protocol-Definitionen
 │   ├── sound.py               # CoreAudio (macOS) / winsound (Windows)
@@ -833,7 +833,7 @@ whisper_go/
 └── utils/                     # Utilities
 ```
 
-> **Hinweis:** Das Paket heißt `whisper_platform` statt `platform`, um Kollisionen mit dem Python-Standardmodul `platform` zu vermeiden.
+> **Hinweis:** Das Paket heißt `pulsescribe_platform` statt `platform`, um Kollisionen mit dem Python-Standardmodul `platform` zu vermeiden.
 
 **Voraussetzung für Windows-Portierung:**
 Die Modularisierung (Phase 5 in der Roadmap) muss zuerst abgeschlossen werden.
