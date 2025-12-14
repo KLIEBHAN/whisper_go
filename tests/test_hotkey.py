@@ -270,8 +270,6 @@ class TestPasteTranscript:
             return True
 
         with (
-            patch("utils.hotkey._capture_clipboard_snapshot", return_value=None),
-            patch("utils.hotkey._restore_clipboard_snapshot"),
             patch(
                 "utils.hotkey._copy_to_clipboard_native", side_effect=mock_copy_native
             ),
@@ -296,11 +294,7 @@ class TestPasteTranscript:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # NSPasteboard fehlschlagen lassen, damit Fallback zu pbcopy geht
-        with (
-            patch("utils.hotkey._capture_clipboard_snapshot", return_value=None),
-            patch("utils.hotkey._restore_clipboard_snapshot"),
-            patch("utils.hotkey._copy_to_clipboard_native", return_value=False),
-        ):
+        with patch("utils.hotkey._copy_to_clipboard_native", return_value=False):
             result = utils.hotkey.paste_transcript("test text")
         assert result is False
 
@@ -313,11 +307,7 @@ class TestPasteTranscript:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # NSPasteboard fehlschlagen lassen, damit Fallback zu pbcopy geht
-        with (
-            patch("utils.hotkey._capture_clipboard_snapshot", return_value=None),
-            patch("utils.hotkey._restore_clipboard_snapshot"),
-            patch("utils.hotkey._copy_to_clipboard_native", return_value=False),
-        ):
+        with patch("utils.hotkey._copy_to_clipboard_native", return_value=False):
             result = utils.hotkey.paste_transcript("test text")
         assert result is False
 
@@ -330,8 +320,6 @@ class TestPasteTranscript:
             return True
 
         with (
-            patch("utils.hotkey._capture_clipboard_snapshot", return_value=None),
-            patch("utils.hotkey._restore_clipboard_snapshot"),
             patch(
                 "utils.hotkey._copy_to_clipboard_native", side_effect=mock_copy_native
             ),
@@ -344,56 +332,58 @@ class TestPasteTranscript:
 
     def test_paste_transcript_clipboard_restore_disabled_by_default(self, monkeypatch):
         """Clipboard-Restore ist standardmäßig deaktiviert."""
-        snapshot_calls = []
-        restore_calls = []
+        get_text_calls = []
+        copy_calls = []
 
-        def mock_capture():
-            snapshot_calls.append(True)
-            return {"test": "data"}
+        def mock_get_text():
+            get_text_calls.append(True)
+            return "previous text"
 
-        def mock_restore(snapshot):
-            restore_calls.append(snapshot)
+        def mock_copy(text):
+            copy_calls.append(text)
+            return True
 
         monkeypatch.delenv("WHISPER_GO_CLIPBOARD_RESTORE", raising=False)
 
         with (
-            patch("utils.hotkey._capture_clipboard_snapshot", side_effect=mock_capture),
-            patch("utils.hotkey._restore_clipboard_snapshot", side_effect=mock_restore),
-            patch("utils.hotkey._copy_to_clipboard_native", return_value=True),
+            patch("utils.hotkey._get_clipboard_text", side_effect=mock_get_text),
+            patch("utils.hotkey._copy_to_clipboard_native", side_effect=mock_copy),
             patch("utils.hotkey._paste_via_pynput", return_value=True),
         ):
             utils.hotkey.paste_transcript("test")
 
-        # Snapshot sollte NICHT aufgerufen werden (da ENV nicht gesetzt)
-        assert snapshot_calls == []
-        assert restore_calls == []
+        # _get_clipboard_text sollte NICHT aufgerufen werden (da ENV nicht gesetzt)
+        assert get_text_calls == []
+        # Nur der Transkriptions-Text sollte kopiert werden
+        assert copy_calls == ["test"]
 
     def test_paste_transcript_clipboard_restore_enabled(self, monkeypatch):
-        """Clipboard-Restore kann via ENV aktiviert werden."""
-        snapshot_calls = []
-        restore_calls = []
+        """Clipboard-Restore kopiert vorherigen Text erneut ins Clipboard."""
+        get_text_calls = []
+        copy_calls = []
 
-        def mock_capture():
-            snapshot_calls.append(True)
-            return {"test": "data"}
+        def mock_get_text():
+            get_text_calls.append(True)
+            return "previous text"
 
-        def mock_restore(snapshot):
-            restore_calls.append(snapshot)
+        def mock_copy(text):
+            copy_calls.append(text)
+            return True
 
         monkeypatch.setenv("WHISPER_GO_CLIPBOARD_RESTORE", "true")
 
         with (
-            patch("utils.hotkey._capture_clipboard_snapshot", side_effect=mock_capture),
-            patch("utils.hotkey._restore_clipboard_snapshot", side_effect=mock_restore),
-            patch("utils.hotkey._copy_to_clipboard_native", return_value=True),
+            patch("utils.hotkey._get_clipboard_text", side_effect=mock_get_text),
+            patch("utils.hotkey._copy_to_clipboard_native", side_effect=mock_copy),
             patch("utils.hotkey._paste_via_pynput", return_value=True),
             patch("time.sleep"),  # Skip sleep für schnelleren Test
         ):
             utils.hotkey.paste_transcript("test")
 
-        # Snapshot und Restore sollten aufgerufen werden
-        assert snapshot_calls == [True]
-        assert restore_calls == [{"test": "data"}]
+        # _get_clipboard_text sollte aufgerufen werden
+        assert get_text_calls == [True]
+        # Erst Transkription, dann vorheriger Text (Re-Copy)
+        assert copy_calls == ["test", "previous text"]
 
 
 # =============================================================================

@@ -262,55 +262,19 @@ def _get_utf8_env() -> dict:
     return env
 
 
-def _capture_clipboard_snapshot():
-    """Snapshot des macOS Pasteboards (best-effort).
+def _get_clipboard_text() -> str | None:
+    """Liest den aktuellen Text-Inhalt des Clipboards.
 
-    Wir versuchen die kompletten Pasteboard-Items (alle Types) zu sichern, damit
-    Auto-Paste den Clipboard-Inhalt nach erfolgreichem Einfügen wiederherstellen kann.
+    Returns:
+        Text-Inhalt oder None wenn kein Text im Clipboard.
     """
     try:
-        from AppKit import NSPasteboard  # type: ignore[import-not-found]
+        from AppKit import NSPasteboard, NSStringPboardType  # type: ignore[import-not-found]
 
         pb = NSPasteboard.generalPasteboard()
-        items = pb.pasteboardItems() or []
-        snapshot: list[dict[str, object]] = []
-        for item in items:
-            data_by_type: dict[str, object] = {}
-            for t in item.types() or []:
-                try:
-                    data = item.dataForType_(t)
-                except Exception:
-                    data = None
-                if data is not None:
-                    data_by_type[str(t)] = data
-            snapshot.append(data_by_type)
-        return snapshot
+        return pb.stringForType_(NSStringPboardType)
     except Exception:
         return None
-
-
-def _restore_clipboard_snapshot(snapshot) -> None:
-    """Stellt einen vorherigen Pasteboard-Snapshot wieder her (best-effort)."""
-    if snapshot is None:
-        return
-    try:
-        from AppKit import NSPasteboard, NSPasteboardItem  # type: ignore[import-not-found]
-
-        pb = NSPasteboard.generalPasteboard()
-        pb.clearContents()
-        items_to_write = []
-        for item_data in snapshot:
-            pb_item = NSPasteboardItem.alloc().init()
-            for t, data in item_data.items():
-                try:
-                    pb_item.setData_forType_(data, t)
-                except Exception:
-                    continue
-            items_to_write.append(pb_item)
-        if items_to_write:
-            pb.writeObjects_(items_to_write)
-    except Exception:
-        return
 
 
 def _copy_to_clipboard_native(text: str) -> bool:
@@ -349,10 +313,12 @@ def paste_transcript(text: str) -> bool:
     """
     logger.info(f"Auto-Paste: '{text[:50]}{'...' if len(text) > 50 else ''}'")
 
-    # Clipboard-Restore ist optional (ENV: WHISPER_GO_CLIPBOARD_RESTORE=true)
-    # Standardmäßig deaktiviert, da es Race-Conditions bei In-App TextViews verursacht.
+    # Optional: Vorherigen Clipboard-Text merken für Re-Copy nach dem Paste
+    # (ENV: WHISPER_GO_CLIPBOARD_RESTORE=true)
+    # Dies fügt den alten Text ERNEUT ins Clipboard ein, sodass Clipboard-History
+    # Tools beide Einträge sehen (Transkription + vorheriger Text).
     restore_clipboard = os.getenv("WHISPER_GO_CLIPBOARD_RESTORE", "").lower() == "true"
-    clipboard_snapshot = _capture_clipboard_snapshot() if restore_clipboard else None
+    previous_text = _get_clipboard_text() if restore_clipboard else None
 
     # 1. In Clipboard kopieren via NSPasteboard (in-process, kein Subprocess)
     # Dies ist wichtig für das Einfügen in eigene App-Fenster (z.B. Settings)
@@ -406,12 +372,12 @@ def paste_transcript(text: str) -> bool:
         )
         return False
 
-    # 4. Optional: Clipboard-Restore (wenn aktiviert via WHISPER_GO_CLIPBOARD_RESTORE=true)
-    if clipboard_snapshot is not None:
-        # Längere Verzögerung für Event-Verarbeitung.
-        # WARNUNG: Bei In-App TextViews kann dies trotzdem zu Race-Conditions führen.
-        time.sleep(1.0)
-        _restore_clipboard_snapshot(clipboard_snapshot)
-        logger.debug("Clipboard wiederhergestellt")
+    # 4. Optional: Vorherigen Text erneut ins Clipboard kopieren
+    # Dies ist besser als ein kompletter Restore, weil Clipboard-History Tools
+    # beide Einträge sehen (Transkription + vorheriger Text).
+    if previous_text is not None:
+        time.sleep(1.0)  # Warten bis Paste verarbeitet wurde
+        _copy_to_clipboard_native(previous_text)
+        logger.debug("Vorheriger Clipboard-Text erneut kopiert")
 
     return True
