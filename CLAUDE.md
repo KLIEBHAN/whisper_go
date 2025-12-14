@@ -165,7 +165,7 @@ Prompts können über `~/.whisper_go/prompts.toml` angepasst werden:
 
 [voice_commands]
 instruction = """
-Eigene Voice-Commands Anweisungen...
+Eigene Anweisungen für Voice-Commands...
 """
 
 [prompts.email]

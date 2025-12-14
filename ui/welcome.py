@@ -1347,6 +1347,7 @@ class WelcomeController:
         import objc  # type: ignore[import-not-found]
 
         from utils.custom_prompts import (
+            KNOWN_CONTEXTS,
             format_app_mappings,
             get_custom_app_contexts,
             get_custom_prompt_for_context,
@@ -1413,15 +1414,8 @@ class WelcomeController:
             NSMakeRect(base_x + 65, row_y, 140, 22)
         )
         context_popup.setFont_(NSFont.systemFontOfSize_(11))
-        # 4 Kontexte + Voice Commands + App Mappings
-        for ctx in [
-            "default",
-            "email",
-            "chat",
-            "code",
-            "── Voice Commands",
-            "── App Mappings",
-        ]:
+        # Kontexte aus KNOWN_CONTEXTS + Voice Commands + App Mappings
+        for ctx in [*KNOWN_CONTEXTS, "── Voice Commands", "── App Mappings"]:
             context_popup.addItemWithTitle_(ctx)
         parent_view.addSubview_(context_popup)
         self._prompts_context_popup = context_popup
@@ -2642,11 +2636,17 @@ class WelcomeController:
             )
 
     def _save_custom_prompts(self) -> None:
-        """Speichert Custom Prompts und Voice Commands in prompts.toml."""
+        """Speichert Custom Prompts und Voice Commands in prompts.toml.
+
+        WICHTIG: Lädt erst existierende Config und mergt Session-Änderungen,
+        um bereits gespeicherte Custom-Prompts nicht zu verlieren.
+        """
         import logging
 
         from utils.custom_prompts import (
+            KNOWN_CONTEXTS,
             get_defaults,
+            load_custom_prompts,
             parse_app_mappings,
             save_custom_prompts,
         )
@@ -2663,52 +2663,66 @@ class WelcomeController:
             self._prompts_cache = {}
         self._prompts_cache[current_ctx] = current_text
 
-        # Vergleiche mit Defaults
+        # Defaults und existierende Custom-Config laden
         defaults = get_defaults()
+        existing = load_custom_prompts()
 
-        # Nur geänderte Prompts speichern
-        changed_prompts: dict = {}
-        for ctx in ["default", "email", "chat", "code"]:
+        # Mit existierenden Custom-Prompts starten, dann Session-Änderungen mergen
+        merged_prompts: dict = {}
+        for ctx in KNOWN_CONTEXTS:
             default_prompt = defaults["prompts"].get(ctx, {}).get("prompt", "")
+            existing_prompt = existing["prompts"].get(ctx, {}).get("prompt", "")
             cached_prompt = self._prompts_cache.get(ctx)
 
+            # Priorität: Session-Cache > Existierend > Default
             if cached_prompt is not None and cached_prompt != default_prompt:
-                changed_prompts[ctx] = {"prompt": cached_prompt}
+                merged_prompts[ctx] = {"prompt": cached_prompt}
+            elif existing_prompt != default_prompt:
+                # Existierenden Custom-Prompt beibehalten
+                merged_prompts[ctx] = {"prompt": existing_prompt}
 
-        # Voice Commands prüfen
-        changed_vc: dict = {}
+        # Voice Commands: Session > Existierend > Default
+        merged_vc: dict = {}
         vc_key = "── Voice Commands"
         cached_vc = self._prompts_cache.get(vc_key)
         default_vc = defaults["voice_commands"]["instruction"]
-        if cached_vc is not None and cached_vc != default_vc:
-            changed_vc = {"instruction": cached_vc}
+        existing_vc = existing["voice_commands"]["instruction"]
 
-        # App Mappings prüfen
-        changed_app_contexts: dict = {}
+        if cached_vc is not None and cached_vc != default_vc:
+            merged_vc = {"instruction": cached_vc}
+        elif existing_vc != default_vc:
+            merged_vc = {"instruction": existing_vc}
+
+        # App Mappings: Session > Existierend > Default
+        merged_app_contexts: dict = {}
         app_key = "── App Mappings"
         cached_apps = self._prompts_cache.get(app_key)
+        default_apps = defaults["app_contexts"]
+        existing_apps = existing["app_contexts"]
+
         if cached_apps is not None:
             parsed_apps = parse_app_mappings(cached_apps)
-            default_apps = defaults["app_contexts"]
             if parsed_apps != default_apps:
-                changed_app_contexts = parsed_apps
+                merged_app_contexts = parsed_apps
+        elif existing_apps != default_apps:
+            merged_app_contexts = existing_apps
 
-        # Nur speichern wenn es Änderungen gibt
-        if changed_prompts or changed_vc or changed_app_contexts:
+        # Nur speichern wenn es Custom-Werte gibt
+        if merged_prompts or merged_vc or merged_app_contexts:
             data_to_save: dict = {}
-            if changed_prompts:
-                data_to_save["prompts"] = changed_prompts
-            if changed_vc:
-                data_to_save["voice_commands"] = changed_vc
-            if changed_app_contexts:
-                data_to_save["app_contexts"] = changed_app_contexts
+            if merged_prompts:
+                data_to_save["prompts"] = merged_prompts
+            if merged_vc:
+                data_to_save["voice_commands"] = merged_vc
+            if merged_app_contexts:
+                data_to_save["app_contexts"] = merged_app_contexts
 
             try:
                 save_custom_prompts(data_to_save)
-                saved_items = list(changed_prompts.keys())
-                if changed_vc:
+                saved_items = list(merged_prompts.keys())
+                if merged_vc:
                     saved_items.append("Voice Commands")
-                if changed_app_contexts:
+                if merged_app_contexts:
                     saved_items.append("App Mappings")
                 log.info(f"Saved custom prompts for: {saved_items}")
                 if (

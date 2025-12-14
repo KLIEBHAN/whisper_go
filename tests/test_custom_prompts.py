@@ -127,7 +127,8 @@ prompt = """Version 1"""
         # Datei ändern (mtime muss sich ändern)
         import time
 
-        time.sleep(0.01)  # Minimale Verzögerung für mtime-Unterschied
+        # 0.1s für zuverlässige mtime-Änderung auf allen Filesystems (HFS+, APFS, etc.)
+        time.sleep(0.1)
         prompts_file.write_text(
             '''
 [prompts.default]
@@ -176,6 +177,18 @@ prompt = """Nur Email custom."""
 
         # Keine Datei → Defaults, unbekannter Kontext → default
         result = get_custom_prompt_for_context("unknown_context")
+        assert result == CONTEXT_PROMPTS["default"]
+
+    def test_invalid_toml_returns_default(self, prompts_file):
+        """Fehlerhafte TOML-Datei fällt auf Hardcoded Default zurück."""
+        from utils.custom_prompts import _clear_cache, get_custom_prompt_for_context
+
+        # Ungültiges TOML schreiben
+        prompts_file.write_text("this is {{ not valid toml")
+        _clear_cache()
+
+        # Public API muss trotzdem funktionieren und Default liefern
+        result = get_custom_prompt_for_context("default")
         assert result == CONTEXT_PROMPTS["default"]
 
 

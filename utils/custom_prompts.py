@@ -20,7 +20,7 @@ import logging
 import tomllib
 from pathlib import Path
 
-from config import USER_CONFIG_DIR
+from config import PROMPTS_FILE
 from refine.prompts import (
     CONTEXT_PROMPTS,
     DEFAULT_APP_CONTEXTS,
@@ -28,12 +28,6 @@ from refine.prompts import (
 )
 
 logger = logging.getLogger("whisper_go")
-
-# =============================================================================
-# Konfiguration
-# =============================================================================
-
-PROMPTS_FILE = USER_CONFIG_DIR / "prompts.toml"
 
 # Bekannte Kontext-Typen für Prompt-Auswahl
 KNOWN_CONTEXTS = ("default", "email", "chat", "code")
@@ -115,7 +109,10 @@ def load_custom_prompts(path: Path | None = None) -> dict:
         user_config = tomllib.loads(prompts_file.read_text())
     except (tomllib.TOMLDecodeError, OSError) as e:
         logger.warning(f"Prompts-Datei fehlerhaft: {e}")
-        return get_defaults()
+        # Defaults cachen um wiederholtes Parsen zu vermeiden
+        defaults = get_defaults()
+        _cache[prompts_file] = (current_mtime, defaults)
+        return defaults
 
     # User-Config mit Defaults zusammenführen
     merged = _merge_user_with_defaults(user_config)
