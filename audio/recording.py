@@ -1,4 +1,4 @@
-"""Audio-Aufnahme für whisper_go.
+"""Audio-Aufnahme für pulsescribe.
 
 Enthält Funktionen und Klassen für die Mikrofon-Aufnahme
 mit sounddevice.
@@ -22,7 +22,7 @@ from config import (
 )
 from utils.logging import get_session_id
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 
 def _log(message: str) -> None:

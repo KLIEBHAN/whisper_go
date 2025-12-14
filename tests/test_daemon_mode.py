@@ -4,18 +4,18 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
-from whisper_daemon import WhisperDaemon
+from pulsescribe_daemon import PulseScribeDaemon
 from utils.state import AppState, DaemonMessage, MessageType
 
 
 class TestDaemonMode(unittest.TestCase):
-    @patch("whisper_daemon.threading.Thread")
+    @patch("pulsescribe_daemon.threading.Thread")
     def test_start_recording_openai_mode(self, mock_thread_cls):
         """Test that OpenAI mode starts recording worker, not streaming."""
-        daemon = WhisperDaemon(mode="openai")
+        daemon = PulseScribeDaemon(mode="openai")
 
         # Unlink INTERIM_FILE mock? It's a Path object in the module.
-        with patch("whisper_daemon.INTERIM_FILE") as mock_interim:
+        with patch("pulsescribe_daemon.INTERIM_FILE") as mock_interim:
             daemon._start_recording()
 
         # Check that thread was started with _recording_worker
@@ -25,14 +25,14 @@ class TestDaemonMode(unittest.TestCase):
         self.assertEqual(kwargs["name"], "RecordingWorker")
         self.assertTrue(daemon._recording)
 
-    @patch("whisper_daemon.threading.Thread")
+    @patch("pulsescribe_daemon.threading.Thread")
     def test_start_recording_deepgram_streaming(self, mock_thread_cls):
         """Test that Deepgram mode (streaming enabled) starts streaming worker."""
-        daemon = WhisperDaemon(mode="deepgram")
+        daemon = PulseScribeDaemon(mode="deepgram")
 
         with (
-            patch.dict(os.environ, {"WHISPER_GO_STREAMING": "true"}),
-            patch("whisper_daemon.INTERIM_FILE"),
+            patch.dict(os.environ, {"PULSESCRIBE_STREAMING": "true"}),
+            patch("pulsescribe_daemon.INTERIM_FILE"),
         ):
             daemon._start_recording()
 
@@ -41,14 +41,14 @@ class TestDaemonMode(unittest.TestCase):
         self.assertEqual(kwargs["target"], daemon._streaming_worker)
         self.assertEqual(kwargs["name"], "StreamingWorker")
 
-    @patch("whisper_daemon.threading.Thread")
+    @patch("pulsescribe_daemon.threading.Thread")
     def test_start_recording_deepgram_no_streaming(self, mock_thread_cls):
         """Test that Deepgram mode (streaming disabled) starts recording worker."""
-        daemon = WhisperDaemon(mode="deepgram")
+        daemon = PulseScribeDaemon(mode="deepgram")
 
         with (
-            patch.dict(os.environ, {"WHISPER_GO_STREAMING": "false"}),
-            patch("whisper_daemon.INTERIM_FILE"),
+            patch.dict(os.environ, {"PULSESCRIBE_STREAMING": "false"}),
+            patch("pulsescribe_daemon.INTERIM_FILE"),
         ):
             daemon._start_recording()
 
@@ -57,20 +57,20 @@ class TestDaemonMode(unittest.TestCase):
         self.assertEqual(kwargs["target"], daemon._recording_worker)
         self.assertEqual(kwargs["name"], "RecordingWorker")
 
-    @patch("whisper_daemon.threading.Thread")
+    @patch("pulsescribe_daemon.threading.Thread")
     def test_start_recording_deepgram_streaming_default_when_unset(
         self, mock_thread_cls
     ):
-        """Deepgram mode defaults to streaming when WHISPER_GO_STREAMING is unset."""
-        daemon = WhisperDaemon(mode="deepgram")
+        """Deepgram mode defaults to streaming when PULSESCRIBE_STREAMING is unset."""
+        daemon = PulseScribeDaemon(mode="deepgram")
 
         # Ensure the env var is not present for this test
         # Use simple os.environ manipulation with patch.dict to restore later
         with patch.dict(os.environ):
-            if "WHISPER_GO_STREAMING" in os.environ:
-                del os.environ["WHISPER_GO_STREAMING"]
+            if "PULSESCRIBE_STREAMING" in os.environ:
+                del os.environ["PULSESCRIBE_STREAMING"]
 
-            with patch("whisper_daemon.INTERIM_FILE"):
+            with patch("pulsescribe_daemon.INTERIM_FILE"):
                 daemon._start_recording()
 
         mock_thread_cls.assert_called_once()
@@ -78,66 +78,66 @@ class TestDaemonMode(unittest.TestCase):
         self.assertEqual(kwargs["target"], daemon._streaming_worker)
         self.assertEqual(kwargs["name"], "StreamingWorker")
 
-    @patch("whisper_daemon.WhisperDaemon")
+    @patch("pulsescribe_daemon.PulseScribeDaemon")
     def test_main_uses_env_mode_for_deepgram(self, mock_daemon_cls):
-        """whisper_daemon.main() uses WHISPER_GO_MODE when set (e.g., deepgram)."""
-        import whisper_daemon
+        """pulsescribe_daemon.main() uses PULSESCRIBE_MODE when set (e.g., deepgram)."""
+        import pulsescribe_daemon
 
         with (
-            patch.dict(os.environ, {"WHISPER_GO_MODE": "deepgram"}),
+            patch.dict(os.environ, {"PULSESCRIBE_MODE": "deepgram"}),
             patch.object(sys, "argv", ["whisper-daemon"]),
-            patch("whisper_daemon.WhisperDaemon.run"),
+            patch("pulsescribe_daemon.PulseScribeDaemon.run"),
         ):
-            whisper_daemon.main()
+            pulsescribe_daemon.main()
 
         mock_daemon_cls.assert_called_once()
         _, kwargs = mock_daemon_cls.call_args
         self.assertEqual(kwargs.get("mode"), "deepgram")
 
-    @patch("whisper_daemon.WhisperDaemon")
+    @patch("pulsescribe_daemon.PulseScribeDaemon")
     def test_main_uses_cli_mode_over_env(self, mock_daemon_cls):
-        """CLI --mode should override WHISPER_GO_MODE env variable."""
-        import whisper_daemon
+        """CLI --mode should override PULSESCRIBE_MODE env variable."""
+        import pulsescribe_daemon
 
         with (
-            patch.dict(os.environ, {"WHISPER_GO_MODE": "openai"}),
+            patch.dict(os.environ, {"PULSESCRIBE_MODE": "openai"}),
             patch.object(sys, "argv", ["whisper-daemon", "--mode", "deepgram"]),
-            patch("whisper_daemon.WhisperDaemon.run"),
+            patch("pulsescribe_daemon.PulseScribeDaemon.run"),
         ):
-            whisper_daemon.main()
+            pulsescribe_daemon.main()
 
         mock_daemon_cls.assert_called_once()
         _, kwargs = mock_daemon_cls.call_args
         self.assertEqual(kwargs.get("mode"), "deepgram")
 
     def test_model_name_for_logging_local_uses_local_env(self):
-        """Im local-Mode soll für Logs WHISPER_GO_LOCAL_MODEL genutzt werden."""
-        daemon = WhisperDaemon(mode="local", model=None)
+        """Im local-Mode soll für Logs PULSESCRIBE_LOCAL_MODEL genutzt werden."""
+        daemon = PulseScribeDaemon(mode="local", model=None)
         mock_provider = MagicMock()
         mock_provider.default_model = "turbo"
 
-        with patch.dict(os.environ, {"WHISPER_GO_LOCAL_MODEL": "large"}):
+        with patch.dict(os.environ, {"PULSESCRIBE_LOCAL_MODEL": "large"}):
             self.assertEqual(daemon._model_name_for_logging(mock_provider), "large")
 
     def test_reload_settings_unsets_removed_local_backend_env(self):
         """Wenn Settings ein Key entfernen, muss ENV ebenfalls bereinigt werden (sonst bleibt z.B. faster aktiv)."""
-        daemon = WhisperDaemon(mode="openai")
+        daemon = PulseScribeDaemon(mode="openai")
         local_provider = MagicMock()
         daemon._provider_cache["local"] = local_provider
 
         with (
-            patch.dict(os.environ, {"WHISPER_GO_LOCAL_BACKEND": "faster"}),
-            patch("whisper_daemon.load_environment"),
+            patch.dict(os.environ, {"PULSESCRIBE_LOCAL_BACKEND": "faster"}),
+            patch("pulsescribe_daemon.load_environment"),
             patch("utils.preferences.read_env_file", return_value={}),
         ):
             daemon._reload_settings()
-            self.assertNotIn("WHISPER_GO_LOCAL_BACKEND", os.environ)
+            self.assertNotIn("PULSESCRIBE_LOCAL_BACKEND", os.environ)
             # Provider bleibt gecached, aber muss Runtime-Config neu evaluieren.
             self.assertIn("local", daemon._provider_cache)
             local_provider.invalidate_runtime_config.assert_called_once()
 
     def test_recording_worker_execution(self):
-        daemon = WhisperDaemon(mode="openai", language="de")
+        daemon = PulseScribeDaemon(mode="openai", language="de")
         daemon._stop_event = threading.Event()
 
         # Mocking items used inside _recording_worker
@@ -181,13 +181,14 @@ class TestDaemonMode(unittest.TestCase):
                 {"sounddevice": mock_sd, "soundfile": mock_sf, "numpy": mock_np},
             ),
             patch(
-                "whisper_daemon.tempfile.mkstemp", return_value=(123, "/tmp/fake.wav")
+                "pulsescribe_daemon.tempfile.mkstemp",
+                return_value=(123, "/tmp/fake.wav"),
             ),
-            patch("whisper_daemon.os.close"),
-            patch("whisper_daemon.os.unlink"),
-            patch("whisper_daemon.os.path.exists", return_value=True),
-            patch("whisper_daemon.get_provider", mock_get_provider),
-            patch("whisper_daemon.get_sound_player", mock_get_player),
+            patch("pulsescribe_daemon.os.close"),
+            patch("pulsescribe_daemon.os.unlink"),
+            patch("pulsescribe_daemon.os.path.exists", return_value=True),
+            patch("pulsescribe_daemon.get_provider", mock_get_provider),
+            patch("pulsescribe_daemon.get_sound_player", mock_get_player),
         ):
             daemon._recording_worker()
 
@@ -210,7 +211,7 @@ class TestDaemonMode(unittest.TestCase):
 
     def test_recording_worker_no_audio_puts_empty_result(self):
         """Sehr kurzer Hold-Tap ohne Callback darf nicht im TRANSCRIBING hängen bleiben."""
-        daemon = WhisperDaemon(mode="openai")
+        daemon = PulseScribeDaemon(mode="openai")
         daemon._stop_event = threading.Event()
         daemon._stop_event.set()  # Aufnahme sofort beenden, keine Chunks
 
@@ -230,7 +231,7 @@ class TestDaemonMode(unittest.TestCase):
                 sys.modules,
                 {"sounddevice": mock_sd, "soundfile": mock_sf, "numpy": mock_np},
             ),
-            patch("whisper_daemon.get_sound_player", mock_get_player),
+            patch("pulsescribe_daemon.get_sound_player", mock_get_player),
         ):
             daemon._recording_worker()
 
@@ -242,7 +243,7 @@ class TestDaemonMode(unittest.TestCase):
 
     def test_stop_recording_does_not_overwrite_idle_state(self):
         """_stop_recording darf IDLE/DONE nicht wieder auf TRANSCRIBING setzen."""
-        daemon = WhisperDaemon(mode="openai")
+        daemon = PulseScribeDaemon(mode="openai")
         daemon._recording = True
         daemon._current_state = AppState.IDLE
         daemon._stop_event = threading.Event()
@@ -253,7 +254,7 @@ class TestDaemonMode(unittest.TestCase):
 
     def test_recording_worker_silent_skips_transcription(self):
         """Wenn keine Sprache erkannt wird, wird nicht transkribiert."""
-        daemon = WhisperDaemon(mode="openai")
+        daemon = PulseScribeDaemon(mode="openai")
         daemon._stop_event = threading.Event()
 
         mock_sd = MagicMock()
@@ -282,9 +283,9 @@ class TestDaemonMode(unittest.TestCase):
                 sys.modules,
                 {"sounddevice": mock_sd, "soundfile": mock_sf, "numpy": mock_np},
             ),
-            patch("whisper_daemon.get_provider", mock_get_provider),
-            patch("whisper_daemon.get_sound_player", mock_get_player),
-            patch("whisper_daemon.VAD_THRESHOLD", 9999.0),
+            patch("pulsescribe_daemon.get_provider", mock_get_provider),
+            patch("pulsescribe_daemon.get_sound_player", mock_get_player),
+            patch("pulsescribe_daemon.VAD_THRESHOLD", 9999.0),
         ):
             daemon._recording_worker()
 
@@ -316,7 +317,7 @@ class TestDaemonMode(unittest.TestCase):
             axis=0,
         )
 
-        daemon = WhisperDaemon(mode="local", language="en")
+        daemon = PulseScribeDaemon(mode="local", language="en")
         daemon._stop_event = threading.Event()
 
         mock_sd = MagicMock()
@@ -343,16 +344,20 @@ class TestDaemonMode(unittest.TestCase):
                 sys.modules,
                 {"sounddevice": mock_sd, "soundfile": MagicMock()},
             ),
-            patch("whisper_daemon.get_provider", MagicMock(return_value=mock_provider)),
             patch(
-                "whisper_daemon.get_sound_player", MagicMock(return_value=mock_player)
+                "pulsescribe_daemon.get_provider", MagicMock(return_value=mock_provider)
             ),
             patch(
-                "whisper_daemon.tempfile.mkstemp", return_value=(123, "/tmp/fake.wav")
+                "pulsescribe_daemon.get_sound_player",
+                MagicMock(return_value=mock_player),
             ),
-            patch("whisper_daemon.os.close"),
-            patch("whisper_daemon.os.path.exists", return_value=True),
-            patch("whisper_daemon.os.unlink"),
+            patch(
+                "pulsescribe_daemon.tempfile.mkstemp",
+                return_value=(123, "/tmp/fake.wav"),
+            ),
+            patch("pulsescribe_daemon.os.close"),
+            patch("pulsescribe_daemon.os.path.exists", return_value=True),
+            patch("pulsescribe_daemon.os.unlink"),
         ):
             daemon._recording_worker()
 
@@ -366,7 +371,7 @@ class TestTestDictation(unittest.TestCase):
 
     def test_stop_test_dictation_preserves_callback(self):
         """stop_test_dictation() behält den Callback für das Ergebnis."""
-        daemon = WhisperDaemon(mode="local")
+        daemon = PulseScribeDaemon(mode="local")
         callback = MagicMock()
 
         # Simulate starting a test run
@@ -381,7 +386,7 @@ class TestTestDictation(unittest.TestCase):
 
     def test_cancel_test_dictation_clears_callback(self):
         """cancel_test_dictation() löscht den Callback um veraltete Ergebnisse zu verwerfen."""
-        daemon = WhisperDaemon(mode="local")
+        daemon = PulseScribeDaemon(mode="local")
         callback = MagicMock()
 
         # Simulate starting a test run
@@ -396,7 +401,7 @@ class TestTestDictation(unittest.TestCase):
 
     def test_finish_test_run_calls_callback_when_set(self):
         """_finish_test_run() ruft den Callback auf wenn er gesetzt ist."""
-        daemon = WhisperDaemon(mode="local")
+        daemon = PulseScribeDaemon(mode="local")
         callback = MagicMock()
 
         daemon._test_run_active = True
@@ -410,7 +415,7 @@ class TestTestDictation(unittest.TestCase):
 
     def test_finish_test_run_skips_callback_when_none(self):
         """_finish_test_run() überspringt Callback wenn er None ist (nach cancel)."""
-        daemon = WhisperDaemon(mode="local")
+        daemon = PulseScribeDaemon(mode="local")
 
         daemon._test_run_active = True
         daemon._test_run_callback = None  # Cleared by cancel
@@ -422,7 +427,7 @@ class TestTestDictation(unittest.TestCase):
 
     def test_start_test_dictation_sets_callback(self):
         """start_test_dictation() setzt den Callback korrekt."""
-        daemon = WhisperDaemon(mode="local")
+        daemon = PulseScribeDaemon(mode="local")
         callback = MagicMock()
 
         with patch.object(daemon, "_start_recording"):

@@ -8,7 +8,7 @@ die auch aus Worker-Threads aufgerufen werden können.
 import logging
 import sys
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 
 def show_error_alert(title: str, message: str) -> None:

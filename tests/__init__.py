@@ -1,1 +1,1 @@
-# whisper_go tests
+# pulsescribe tests

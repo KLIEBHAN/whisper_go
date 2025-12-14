@@ -1,5 +1,5 @@
 [project]
-name = "whisper-go"
+name = "pulsescribe"
 version = "1.0.0"
 description = "Spracheingabe für macOS – Transkription mit OpenAI Whisper, Deepgram, Groq oder lokal"
 readme = "README.md"

@@ -1,6 +1,6 @@
 """Shared Custom Vocabulary loader.
 
-Providers and CLI use the same vocabulary file (`~/.whisper_go/vocabulary.json`).
+Providers and CLI use the same vocabulary file (`~/.pulsescribe/vocabulary.json`).
 To avoid redundant disk I/O on every transcription, this module caches the
 parsed vocabulary and only reloads when the file changes.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from config import VOCABULARY_FILE as _DEFAULT_VOCAB_FILE
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Cache per path: {Path: (mtime, data)}
 _cache: dict[Path, tuple[float, dict]] = {}

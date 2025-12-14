@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hauptmodul und CLI-Einstiegspunkt für whisper_go.
+Hauptmodul und CLI-Einstiegspunkt für PulseScribe.
 
 Dieses Modul fungiert als zentraler Orchestrator, der die spezialisierten
 Sub-Module koordiniert:
@@ -73,8 +73,8 @@ from config import (
 # Laufzeit-State (modulglobal)
 # =============================================================================
 
-logger = logging.getLogger("whisper_go")
-_custom_app_contexts_cache: dict | None = None  # Cache für WHISPER_GO_APP_CONTEXTS
+logger = logging.getLogger("pulsescribe")
+_custom_app_contexts_cache: dict | None = None  # Cache für PULSESCRIBE_APP_CONTEXTS
 
 # API-Client Singletons (Lazy Init) – für LLM-Refine
 # Transkriptions-Clients sind jetzt in providers/
@@ -84,8 +84,12 @@ _groq_client = None
 from utils.logging import setup_logging, log, error, get_session_id as _get_session_id
 from utils.env import get_env_bool_default
 from utils.environment import load_environment
-from utils.timing import format_duration as _format_duration, log_preview as _shared_log_preview
+from utils.timing import (
+    format_duration as _format_duration,
+    log_preview as _shared_log_preview,
+)
 from utils.vocabulary import load_vocabulary as _load_vocabulary_shared
+
 
 def copy_to_clipboard(text: str) -> bool:
     """Kopiert Text in die Zwischenablage. Gibt True bei Erfolg zurück.
@@ -95,15 +99,18 @@ def copy_to_clipboard(text: str) -> bool:
     """
     try:
         from whisper_platform import get_clipboard
+
         return get_clipboard().copy(text)
     except Exception:
         # Fallback auf pyperclip für Rückwärtskompatibilität
         try:
             import pyperclip
+
             pyperclip.copy(text)
             return True
         except Exception:
             return False
+
 
 # =============================================================================
 # Sound-Playback & Audio-Aufnahme
@@ -111,12 +118,14 @@ def copy_to_clipboard(text: str) -> bool:
 
 from whisper_platform import get_sound_player
 
+
 def play_sound(name: str) -> None:
     """Delegiert an whisper_platform."""
     try:
         get_sound_player().play(name)
     except Exception:
         pass
+
 
 from audio.recording import record_audio, record_audio_daemon
 
@@ -138,12 +147,14 @@ def _log_preview(text: str, max_length: int = 100) -> str:
 # =============================================================================
 
 
-def _is_whisper_go_process(pid: int) -> bool:
-    """Prüft, ob PID zu einem laufenden whisper_go Daemon gehört.
+def _is_pulsescribe_process(pid: int) -> bool:
+    """Prüft, ob PID zu einem laufenden PulseScribe Daemon gehört.
 
-    Wrapper um utils.daemon.is_whisper_go_process, um Redundanz zu vermeiden.
+    Wrapper um utils.daemon.is_pulsescribe_process, um Redundanz zu vermeiden.
     """
-    return _shared_is_whisper_go_process(pid)
+    return _shared_is_pulsescribe_process(pid)
+
+
 # =============================================================================
 # Daemon-Hilfsfunktionen (Raycast-Integration)
 # =============================================================================
@@ -152,7 +163,7 @@ def _is_whisper_go_process(pid: int) -> bool:
 from utils.daemon import (
     cleanup_stale_pid_file as _cleanup_stale_pid_file,
     daemonize as _daemonize,
-    is_whisper_go_process as _shared_is_whisper_go_process,
+    is_pulsescribe_process as _shared_is_pulsescribe_process,
 )
 
 
@@ -183,16 +194,9 @@ def load_vocabulary() -> dict:
 # =============================================================================
 
 
-
-
-
-
-
-
 # =============================================================================
 # Kontext-Erkennung (delegiert an refine.context)
 # =============================================================================
-
 
 
 # =============================================================================
@@ -287,18 +291,18 @@ Beispiele:
     parser.add_argument(
         "--mode",
         choices=["openai", "local", "deepgram", "groq"],
-        default=os.getenv("WHISPER_GO_MODE", "openai"),
-        help="Transkriptions-Modus (auch via WHISPER_GO_MODE env)",
+        default=os.getenv("PULSESCRIBE_MODE", "openai"),
+        help="Transkriptions-Modus (auch via PULSESCRIBE_MODE env)",
     )
     parser.add_argument(
         "--model",
-        default=os.getenv("WHISPER_GO_MODEL"),
-        help="Modellname (CLI > WHISPER_GO_MODEL env > Provider-Default). Defaults: API=gpt-4o-transcribe, Deepgram=nova-3, Groq=whisper-large-v3, Lokal=turbo",
+        default=os.getenv("PULSESCRIBE_MODEL"),
+        help="Modellname (CLI > PULSESCRIBE_MODEL env > Provider-Default). Defaults: API=gpt-4o-transcribe, Deepgram=nova-3, Groq=whisper-large-v3, Lokal=turbo",
     )
     parser.add_argument(
         "--language",
-        default=os.getenv("WHISPER_GO_LANGUAGE"),
-        help="Sprachcode z.B. 'de', 'en' (auch via WHISPER_GO_LANGUAGE env)",
+        default=os.getenv("PULSESCRIBE_LANGUAGE"),
+        help="Sprachcode z.B. 'de', 'en' (auch via PULSESCRIBE_LANGUAGE env)",
     )
     parser.add_argument(
         "--format",
@@ -314,8 +318,8 @@ Beispiele:
     parser.add_argument(
         "--refine",
         action="store_true",
-        default=get_env_bool_default("WHISPER_GO_REFINE", False),
-        help="LLM-Nachbearbeitung aktivieren (auch via WHISPER_GO_REFINE env)",
+        default=get_env_bool_default("PULSESCRIBE_REFINE", False),
+        help="LLM-Nachbearbeitung aktivieren (auch via PULSESCRIBE_REFINE env)",
     )
     parser.add_argument(
         "--no-refine",
@@ -325,13 +329,13 @@ Beispiele:
     parser.add_argument(
         "--refine-model",
         default=None,
-        help=f"Modell für LLM-Nachbearbeitung (default: {DEFAULT_REFINE_MODEL}, auch via WHISPER_GO_REFINE_MODEL env)",
+        help=f"Modell für LLM-Nachbearbeitung (default: {DEFAULT_REFINE_MODEL}, auch via PULSESCRIBE_REFINE_MODEL env)",
     )
     parser.add_argument(
         "--refine-provider",
         choices=["openai", "openrouter", "groq"],
         default=None,
-        help="LLM-Provider für Nachbearbeitung (auch via WHISPER_GO_REFINE_PROVIDER env)",
+        help="LLM-Provider für Nachbearbeitung (auch via PULSESCRIBE_REFINE_PROVIDER env)",
     )
     parser.add_argument(
         "--context",
@@ -342,7 +346,7 @@ Beispiele:
     parser.add_argument(
         "--no-streaming",
         action="store_true",
-        help="WebSocket-Streaming deaktivieren (nur für deepgram, auch via WHISPER_GO_STREAMING=false)",
+        help="WebSocket-Streaming deaktivieren (nur für deepgram, auch via PULSESCRIBE_STREAMING=false)",
     )
 
     args = parser.parse_args()
@@ -384,7 +388,7 @@ def _should_use_streaming(args: argparse.Namespace) -> bool:
         return False
     if getattr(args, "no_streaming", False):
         return False
-    return get_env_bool_default("WHISPER_GO_STREAMING", True)
+    return get_env_bool_default("PULSESCRIBE_STREAMING", True)
 
 
 def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
@@ -478,7 +482,9 @@ def run_daemon_mode_streaming(args: argparse.Namespace) -> int:
     # State + PID für Raycast
     STATE_FILE.write_text("recording")
     PID_FILE.write_text(str(os.getpid()))
-    logger.info(f"[{_get_session_id()}] Streaming-Daemon gestartet (PID: {os.getpid()})")
+    logger.info(
+        f"[{_get_session_id()}] Streaming-Daemon gestartet (PID: {os.getpid()})"
+    )
 
     try:
         # 3. Early-Mikrofon stoppen und Buffer übergeben
@@ -571,7 +577,7 @@ def run_daemon_mode(args: argparse.Namespace) -> int:
     Aktualisiert STATE_FILE für Menübar-Feedback.
 
     Bei deepgram-Modus wird Streaming verwendet (Standard),
-    außer --no-streaming oder WHISPER_GO_STREAMING=false.
+    außer --no-streaming oder PULSESCRIBE_STREAMING=false.
     """
     # Vor Daemon-Start aufräumen
     _cleanup_stale_pid_file()

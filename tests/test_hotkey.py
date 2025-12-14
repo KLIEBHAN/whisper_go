@@ -166,7 +166,7 @@ class TestParseHotkeyWithModifiers:
 
 
 # =============================================================================
-# Tests: WhisperDaemon._parse_pynput_hotkey (Hold Mode)
+# Tests: PulseScribeDaemon._parse_pynput_hotkey (Hold Mode)
 # =============================================================================
 
 
@@ -176,9 +176,9 @@ class TestParsePynputHotkey:
     def test_ctrl_shift_space(self):
         """ctrl+shift+space wird korrekt geparst."""
         from pynput import keyboard  # type: ignore[import-not-found]
-        from whisper_daemon import WhisperDaemon
+        from pulsescribe_daemon import PulseScribeDaemon
 
-        keys = WhisperDaemon._parse_pynput_hotkey("ctrl+shift+space")
+        keys = PulseScribeDaemon._parse_pynput_hotkey("ctrl+shift+space")
         assert keyboard.Key.ctrl in keys
         assert keyboard.Key.shift in keys
         assert keyboard.Key.space in keys
@@ -186,26 +186,26 @@ class TestParsePynputHotkey:
     def test_option_l_uses_virtual_keycode(self):
         """Option+Letter sollte per VK erkannt werden (Option modifiziert sonst das Zeichen)."""
         from pynput import keyboard  # type: ignore[import-not-found]
-        from whisper_daemon import WhisperDaemon
+        from pulsescribe_daemon import PulseScribeDaemon
         from utils.hotkey import KEY_CODE_MAP
 
-        keys = WhisperDaemon._parse_pynput_hotkey("option+l")
+        keys = PulseScribeDaemon._parse_pynput_hotkey("option+l")
         assert keyboard.Key.alt in keys
         assert keyboard.KeyCode.from_vk(KEY_CODE_MAP["l"]) in keys
 
     def test_unknown_function_key_raises(self):
         """Unbekannte Funktionstaste wirft ValueError."""
-        from whisper_daemon import WhisperDaemon
+        from pulsescribe_daemon import PulseScribeDaemon
 
         with pytest.raises(ValueError):
-            WhisperDaemon._parse_pynput_hotkey("f99")
+            PulseScribeDaemon._parse_pynput_hotkey("f99")
 
 
 class TestMacOSHotkeyListenerSelection:
     def test_toggle_uses_quartz_on_macos(self, monkeypatch):
-        from whisper_daemon import WhisperDaemon
+        from pulsescribe_daemon import PulseScribeDaemon
 
-        daemon = WhisperDaemon()
+        daemon = PulseScribeDaemon()
         calls = {"quartz": 0, "pynput": 0}
 
         def fake_quartz(hk: str, *, mode: str) -> bool:
@@ -220,7 +220,7 @@ class TestMacOSHotkeyListenerSelection:
 
         monkeypatch.setattr(daemon, "_start_quartz_hotkey_listener", fake_quartz)
         monkeypatch.setattr(
-            WhisperDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse)
+            PulseScribeDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse)
         )
 
         assert daemon._start_toggle_hotkey_listener("cmd+l") is True
@@ -228,9 +228,9 @@ class TestMacOSHotkeyListenerSelection:
         assert calls["pynput"] == 0
 
     def test_hold_uses_quartz_on_macos(self, monkeypatch):
-        from whisper_daemon import WhisperDaemon
+        from pulsescribe_daemon import PulseScribeDaemon
 
-        daemon = WhisperDaemon()
+        daemon = PulseScribeDaemon()
         calls = {"quartz": 0, "pynput": 0}
 
         def fake_quartz(hk: str, *, mode: str) -> bool:
@@ -245,7 +245,7 @@ class TestMacOSHotkeyListenerSelection:
 
         monkeypatch.setattr(daemon, "_start_quartz_hotkey_listener", fake_quartz)
         monkeypatch.setattr(
-            WhisperDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse)
+            PulseScribeDaemon, "_parse_pynput_hotkey", staticmethod(fake_parse)
         )
 
         assert daemon._start_hold_hotkey_listener("cmd+l") is True
@@ -343,7 +343,7 @@ class TestPasteTranscript:
             copy_calls.append(text)
             return True
 
-        monkeypatch.delenv("WHISPER_GO_CLIPBOARD_RESTORE", raising=False)
+        monkeypatch.delenv("PULSESCRIBE_CLIPBOARD_RESTORE", raising=False)
 
         with (
             patch("utils.hotkey._get_clipboard_text", side_effect=mock_get_text),
@@ -370,7 +370,7 @@ class TestPasteTranscript:
             copy_calls.append(text)
             return True
 
-        monkeypatch.setenv("WHISPER_GO_CLIPBOARD_RESTORE", "true")
+        monkeypatch.setenv("PULSESCRIBE_CLIPBOARD_RESTORE", "true")
 
         with (
             patch("utils.hotkey._get_clipboard_text", side_effect=mock_get_text),
@@ -393,7 +393,7 @@ class TestPasteTranscript:
             copy_calls.append(text)
             return True
 
-        monkeypatch.setenv("WHISPER_GO_CLIPBOARD_RESTORE", "true")
+        monkeypatch.setenv("PULSESCRIBE_CLIPBOARD_RESTORE", "true")
 
         with (
             patch(

@@ -314,10 +314,10 @@ def paste_transcript(text: str) -> bool:
     logger.info(f"Auto-Paste: '{text[:50]}{'...' if len(text) > 50 else ''}'")
 
     # Optional: Vorherigen Clipboard-Text merken für Re-Copy nach dem Paste
-    # (ENV: WHISPER_GO_CLIPBOARD_RESTORE=true)
+    # (ENV: PULSESCRIBE_CLIPBOARD_RESTORE=true)
     # Dies fügt den alten Text ERNEUT ins Clipboard ein, sodass Clipboard-History
     # Tools beide Einträge sehen (Transkription + vorheriger Text).
-    restore_clipboard = os.getenv("WHISPER_GO_CLIPBOARD_RESTORE", "").lower() == "true"
+    restore_clipboard = os.getenv("PULSESCRIBE_CLIPBOARD_RESTORE", "").lower() == "true"
     previous_text = _get_clipboard_text() if restore_clipboard else None
 
     # 1. In Clipboard kopieren via NSPasteboard (in-process, kein Subprocess)
@@ -366,7 +366,7 @@ def paste_transcript(text: str) -> bool:
         logger.error(
             "Auto-Paste fehlgeschlagen (alle 3 Methoden). "
             "Mögliche Ursachen:\n"
-            "  1. WhisperGo.app fehlt in: Systemeinstellungen → Datenschutz → Bedienungshilfen\n"
+            "  1. PulseScribe.app fehlt in: Systemeinstellungen → Datenschutz → Bedienungshilfen\n"
             "  2. Nach App-Neubuild: App entfernen und neu hinzufügen (Signatur geändert)\n"
             "  3. Text wurde in Zwischenablage kopiert - manuell mit CMD+V einfügen"
         )

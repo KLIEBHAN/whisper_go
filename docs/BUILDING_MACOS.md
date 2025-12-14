@@ -1,6 +1,6 @@
-# Building & Notarizing WhisperGo on macOS
+# Building & Notarizing PulseScribe on macOS
 
-WhisperGo ships as a `.app` bundle and a drag‑and‑drop `.dmg`. For a good user experience ("download → open → works"), the DMG should be **Developer‑ID signed + notarized**.
+PulseScribe ships as a `.app` bundle and a drag‑and‑drop `.dmg`. For a good user experience ("download → open → works"), the DMG should be **Developer‑ID signed + notarized**.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Examples:
 ./build_app.sh --open             # Build + launch
 ```
 
-Output: `dist/WhisperGo.app`
+Output: `dist/PulseScribe.app`
 
 ### `build_dmg.sh` — DMG Packaging
 
@@ -52,14 +52,14 @@ Creates a drag‑and‑drop DMG with optional notarization.
 ./build_dmg.sh 1.0.0 --notarize  # Notarized release
 ```
 
-Output: `dist/WhisperGo-<version>.dmg`
+Output: `dist/PulseScribe-<version>.dmg`
 
 ## Release Build (Notarized)
 
 ### 1) Store notary credentials (once)
 
 ```bash
-xcrun notarytool store-credentials "whispergo-notary" \
+xcrun notarytool store-credentials "pulsescribe-notary" \
   --apple-id "you@example.com" \
   --team-id "TEAMID" \
   --password "app-specific-password"
@@ -69,13 +69,13 @@ xcrun notarytool store-credentials "whispergo-notary" \
 
 ```bash
 export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export NOTARY_PROFILE="whispergo-notary"
+export NOTARY_PROFILE="pulsescribe-notary"
 
 ./build_app.sh --clean
 ./build_dmg.sh 1.0.0 --notarize
 ```
 
-Output: `dist/WhisperGo-1.0.0.dmg` (notarized, Gatekeeper‑friendly)
+Output: `dist/PulseScribe-1.0.0.dmg` (notarized, Gatekeeper‑friendly)
 
 ## Notes
 

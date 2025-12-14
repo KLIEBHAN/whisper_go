@@ -1,4 +1,4 @@
-"""Zentrale Konfiguration für whisper_go.
+"""Zentrale Konfiguration für PulseScribe.
 
 Gemeinsame Konstanten für Audio, Streaming und IPC.
 Vermeidet Duplikation zwischen Modulen.
@@ -35,8 +35,7 @@ DEFAULT_API_MODEL = "gpt-4o-transcribe"
 DEFAULT_LOCAL_MODEL = "turbo"
 DEFAULT_DEEPGRAM_MODEL = "nova-3"
 DEFAULT_GROQ_MODEL = "whisper-large-v3"
-DEFAULT_REFINE_MODEL = "gpt-5-nano"
-DEFAULT_GROQ_REFINE_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_REFINE_MODEL = "openai/gpt-oss-120b"
 
 # =============================================================================
 # Audio-Analyse
@@ -53,14 +52,14 @@ VISUAL_GAIN = 2.0  # Visual scaling factor (post-AGC, boosts quiet speech)
 
 # IPC-Dateien für Kommunikation zwischen Prozessen (Raycast, Hotkey-Daemon, Menübar)
 # Alle Dateien liegen in /tmp für schnellen Zugriff und automatische Bereinigung
-TEMP_RECORDING_FILENAME = "whisper_recording.wav"
-PID_FILE = Path("/tmp/whisper_go.pid")  # Aktive Aufnahme-PID → für SIGUSR1 Stop
-TRANSCRIPT_FILE = Path("/tmp/whisper_go.transcript")  # Fertiges Transkript
-ERROR_FILE = Path("/tmp/whisper_go.error")  # Fehlermeldungen für UI-Feedback
+TEMP_RECORDING_FILENAME = "pulsescribe_recording.wav"
+PID_FILE = Path("/tmp/pulsescribe.pid")  # Aktive Aufnahme-PID → für SIGUSR1 Stop
+TRANSCRIPT_FILE = Path("/tmp/pulsescribe.transcript")  # Fertiges Transkript
+ERROR_FILE = Path("/tmp/pulsescribe.error")  # Fehlermeldungen für UI-Feedback
 STATE_FILE = Path(
-    "/tmp/whisper_go.state"
+    "/tmp/pulsescribe.state"
 )  # Aktueller Status (recording/transcribing/done/error)
-INTERIM_FILE = Path("/tmp/whisper_go.interim")  # Live-Transkript während Aufnahme
+INTERIM_FILE = Path("/tmp/pulsescribe.interim")  # Live-Transkript während Aufnahme
 
 # =============================================================================
 # API-Endpunkte
@@ -73,13 +72,13 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # =============================================================================
 
 # User-Verzeichnis für Konfiguration und Logs
-USER_CONFIG_DIR = Path.home() / ".whisper_go"
+USER_CONFIG_DIR = Path.home() / ".pulsescribe"
 USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Logs im User-Verzeichnis speichern
 LOG_DIR = USER_CONFIG_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / "whisper_go.log"
+LOG_FILE = LOG_DIR / "pulsescribe.log"
 
 VOCABULARY_FILE = USER_CONFIG_DIR / "vocabulary.json"
 PROMPTS_FILE = USER_CONFIG_DIR / "prompts.toml"

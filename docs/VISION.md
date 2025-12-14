@@ -56,7 +56,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 - **System-Integration:** Menübar-Feedback, Auto-Paste
 - **Smart Features:** LLM-Refine, Deepgram Streaming (~300ms Latenz), Kontext-Awareness
 - **Native App:** Menübar-App, Overlay UI, Schallwellen-Visualisierung
-- **App Bundle:** PyInstaller-basierte macOS App (`WhisperGo.app`)
+- **App Bundle:** PyInstaller-basierte macOS App (`PulseScribe.app`)
 - **Quality:** 198 Tests, CI/CD, Modularisierung
 
 ---
@@ -88,8 +88,8 @@ Das Projekt ist vollständig modularisiert:
 ```
 whisper_go/
 ├── transcribe.py                  # CLI Entry Point
-├── whisper_daemon.py              # Unified Daemon (Orchestrator)
-├── build_app.spec                 # PyInstaller Spec für WhisperGo.app
+├── pulsescribe_daemon.py          # Unified Daemon (Orchestrator)
+├── build_app.spec                 # PyInstaller Spec für PulseScribe.app
 ├── config.py                      # Zentrale Konfiguration
 ├── providers/                     # Transkriptions-Provider (Deepgram, OpenAI, etc.)
 ├── audio/                         # Audio-Handling (Recording)
@@ -101,12 +101,12 @@ whisper_go/
 
 ### User-Daten
 
-Alle User-spezifischen Daten in `~/.whisper_go/`:
+Alle User-spezifischen Daten in `~/.pulsescribe/`:
 
 ```
-~/.whisper_go/
+~/.pulsescribe/
 ├── .env                           # User-Konfiguration (API Keys, etc.)
-├── logs/whisper_go.log            # Rotierendes Log (max 1MB, 3 Backups)
+├── logs/pulsescribe.log            # Rotierendes Log (max 1MB, 3 Backups)
 ├── startup.log                    # Emergency-Log für Crash-Debugging
 └── vocabulary.json                # Custom Vocabulary
 ```

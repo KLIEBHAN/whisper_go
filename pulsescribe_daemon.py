@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-whisper_daemon.py – Unified Daemon für whisper_go.
+pulsescribe_daemon.py – Unified Daemon für PulseScribe.
 
 Konsolidiert in einem Prozess:
 - Hotkey-Listener (QuickMacHotKey, keine Accessibility nötig)
@@ -15,8 +15,8 @@ Architektur:
 - Worker Thread: _deepgram_stream_core() mit external_stop_event
 
 Usage:
-    python whisper_daemon.py              # Mit Defaults aus .env
-    python whisper_daemon.py --hotkey fn  # Hotkey überschreiben
+    python pulsescribe_daemon.py              # Mit Defaults aus .env
+    python pulsescribe_daemon.py --hotkey fn  # Hotkey überschreiben
 """
 
 import logging
@@ -33,7 +33,7 @@ from pathlib import Path
 def emergency_log(msg: str):
     """Schreibt direkt in eine Datei im User-Home, falls Logging versagt."""
     try:
-        debug_file = Path.home() / ".whisper_go" / "startup.log"
+        debug_file = Path.home() / ".pulsescribe" / "startup.log"
         debug_file.parent.mkdir(exist_ok=True)
         with open(debug_file, "a", encoding="utf-8") as f:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -42,7 +42,7 @@ def emergency_log(msg: str):
         pass
 
 
-emergency_log("=== Booting Whisper Daemon ===")
+emergency_log("=== Booting PulseScribe Daemon ===")
 
 try:
     from config import INTERIM_FILE, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
@@ -80,16 +80,16 @@ emergency_log("Imports successful")
 
 # DEBOUNCE_INTERVAL defined locally as it is specific to hotkey daemon
 DEBOUNCE_INTERVAL = 0.3
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # =============================================================================
-# WhisperDaemon: Hauptklasse
+# PulseScribeDaemon: Hauptklasse
 # =============================================================================
 
 
-class WhisperDaemon:
+class PulseScribeDaemon:
     """
-    Unified Daemon für whisper_go.
+    Unified Daemon für PulseScribe.
 
     Architektur:
         Main-Thread: Hotkey-Listener (QuickMacHotKey) + UI-Updates
@@ -121,9 +121,9 @@ class WhisperDaemon:
         self.refine_provider = refine_provider
         self.context = context
         self.mode = mode
-        self.hotkey_mode = hotkey_mode or os.getenv("WHISPER_GO_HOTKEY_MODE", "toggle")
-        self.toggle_hotkey = toggle_hotkey or os.getenv("WHISPER_GO_TOGGLE_HOTKEY")
-        self.hold_hotkey = hold_hotkey or os.getenv("WHISPER_GO_HOLD_HOTKEY")
+        self.hotkey_mode = hotkey_mode or os.getenv("PULSESCRIBE_HOTKEY_MODE", "toggle")
+        self.toggle_hotkey = toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
+        self.hold_hotkey = hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
 
         # State
         self._recording = False
@@ -371,7 +371,7 @@ class WhisperDaemon:
         mode = mode_override or self.mode
         model = self._clean_model_name(self.model)
         if mode == "local" and model is None:
-            model = self._clean_model_name(os.getenv("WHISPER_GO_LOCAL_MODEL"))
+            model = self._clean_model_name(os.getenv("PULSESCRIBE_LOCAL_MODEL"))
         if model is None:
             model = self._clean_model_name(getattr(provider, "default_model", None))
         return model
@@ -388,7 +388,7 @@ class WhisperDaemon:
             backend = getattr(provider, "_backend", None)
         if not backend:
             backend = (
-                (os.getenv("WHISPER_GO_LOCAL_BACKEND") or "whisper").strip().lower()
+                (os.getenv("PULSESCRIBE_LOCAL_BACKEND") or "whisper").strip().lower()
             )
             if backend == "auto":
                 backend = "auto"
@@ -446,7 +446,7 @@ class WhisperDaemon:
             try:
                 provider.preload(self.model)
                 logger.debug("Lokales Modell vorab geladen")
-                warmup_flag = get_env_bool("WHISPER_GO_LOCAL_WARMUP")
+                warmup_flag = get_env_bool("PULSESCRIBE_LOCAL_WARMUP")
                 backend = getattr(provider, "backend", None) or getattr(
                     provider, "_backend", None
                 )
@@ -581,7 +581,9 @@ class WhisperDaemon:
             return
         if self._worker_thread is not None and self._worker_thread.is_alive():
             self._safe_call(
-                callback, "", "WhisperGo is busy — please wait a moment and try again."
+                callback,
+                "",
+                "PulseScribe is busy — please wait a moment and try again.",
             )
             return
 
@@ -1083,7 +1085,7 @@ class WhisperDaemon:
 
         # Modus-Entscheidung: Streaming vs. Recording
         use_streaming = effective_mode == "deepgram" and get_env_bool_default(
-            "WHISPER_GO_STREAMING", True
+            "PULSESCRIBE_STREAMING", True
         )
         self._run_mode = effective_mode
 
@@ -1697,28 +1699,28 @@ class WhisperDaemon:
         # Daher synchronisieren wir ausgewählte Keys explizit mit der .env Datei.
         for key in (
             # Hotkeys
-            "WHISPER_GO_HOTKEY",
-            "WHISPER_GO_HOTKEY_MODE",
-            "WHISPER_GO_TOGGLE_HOTKEY",
-            "WHISPER_GO_HOLD_HOTKEY",
+            "PULSESCRIBE_HOTKEY",
+            "PULSESCRIBE_HOTKEY_MODE",
+            "PULSESCRIBE_TOGGLE_HOTKEY",
+            "PULSESCRIBE_HOLD_HOTKEY",
             # Local options
-            "WHISPER_GO_LOCAL_BACKEND",
-            "WHISPER_GO_LOCAL_MODEL",
-            "WHISPER_GO_LANGUAGE",
-            "WHISPER_GO_DEVICE",
-            "WHISPER_GO_FP16",
-            "WHISPER_GO_LOCAL_FAST",
-            "WHISPER_GO_LOCAL_BEAM_SIZE",
-            "WHISPER_GO_LOCAL_BEST_OF",
-            "WHISPER_GO_LOCAL_TEMPERATURE",
-            "WHISPER_GO_LOCAL_COMPUTE_TYPE",
-            "WHISPER_GO_LOCAL_CPU_THREADS",
-            "WHISPER_GO_LOCAL_NUM_WORKERS",
-            "WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS",
-            "WHISPER_GO_LOCAL_VAD_FILTER",
-            "WHISPER_GO_LOCAL_WARMUP",
+            "PULSESCRIBE_LOCAL_BACKEND",
+            "PULSESCRIBE_LOCAL_MODEL",
+            "PULSESCRIBE_LANGUAGE",
+            "PULSESCRIBE_DEVICE",
+            "PULSESCRIBE_FP16",
+            "PULSESCRIBE_LOCAL_FAST",
+            "PULSESCRIBE_LOCAL_BEAM_SIZE",
+            "PULSESCRIBE_LOCAL_BEST_OF",
+            "PULSESCRIBE_LOCAL_TEMPERATURE",
+            "PULSESCRIBE_LOCAL_COMPUTE_TYPE",
+            "PULSESCRIBE_LOCAL_CPU_THREADS",
+            "PULSESCRIBE_LOCAL_NUM_WORKERS",
+            "PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS",
+            "PULSESCRIBE_LOCAL_VAD_FILTER",
+            "PULSESCRIBE_LOCAL_WARMUP",
             # Optional keys that can be removed in UI to reset to default.
-            "WHISPER_GO_REFINE_MODEL",
+            "PULSESCRIBE_REFINE_MODEL",
         ):
             value = env_values.get(key)
             if value is None:
@@ -1728,35 +1730,35 @@ class WhisperDaemon:
 
         # Hotkeys übernehmen (apply immediately; legacy values kept unless explicitly set)
         self.toggle_hotkey = (
-            env_values.get("WHISPER_GO_TOGGLE_HOTKEY") or ""
+            env_values.get("PULSESCRIBE_TOGGLE_HOTKEY") or ""
         ).strip() or None
         self.hold_hotkey = (
-            env_values.get("WHISPER_GO_HOLD_HOTKEY") or ""
+            env_values.get("PULSESCRIBE_HOLD_HOTKEY") or ""
         ).strip() or None
-        if "WHISPER_GO_HOTKEY" in env_values:
-            self.hotkey = (env_values.get("WHISPER_GO_HOTKEY") or "").strip() or None
-        if "WHISPER_GO_HOTKEY_MODE" in env_values:
+        if "PULSESCRIBE_HOTKEY" in env_values:
+            self.hotkey = (env_values.get("PULSESCRIBE_HOTKEY") or "").strip() or None
+        if "PULSESCRIBE_HOTKEY_MODE" in env_values:
             self.hotkey_mode = (
-                env_values.get("WHISPER_GO_HOTKEY_MODE") or ""
+                env_values.get("PULSESCRIBE_HOTKEY_MODE") or ""
             ).strip() or self.hotkey_mode
 
         # Settings aktualisieren
-        new_mode = env_values.get("WHISPER_GO_MODE")
+        new_mode = env_values.get("PULSESCRIBE_MODE")
         if new_mode:
             self.mode = new_mode
 
-        new_language = env_values.get("WHISPER_GO_LANGUAGE")
+        new_language = env_values.get("PULSESCRIBE_LANGUAGE")
         self.language = new_language  # None ist valid für "auto"
 
-        refine_flag = parse_bool(env_values.get("WHISPER_GO_REFINE"))
+        refine_flag = parse_bool(env_values.get("PULSESCRIBE_REFINE"))
         if refine_flag is not None:
             self.refine = refine_flag
 
-        new_refine_provider = env_values.get("WHISPER_GO_REFINE_PROVIDER")
+        new_refine_provider = env_values.get("PULSESCRIBE_REFINE_PROVIDER")
         if new_refine_provider:
             self.refine_provider = new_refine_provider
 
-        new_refine_model = env_values.get("WHISPER_GO_REFINE_MODEL")
+        new_refine_model = env_values.get("PULSESCRIBE_REFINE_MODEL")
         self.refine_model = new_refine_model or DEFAULT_REFINE_MODEL
 
         # Lokalen Provider nicht wegwerfen (Modell-Load ist teuer).
@@ -1924,7 +1926,7 @@ class WhisperDaemon:
                 try:
                     show_error_alert(
                         "Kein Hotkey konfiguriert",
-                        "Es ist kein Hotkey gesetzt. WhisperGo läuft ohne Hotkey.\n\n"
+                        "Es ist kein Hotkey gesetzt. PulseScribe läuft ohne Hotkey.\n\n"
                         "Öffne Settings, um einen Hotkey zu wählen.",
                     )
                 except Exception:
@@ -2091,7 +2093,7 @@ class WhisperDaemon:
 
         # Dock-Icon: Konfigurierbar via ENV (default: an)
         # 0 = Regular (Dock-Icon), 1 = Accessory (kein Dock-Icon)
-        show_dock = get_env_bool_default("WHISPER_GO_DOCK_ICON", True)
+        show_dock = get_env_bool_default("PULSESCRIBE_DOCK_ICON", True)
         app.setActivationPolicy_(0 if show_dock else 1)
 
         # Application Menu erstellen (für CMD+Q Support wenn Dock-Icon aktiv)
@@ -2114,7 +2116,7 @@ class WhisperDaemon:
 
                 show_error_alert(
                     "Probleme in der Vocabulary",
-                    "Es wurden Probleme in ~/.whisper_go/vocabulary.json gefunden:\n\n"
+                    "Es wurden Probleme in ~/.pulsescribe/vocabulary.json gefunden:\n\n"
                     + "\n".join(f"- {issue}" for issue in vocab_issues)
                     + "\n\nÖffne Settings, um das zu korrigieren.",
                 )
@@ -2130,14 +2132,14 @@ class WhisperDaemon:
         # Berechtigungen prüfen (keine modalen Popups; UI handled via Permissions page)
         if not check_microphone_permission(show_alert=False):
             logger.warning(
-                "Mikrofon-Berechtigung fehlt – WhisperGo läuft, aber Aufnahmen funktionieren nicht."
+                "Mikrofon-Berechtigung fehlt – PulseScribe läuft, aber Aufnahmen funktionieren nicht."
             )
 
         # Accessibility prüfen (nur Logging; Auto-Paste kann ohne Permission nicht funktionieren)
         check_accessibility_permission(show_alert=False)
 
         # Logging + Start-Info
-        print("🎤 whisper_daemon läuft", file=sys.stderr)
+        print("🎤 pulsescribe_daemon läuft", file=sys.stderr)
         if self.toggle_hotkey or self.hold_hotkey:
             if self.toggle_hotkey:
                 print(f"   Toggle Hotkey: {self.toggle_hotkey}", file=sys.stderr)
@@ -2198,7 +2200,7 @@ def main() -> int:
     load_environment()
 
     parser = argparse.ArgumentParser(
-        description="whisper_daemon – Unified Daemon für whisper_go",
+        description="pulsescribe_daemon – Unified Daemon für PulseScribe",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
@@ -2212,23 +2214,23 @@ Beispiele:
     parser.add_argument(
         "--hotkey",
         default=None,
-        help="Hotkey (default: WHISPER_GO_HOTKEY oder 'fn')",
+        help="Hotkey (default: PULSESCRIBE_HOTKEY oder 'fn')",
     )
     parser.add_argument(
         "--toggle-hotkey",
         default=None,
-        help="Toggle-Hotkey (default: WHISPER_GO_TOGGLE_HOTKEY)",
+        help="Toggle-Hotkey (default: PULSESCRIBE_TOGGLE_HOTKEY)",
     )
     parser.add_argument(
         "--hold-hotkey",
         default=None,
-        help="Hold-Hotkey (default: WHISPER_GO_HOLD_HOTKEY)",
+        help="Hold-Hotkey (default: PULSESCRIBE_HOLD_HOTKEY)",
     )
     parser.add_argument(
         "--hotkey-mode",
         choices=["toggle", "hold"],
         default=None,
-        help="Hotkey-Modus: toggle oder hold (default: WHISPER_GO_HOTKEY_MODE)",
+        help="Hotkey-Modus: toggle oder hold (default: PULSESCRIBE_HOTKEY_MODE)",
     )
     parser.add_argument(
         "--language",
@@ -2239,7 +2241,7 @@ Beispiele:
         "--mode",
         choices=["openai", "deepgram", "groq", "local"],
         default=None,
-        help="Transkriptions-Modus (default: WHISPER_GO_MODE)",
+        help="Transkriptions-Modus (default: PULSESCRIBE_MODE)",
     )
     parser.add_argument(
         "--model",
@@ -2249,7 +2251,7 @@ Beispiele:
     parser.add_argument(
         "--refine",
         action="store_true",
-        default=get_env_bool_default("WHISPER_GO_REFINE", False),
+        default=get_env_bool_default("PULSESCRIBE_REFINE", False),
         help="LLM-Nachbearbeitung aktivieren",
     )
     parser.add_argument(
@@ -2280,11 +2282,11 @@ Beispiele:
     setup_logging(debug=args.debug)
 
     # Konfiguration: CLI > ENV > Default
-    env_hotkey = os.getenv("WHISPER_GO_HOTKEY")
+    env_hotkey = os.getenv("PULSESCRIBE_HOTKEY")
     hotkey = args.hotkey or env_hotkey or "fn"
-    hotkey_mode = args.hotkey_mode or os.getenv("WHISPER_GO_HOTKEY_MODE", "toggle")
-    toggle_hotkey = args.toggle_hotkey or os.getenv("WHISPER_GO_TOGGLE_HOTKEY")
-    hold_hotkey = args.hold_hotkey or os.getenv("WHISPER_GO_HOLD_HOTKEY")
+    hotkey_mode = args.hotkey_mode or os.getenv("PULSESCRIBE_HOTKEY_MODE", "toggle")
+    toggle_hotkey = args.toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
+    hold_hotkey = args.hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
 
     # New default for fresh installs: Fn/Globe as hold hotkey
     if (
@@ -2294,9 +2296,9 @@ Beispiele:
         and env_hotkey is None
     ):
         hold_hotkey = "fn"
-    language = args.language or os.getenv("WHISPER_GO_LANGUAGE")
-    model = args.model or os.getenv("WHISPER_GO_MODEL")
-    mode_env = os.getenv("WHISPER_GO_MODE")
+    language = args.language or os.getenv("PULSESCRIBE_LANGUAGE")
+    model = args.model or os.getenv("PULSESCRIBE_MODEL")
+    mode_env = os.getenv("PULSESCRIBE_MODE")
     mode = args.mode or mode_env or "deepgram"
 
     # Demo/first-success default: if no mode is configured and no API keys are present,
@@ -2312,8 +2314,8 @@ Beispiele:
             # Avoid passing provider-specific model names (e.g. Deepgram model) into local mode.
             if args.model is None:
                 model = None
-            os.environ.setdefault("WHISPER_GO_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
-            if os.getenv("WHISPER_GO_LOCAL_BACKEND") is None:
+            os.environ.setdefault("PULSESCRIBE_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+            if os.getenv("PULSESCRIBE_LOCAL_BACKEND") is None:
                 try:
                     import importlib.util
                     import platform
@@ -2321,16 +2323,16 @@ Beispiele:
                     is_arm = platform.machine() in ("arm64", "aarch64")
                     has_mlx = importlib.util.find_spec("mlx_whisper") is not None
                     if is_arm and has_mlx:
-                        os.environ["WHISPER_GO_LOCAL_BACKEND"] = "mlx"
-                        os.environ.setdefault("WHISPER_GO_LOCAL_FAST", "true")
+                        os.environ["PULSESCRIBE_LOCAL_BACKEND"] = "mlx"
+                        os.environ.setdefault("PULSESCRIBE_LOCAL_FAST", "true")
                     else:
-                        os.environ["WHISPER_GO_LOCAL_BACKEND"] = "whisper"
+                        os.environ["PULSESCRIBE_LOCAL_BACKEND"] = "whisper"
                 except Exception:
-                    os.environ["WHISPER_GO_LOCAL_BACKEND"] = "whisper"
+                    os.environ["PULSESCRIBE_LOCAL_BACKEND"] = "whisper"
 
     # Daemon starten
     try:
-        daemon = WhisperDaemon(
+        daemon = PulseScribeDaemon(
             hotkey=hotkey,
             language=language,
             model=model,

@@ -12,7 +12,7 @@ from utils.vocabulary import load_vocabulary
 
 from config import DEFAULT_DEEPGRAM_MODEL
 
-logger = logging.getLogger("whisper_go.providers.deepgram")
+logger = logging.getLogger("pulsescribe.providers.deepgram")
 
 # Singleton Client
 _client = None

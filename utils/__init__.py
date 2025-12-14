@@ -1,4 +1,4 @@
-"""Utility-Module für whisper_go.
+"""Utility-Module für PulseScribe.
 
 Gemeinsame Hilfsfunktionen für Logging und Zeitmessung.
 

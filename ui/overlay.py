@@ -1,4 +1,4 @@
-"""Overlay-Controller und Visualisierung für whisper_go."""
+"""Overlay-Controller und Visualisierung für pulsescribe."""
 
 import math
 import random

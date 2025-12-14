@@ -1,6 +1,6 @@
-"""Custom Prompts Management für whisper_go.
+"""Custom Prompts Management für PulseScribe.
 
-Ermöglicht Benutzern, LLM-Prompts über ~/.whisper_go/prompts.toml anzupassen.
+Ermöglicht Benutzern, LLM-Prompts über ~/.pulsescribe/prompts.toml anzupassen.
 Bei fehlender oder fehlerhafter Datei werden Hardcoded-Defaults verwendet.
 
 Dateiformat:
@@ -27,7 +27,7 @@ from refine.prompts import (
     VOICE_COMMANDS_INSTRUCTION,
 )
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Bekannte Kontext-Typen für Prompt-Auswahl
 KNOWN_CONTEXTS = ("default", "email", "chat", "code")
@@ -253,7 +253,7 @@ def save_custom_prompts(data: dict, path: Path | None = None) -> None:
     prompts_file = path or PROMPTS_FILE
     prompts_file.parent.mkdir(parents=True, exist_ok=True)
 
-    lines = ["# Custom Prompts für whisper_go", ""]
+    lines = ["# Custom Prompts für pulsescribe", ""]
 
     # Jede Sektion einzeln serialisieren
     if "voice_commands" in data:

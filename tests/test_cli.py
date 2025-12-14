@@ -72,8 +72,8 @@ class TestParseArgs:
                 parse_args()
 
     def test_mode_env_default(self, monkeypatch, clean_env):
-        """WHISPER_GO_MODE setzt Default-Mode."""
-        monkeypatch.setenv("WHISPER_GO_MODE", "deepgram")
+        """PULSESCRIBE_MODE setzt Default-Mode."""
+        monkeypatch.setenv("PULSESCRIBE_MODE", "deepgram")
 
         with patch.object(sys, "argv", ["transcribe.py", "--record"]):
             args = parse_args()
@@ -82,7 +82,7 @@ class TestParseArgs:
 
     def test_mode_cli_beats_env(self, monkeypatch, clean_env):
         """CLI --mode schlägt ENV."""
-        monkeypatch.setenv("WHISPER_GO_MODE", "deepgram")
+        monkeypatch.setenv("PULSESCRIBE_MODE", "deepgram")
 
         with patch.object(sys, "argv", ["transcribe.py", "--record", "--mode", "groq"]):
             args = parse_args()
@@ -120,8 +120,8 @@ class TestParseArgs:
         assert args.no_refine is True
 
     def test_refine_env_default(self, monkeypatch, clean_env):
-        """WHISPER_GO_REFINE=true setzt Default."""
-        monkeypatch.setenv("WHISPER_GO_REFINE", "true")
+        """PULSESCRIBE_REFINE=true setzt Default."""
+        monkeypatch.setenv("PULSESCRIBE_REFINE", "true")
 
         with patch.object(sys, "argv", ["transcribe.py", "--record"]):
             args = parse_args()

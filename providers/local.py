@@ -1,9 +1,9 @@
 """Lokaler Whisper Provider.
 
 Standardmäßig nutzt er openai-whisper (PyTorch). Optional kann über
-`WHISPER_GO_LOCAL_BACKEND=faster` der deutlich schnellere faster-whisper
+`PULSESCRIBE_LOCAL_BACKEND=faster` der deutlich schnellere faster-whisper
 (CTranslate2) genutzt werden. Auf Apple Silicon kann optional auch
-`WHISPER_GO_LOCAL_BACKEND=mlx` genutzt werden (mlx-whisper / Metal).
+`PULSESCRIBE_LOCAL_BACKEND=mlx` genutzt werden (mlx-whisper / Metal).
 """
 
 import logging
@@ -17,7 +17,7 @@ from utils.env import get_env_bool, get_env_int
 from utils.logging import log
 from utils.vocabulary import load_vocabulary
 
-logger = logging.getLogger("whisper_go.providers.local")
+logger = logging.getLogger("pulsescribe.providers.local")
 
 
 def _mlx_whisper_import_hint() -> str:
@@ -25,9 +25,9 @@ def _mlx_whisper_import_hint() -> str:
     if getattr(sys, "frozen", False):
         return (
             "Du nutzt vermutlich die macOS-App. Bitte lade die neueste DMG neu herunter "
-            "oder setze WHISPER_GO_LOCAL_BACKEND=whisper."
+            "oder setze PULSESCRIBE_LOCAL_BACKEND=whisper."
         )
-    return "Installiere es mit `pip install mlx-whisper` oder setze WHISPER_GO_LOCAL_BACKEND=whisper."
+    return "Installiere es mit `pip install mlx-whisper` oder setze PULSESCRIBE_LOCAL_BACKEND=whisper."
 
 
 def _import_mlx_whisper():
@@ -46,16 +46,17 @@ def _import_mlx_whisper():
         ) from e
     return mlx_whisper
 
+
 def _select_device() -> str:
     """Wählt ein sinnvolles Torch-Device für lokales Whisper.
 
     Priorität:
-      1) WHISPER_GO_DEVICE Env-Override (z.B. "cpu", "mps", "cuda")
+      1) PULSESCRIBE_DEVICE Env-Override (z.B. "cpu", "mps", "cuda")
       2) Apple Silicon GPU via MPS
       3) CUDA (falls verfügbar)
       4) CPU
     """
-    env_device = (os.getenv("WHISPER_GO_DEVICE") or "").strip().lower()
+    env_device = (os.getenv("PULSESCRIBE_DEVICE") or "").strip().lower()
     if env_device and env_device != "auto":
         return env_device
     try:
@@ -116,8 +117,8 @@ class LocalProvider:
     def _ensure_runtime_config(self) -> None:
         if self._backend is None:
             backend_env = (
-                os.getenv("WHISPER_GO_LOCAL_BACKEND") or "whisper"
-            ).strip().lower()
+                (os.getenv("PULSESCRIBE_LOCAL_BACKEND") or "whisper").strip().lower()
+            )
             if backend_env in {"faster", "faster-whisper"}:
                 self._backend = "faster"
             elif backend_env in {"mlx", "mlx-whisper"}:
@@ -133,7 +134,7 @@ class LocalProvider:
                 self._backend = "whisper"
             else:
                 logger.warning(
-                    f"Unbekannter WHISPER_GO_LOCAL_BACKEND='{backend_env}', nutze whisper"
+                    f"Unbekannter PULSESCRIBE_LOCAL_BACKEND='{backend_env}', nutze whisper"
                 )
                 self._backend = "whisper"
             log(f"Lokales Whisper Backend: {self._backend}")
@@ -143,10 +144,10 @@ class LocalProvider:
             log(f"Lokales Whisper Device: {self._device}")
 
         if self._fp16_override is None:
-            self._fp16_override = get_env_bool("WHISPER_GO_FP16")
+            self._fp16_override = get_env_bool("PULSESCRIBE_FP16")
 
         if self._fast_mode is None:
-            fast_env = get_env_bool("WHISPER_GO_LOCAL_FAST")
+            fast_env = get_env_bool("PULSESCRIBE_LOCAL_FAST")
             if fast_env is None:
                 # Default to fast decoding on faster-whisper unless user opts out.
                 self._fast_mode = self._backend == "faster"
@@ -154,7 +155,7 @@ class LocalProvider:
                 self._fast_mode = fast_env
 
         if self._compute_type is None:
-            compute_env = os.getenv("WHISPER_GO_LOCAL_COMPUTE_TYPE")
+            compute_env = os.getenv("PULSESCRIBE_LOCAL_COMPUTE_TYPE")
             if compute_env:
                 self._compute_type = compute_env.strip()
 
@@ -211,9 +212,10 @@ class LocalProvider:
                     # sparse Buffer temporär entfernen, dann Model auf MPS schieben.
                     cpu_model = whisper.load_model(model_name, device="cpu")
                     heads = None
-                    if (
-                        getattr(cpu_model, "alignment_heads", None) is not None
-                        and getattr(cpu_model.alignment_heads, "is_sparse", False)
+                    if getattr(
+                        cpu_model, "alignment_heads", None
+                    ) is not None and getattr(
+                        cpu_model.alignment_heads, "is_sparse", False
                     ):
                         heads = cpu_model.alignment_heads
                         cpu_model._buffers["alignment_heads"] = None
@@ -251,17 +253,19 @@ class LocalProvider:
         except ImportError as e:
             raise ImportError(
                 "faster-whisper ist nicht installiert. Installiere es mit "
-                "`pip install faster-whisper` oder setze WHISPER_GO_LOCAL_BACKEND=whisper."
+                "`pip install faster-whisper` oder setze PULSESCRIBE_LOCAL_BACKEND=whisper."
             ) from e
 
         faster_name = self._map_faster_model_name(model_name)
         device = "cuda" if self._device == "cuda" else "cpu"
         compute_type = self._compute_type or ("float16" if device == "cuda" else "int8")
 
-        cpu_threads = get_env_int("WHISPER_GO_LOCAL_CPU_THREADS") or 0
-        num_workers = get_env_int("WHISPER_GO_LOCAL_NUM_WORKERS") or 1
+        cpu_threads = get_env_int("PULSESCRIBE_LOCAL_CPU_THREADS") or 0
+        num_workers = get_env_int("PULSESCRIBE_LOCAL_NUM_WORKERS") or 1
 
-        cache_key = f"faster:{faster_name}:{device}:{compute_type}:{cpu_threads}:{num_workers}"
+        cache_key = (
+            f"faster:{faster_name}:{device}:{compute_type}:{cpu_threads}:{num_workers}"
+        )
         if cache_key in self._model_cache:
             return self._model_cache[cache_key]
 
@@ -303,7 +307,7 @@ class LocalProvider:
 
         if self._backend == "whisper":
             # FP16: auf CPU nicht verfügbar; auf MPS derzeit oft instabil → default FP32.
-            # Override via WHISPER_GO_FP16=true möglich.
+            # Override via PULSESCRIBE_FP16=true möglich.
             if self._device == "cpu":
                 options["fp16"] = False
             elif self._device == "mps":
@@ -316,14 +320,14 @@ class LocalProvider:
                 )
         elif self._backend == "faster":
             # faster-whisper: standardmäßig keine Timestamps berechnen (spart Zeit)
-            wt_env = get_env_bool("WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS")
+            wt_env = get_env_bool("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS")
             options["without_timestamps"] = True if wt_env is None else wt_env
 
-            vad_env = get_env_bool("WHISPER_GO_LOCAL_VAD_FILTER")
+            vad_env = get_env_bool("PULSESCRIBE_LOCAL_VAD_FILTER")
             if vad_env:
                 options["vad_filter"] = True
         elif self._backend == "mlx":
-            # mlx-whisper nutzt fp16 per Default; Override via WHISPER_GO_FP16 möglich.
+            # mlx-whisper nutzt fp16 per Default; Override via PULSESCRIBE_FP16 möglich.
             if self._fp16_override is not None:
                 options["fp16"] = self._fp16_override
 
@@ -339,19 +343,19 @@ class LocalProvider:
             options.setdefault("condition_on_previous_text", False)
 
         # Explizite Decode-Overrides
-        beam_size = get_env_int("WHISPER_GO_LOCAL_BEAM_SIZE")
+        beam_size = get_env_int("PULSESCRIBE_LOCAL_BEAM_SIZE")
         if beam_size is not None and self._backend == "mlx":
             logger.warning(
-                "WHISPER_GO_LOCAL_BEAM_SIZE wird ignoriert (mlx backend unterstützt kein Beam Search)."
+                "PULSESCRIBE_LOCAL_BEAM_SIZE wird ignoriert (mlx backend unterstützt kein Beam Search)."
             )
         elif beam_size is not None:
             options["beam_size"] = beam_size
 
-        best_of = get_env_int("WHISPER_GO_LOCAL_BEST_OF")
+        best_of = get_env_int("PULSESCRIBE_LOCAL_BEST_OF")
         if best_of is not None:
             options["best_of"] = best_of
 
-        temp_env = os.getenv("WHISPER_GO_LOCAL_TEMPERATURE")
+        temp_env = os.getenv("PULSESCRIBE_LOCAL_TEMPERATURE")
         if temp_env:
             try:
                 if "," in temp_env:
@@ -361,15 +365,15 @@ class LocalProvider:
                 else:
                     options["temperature"] = float(temp_env.strip())
             except ValueError:
-                logger.warning(f"Ungültiger WHISPER_GO_LOCAL_TEMPERATURE: {temp_env}")
+                logger.warning(f"Ungültiger PULSESCRIBE_LOCAL_TEMPERATURE: {temp_env}")
 
         return options
 
     def _resolve_model_name(self, model: str | None) -> str:
-        """Ermittelt Modellname aus Arg > WHISPER_GO_LOCAL_MODEL > Default."""
+        """Ermittelt Modellname aus Arg > PULSESCRIBE_LOCAL_MODEL > Default."""
         if model:
             return model
-        env_model = os.getenv("WHISPER_GO_LOCAL_MODEL")
+        env_model = os.getenv("PULSESCRIBE_LOCAL_MODEL")
         if env_model:
             return env_model.strip()
         return self.default_model
@@ -391,7 +395,7 @@ class LocalProvider:
                 warmup_audio = np.zeros(
                     int(WHISPER_SAMPLE_RATE * warmup_s), dtype=np.float32
                 )
-                warmup_language = os.getenv("WHISPER_GO_LANGUAGE") or "en"
+                warmup_language = os.getenv("PULSESCRIBE_LANGUAGE") or "en"
                 if warmup_language.strip().lower() == "auto":
                     warmup_language = "en"
                 warmup_opts: dict = {

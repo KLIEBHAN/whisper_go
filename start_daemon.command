@@ -1,5 +1,5 @@
 #!/bin/bash
-# WhisperGo Unified Daemon Starter
+# PulseScribe Unified Daemon Starter
 # Füge diese Datei zu Login Items hinzu:
 # Systemeinstellungen → Allgemein → Anmeldeobjekte → "+"
 
@@ -27,4 +27,4 @@ if [[ -f .env ]]; then
 fi
 
 # Unified Daemon starten
-exec "$PYTHON" whisper_daemon.py
+exec "$PYTHON" pulsescribe_daemon.py

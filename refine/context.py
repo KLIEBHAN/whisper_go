@@ -1,4 +1,4 @@
-"""Kontext-Erkennung für whisper_go.
+"""Kontext-Erkennung für PulseScribe.
 
 Erkennt den Kontext basierend auf der aktiven Anwendung und
 wählt entsprechend angepasste Prompts für die LLM-Nachbearbeitung.
@@ -11,7 +11,7 @@ import sys
 
 from utils.logging import get_session_id
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Cache für custom app contexts (aus ENV)
 _custom_app_contexts_cache: dict | None = None
@@ -44,13 +44,13 @@ def _get_frontmost_app() -> str | None:
 
 
 def _get_custom_app_contexts() -> dict:
-    """Lädt und cached custom app contexts aus WHISPER_GO_APP_CONTEXTS."""
+    """Lädt und cached custom app contexts aus PULSESCRIBE_APP_CONTEXTS."""
     global _custom_app_contexts_cache
 
     if _custom_app_contexts_cache is not None:
         return _custom_app_contexts_cache
 
-    custom = os.getenv("WHISPER_GO_APP_CONTEXTS")
+    custom = os.getenv("PULSESCRIBE_APP_CONTEXTS")
     if custom:
         try:
             _custom_app_contexts_cache = json.loads(custom)
@@ -60,7 +60,7 @@ def _get_custom_app_contexts() -> dict:
             )
         except json.JSONDecodeError as e:
             logger.warning(
-                f"[{get_session_id()}] WHISPER_GO_APP_CONTEXTS ungültiges JSON: {e}"
+                f"[{get_session_id()}] PULSESCRIBE_APP_CONTEXTS ungültiges JSON: {e}"
             )
             _custom_app_contexts_cache = {}
     else:
@@ -72,7 +72,7 @@ def _get_custom_app_contexts() -> dict:
 def get_context_for_app(app_name: str) -> str:
     """Mappt App-Name auf Kontext-Typ.
 
-    Priorität: ENV (WHISPER_GO_APP_CONTEXTS) > TOML (~/.whisper_go/prompts.toml) > Defaults
+    Priorität: ENV (PULSESCRIBE_APP_CONTEXTS) > TOML (~/.pulsescribe/prompts.toml) > Defaults
 
     Args:
         app_name: Name der Anwendung
@@ -110,7 +110,7 @@ def detect_context(override: str | None = None) -> tuple[str, str | None, str]:
         return override, None, "CLI"
 
     # 2. ENV-Override
-    env_context = os.getenv("WHISPER_GO_CONTEXT")
+    env_context = os.getenv("PULSESCRIBE_CONTEXT")
     if env_context:
         return env_context.lower(), None, "ENV"
 

@@ -37,11 +37,11 @@ class TestShouldUseStreaming:
     def test_env_streaming_values(
         self, mock_args, monkeypatch, clean_env, env_value, expected
     ):
-        """WHISPER_GO_STREAMING ENV-Werte werden korrekt interpretiert."""
-        monkeypatch.setenv("WHISPER_GO_STREAMING", env_value)
+        """PULSESCRIBE_STREAMING ENV-Werte werden korrekt interpretiert."""
+        monkeypatch.setenv("PULSESCRIBE_STREAMING", env_value)
         args = mock_args(mode="deepgram")
         assert _should_use_streaming(args) is expected
 
-        monkeypatch.setenv("WHISPER_GO_STREAMING", "true")
+        monkeypatch.setenv("PULSESCRIBE_STREAMING", "true")
         args = mock_args(mode="deepgram", no_streaming=True)
         assert _should_use_streaming(args) is False

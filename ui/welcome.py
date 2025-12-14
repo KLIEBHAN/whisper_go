@@ -1,4 +1,4 @@
-"""Welcome/Setup Window für WhisperGo.
+"""Welcome/Setup Window für PulseScribe.
 
 Zeigt Onboarding-Informationen, API-Key-Setup und Feature-Übersicht.
 Erscheint beim ersten Start und kann über Menubar aufgerufen werden.
@@ -66,7 +66,7 @@ def _create_card(x: int, y: int, width: int, height: int):
 
 
 class WelcomeController:
-    """Welcome/Setup Window für WhisperGo."""
+    """Welcome/Setup Window für PulseScribe."""
 
     def __init__(self, hotkey: str, config: dict):
         self.hotkey = hotkey
@@ -231,7 +231,7 @@ class WelcomeController:
             NSBackingStoreBuffered,
             False,
         )
-        self._window.setTitle_("WhisperGo Settings")
+        self._window.setTitle_("PulseScribe Settings")
         self._window.setReleasedWhenClosed_(False)
 
         # Edit-Menü für CMD+V/C/X/A in TextViews
@@ -268,7 +268,7 @@ class WelcomeController:
         title = NSTextField.alloc().initWithFrame_(
             NSMakeRect(0, y - 36, WELCOME_WIDTH, 36)
         )
-        title.setStringValue_("🎤 WhisperGo")
+        title.setStringValue_("🎤 PulseScribe")
         title.setBezeled_(False)
         title.setDrawsBackground_(False)
         title.setEditable_(False)
@@ -624,8 +624,8 @@ class WelcomeController:
         parent_view = parent_view or self._content_view
 
         # Hotkeys aus .env auslesen
-        toggle_hk = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip().upper()
-        hold_hk = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip().upper()
+        toggle_hk = (get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY") or "").strip().upper()
+        hold_hk = (get_env_setting("PULSESCRIBE_HOLD_HOTKEY") or "").strip().upper()
 
         # Hotkey-Info aufbauen (beide anzeigen wenn gesetzt)
         hotkey_parts = []
@@ -679,7 +679,7 @@ class WelcomeController:
             NSMakeRect(base_x, card_y + card_height - 60, content_w, 28)
         )
         body.setStringValue_(
-            "Press/hold your hotkey and speak. WhisperGo transcribes and "
+            "Press/hold your hotkey and speak. PulseScribe transcribes and "
             "pastes the text into the frontmost app."
         )
         body.setBezeled_(False)
@@ -968,7 +968,7 @@ class WelcomeController:
         for mode in MODE_OPTIONS:
             mode_popup.addItemWithTitle_(mode)
         current_mode = (
-            get_env_setting("WHISPER_GO_MODE") or self.config.get("mode") or "deepgram"
+            get_env_setting("PULSESCRIBE_MODE") or self.config.get("mode") or "deepgram"
         )
         if current_mode in MODE_OPTIONS:
             mode_popup.selectItemWithTitle_(current_mode)
@@ -995,7 +995,7 @@ class WelcomeController:
         local_backend_popup.setFont_(NSFont.systemFontOfSize_(11))
         for backend in LOCAL_BACKEND_OPTIONS:
             local_backend_popup.addItemWithTitle_(backend)
-        current_backend = get_env_setting("WHISPER_GO_LOCAL_BACKEND") or "whisper"
+        current_backend = get_env_setting("PULSESCRIBE_LOCAL_BACKEND") or "whisper"
         if current_backend not in LOCAL_BACKEND_OPTIONS:
             current_backend = "whisper"
         local_backend_popup.selectItemWithTitle_(current_backend)
@@ -1013,7 +1013,7 @@ class WelcomeController:
         local_model_popup.setFont_(NSFont.systemFontOfSize_(11))
         for m in LOCAL_MODEL_OPTIONS:
             local_model_popup.addItemWithTitle_(m)
-        current_local_model = get_env_setting("WHISPER_GO_LOCAL_MODEL") or "default"
+        current_local_model = get_env_setting("PULSESCRIBE_LOCAL_MODEL") or "default"
         if current_local_model not in LOCAL_MODEL_OPTIONS and current_local_model:
             local_model_popup.addItemWithTitle_(current_local_model)
         local_model_popup.selectItemWithTitle_(current_local_model)
@@ -1030,7 +1030,7 @@ class WelcomeController:
         for lang in LANGUAGE_OPTIONS:
             lang_popup.addItemWithTitle_(lang)
         current_lang = (
-            get_env_setting("WHISPER_GO_LANGUAGE")
+            get_env_setting("PULSESCRIBE_LANGUAGE")
             or self.config.get("language")
             or "auto"
         )
@@ -1138,7 +1138,7 @@ class WelcomeController:
         for d in DEVICE_OPTIONS:
             device_popup.addItemWithTitle_(d)
         current_device = (
-            (get_env_setting("WHISPER_GO_DEVICE") or "auto").strip().lower()
+            (get_env_setting("PULSESCRIBE_DEVICE") or "auto").strip().lower()
         )
         if current_device not in DEVICE_OPTIONS:
             current_device = "auto"
@@ -1155,7 +1155,7 @@ class WelcomeController:
         warmup_popup.setFont_(NSFont.systemFontOfSize_(11))
         for v in WARMUP_OPTIONS:
             warmup_popup.addItemWithTitle_(v)
-        warmup_env = get_env_setting("WHISPER_GO_LOCAL_WARMUP")
+        warmup_env = get_env_setting("PULSESCRIBE_LOCAL_WARMUP")
         warmup_value = (warmup_env or "auto").strip().lower()
         if warmup_value not in WARMUP_OPTIONS:
             warmup_value = "auto"
@@ -1173,7 +1173,7 @@ class WelcomeController:
         for v in BOOL_OVERRIDE_OPTIONS:
             fast_popup.addItemWithTitle_(v)
         fast_popup.selectItemWithTitle_(
-            _bool_override_from_env("WHISPER_GO_LOCAL_FAST")
+            _bool_override_from_env("PULSESCRIBE_LOCAL_FAST")
         )
         self._local_fast_popup = fast_popup
         parent_view.addSubview_(fast_popup)
@@ -1187,7 +1187,7 @@ class WelcomeController:
         fp16_popup.setFont_(NSFont.systemFontOfSize_(11))
         for v in BOOL_OVERRIDE_OPTIONS:
             fp16_popup.addItemWithTitle_(v)
-        fp16_popup.selectItemWithTitle_(_bool_override_from_env("WHISPER_GO_FP16"))
+        fp16_popup.selectItemWithTitle_(_bool_override_from_env("PULSESCRIBE_FP16"))
         self._fp16_popup = fp16_popup
         parent_view.addSubview_(fp16_popup)
         current_y -= row_height
@@ -1199,7 +1199,7 @@ class WelcomeController:
         )
         beam_field.setFont_(NSFont.systemFontOfSize_(11))
         beam_field.setPlaceholderString_("default")
-        beam_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_BEAM_SIZE") or "")
+        beam_field.setStringValue_(get_env_setting("PULSESCRIBE_LOCAL_BEAM_SIZE") or "")
         self._beam_size_field = beam_field
         parent_view.addSubview_(beam_field)
         current_y -= row_height
@@ -1211,7 +1211,7 @@ class WelcomeController:
         )
         best_field.setFont_(NSFont.systemFontOfSize_(11))
         best_field.setPlaceholderString_("default")
-        best_field.setStringValue_(get_env_setting("WHISPER_GO_LOCAL_BEST_OF") or "")
+        best_field.setStringValue_(get_env_setting("PULSESCRIBE_LOCAL_BEST_OF") or "")
         self._best_of_field = best_field
         parent_view.addSubview_(best_field)
         current_y -= row_height
@@ -1224,7 +1224,7 @@ class WelcomeController:
         temp_field.setFont_(NSFont.systemFontOfSize_(11))
         temp_field.setPlaceholderString_("e.g. 0.0 or 0.0,0.2,0.4")
         temp_field.setStringValue_(
-            get_env_setting("WHISPER_GO_LOCAL_TEMPERATURE") or ""
+            get_env_setting("PULSESCRIBE_LOCAL_TEMPERATURE") or ""
         )
         self._temperature_field = temp_field
         parent_view.addSubview_(temp_field)
@@ -1238,7 +1238,7 @@ class WelcomeController:
         compute_field.setFont_(NSFont.systemFontOfSize_(11))
         compute_field.setPlaceholderString_("default (e.g. int8, int8_float16)")
         compute_field.setStringValue_(
-            get_env_setting("WHISPER_GO_LOCAL_COMPUTE_TYPE") or ""
+            get_env_setting("PULSESCRIBE_LOCAL_COMPUTE_TYPE") or ""
         )
         self._compute_type_field = compute_field
         parent_view.addSubview_(compute_field)
@@ -1252,7 +1252,7 @@ class WelcomeController:
         threads_field.setFont_(NSFont.systemFontOfSize_(11))
         threads_field.setPlaceholderString_("0 = auto")
         threads_field.setStringValue_(
-            get_env_setting("WHISPER_GO_LOCAL_CPU_THREADS") or ""
+            get_env_setting("PULSESCRIBE_LOCAL_CPU_THREADS") or ""
         )
         self._cpu_threads_field = threads_field
         parent_view.addSubview_(threads_field)
@@ -1266,7 +1266,7 @@ class WelcomeController:
         workers_field.setFont_(NSFont.systemFontOfSize_(11))
         workers_field.setPlaceholderString_("1")
         workers_field.setStringValue_(
-            get_env_setting("WHISPER_GO_LOCAL_NUM_WORKERS") or ""
+            get_env_setting("PULSESCRIBE_LOCAL_NUM_WORKERS") or ""
         )
         self._num_workers_field = workers_field
         parent_view.addSubview_(workers_field)
@@ -1281,7 +1281,7 @@ class WelcomeController:
         for v in BOOL_OVERRIDE_OPTIONS:
             wt_popup.addItemWithTitle_(v)
         wt_popup.selectItemWithTitle_(
-            _bool_override_from_env("WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS")
+            _bool_override_from_env("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS")
         )
         self._without_timestamps_popup = wt_popup
         parent_view.addSubview_(wt_popup)
@@ -1296,7 +1296,7 @@ class WelcomeController:
         for v in BOOL_OVERRIDE_OPTIONS:
             vad_popup.addItemWithTitle_(v)
         vad_popup.selectItemWithTitle_(
-            _bool_override_from_env("WHISPER_GO_LOCAL_VAD_FILTER")
+            _bool_override_from_env("PULSESCRIBE_LOCAL_VAD_FILTER")
         )
         self._vad_filter_popup = vad_popup
         parent_view.addSubview_(vad_popup)
@@ -1353,7 +1353,7 @@ class WelcomeController:
         refine_checkbox.setButtonType_(NSButtonTypeSwitch)
         refine_checkbox.setTitle_("Enable LLM post-processing")
         refine_checkbox.setFont_(NSFont.systemFontOfSize_(11))
-        refine_enabled = get_env_setting("WHISPER_GO_REFINE")
+        refine_enabled = get_env_setting("PULSESCRIBE_REFINE")
         if refine_enabled is None:
             refine_enabled = self.config.get("refine", False)
         else:
@@ -1371,7 +1371,7 @@ class WelcomeController:
         clipboard_checkbox.setButtonType_(NSButtonTypeSwitch)
         clipboard_checkbox.setTitle_("Restore after paste")
         clipboard_checkbox.setFont_(NSFont.systemFontOfSize_(11))
-        clipboard_restore = get_env_setting("WHISPER_GO_CLIPBOARD_RESTORE")
+        clipboard_restore = get_env_setting("PULSESCRIBE_CLIPBOARD_RESTORE")
         clipboard_restore = (
             bool(parse_bool(clipboard_restore)) if clipboard_restore else False
         )
@@ -1389,7 +1389,7 @@ class WelcomeController:
         for provider in REFINE_PROVIDER_OPTIONS:
             provider_popup.addItemWithTitle_(provider)
         current_provider = (
-            get_env_setting("WHISPER_GO_REFINE_PROVIDER")
+            get_env_setting("PULSESCRIBE_REFINE_PROVIDER")
             or self.config.get("refine_provider")
             or "groq"
         )
@@ -1405,9 +1405,9 @@ class WelcomeController:
             NSMakeRect(control_x, current_y, control_width, 22)
         )
         model_field.setFont_(NSFont.systemFontOfSize_(11))
-        model_field.setPlaceholderString_("e.g. llama-3.3-70b-versatile")
+        model_field.setPlaceholderString_("e.g. openai/gpt-oss-120b")
         current_model = (
-            get_env_setting("WHISPER_GO_REFINE_MODEL")
+            get_env_setting("PULSESCRIBE_REFINE_MODEL")
             or self.config.get("refine_model")
             or "openai/gpt-oss-120b"
         )
@@ -1477,7 +1477,7 @@ class WelcomeController:
             NSMakeRect(base_x, card_y + card_height - 46, content_width, 14)
         )
         desc.setStringValue_(
-            "Edit prompts for LLM post-processing. Changes saved to ~/.whisper_go/prompts.toml"
+            "Edit prompts for LLM post-processing. Changes saved to ~/.pulsescribe/prompts.toml"
         )
         desc.setBezeled_(False)
         desc.setDrawsBackground_(False)
@@ -2215,7 +2215,7 @@ class WelcomeController:
             return y_pos - height
 
         # Haupttitel
-        current_y = add_title("WhisperGo", current_y, 14)
+        current_y = add_title("PulseScribe", current_y, 14)
 
         # Tagline
         current_y = add_text(
@@ -2261,7 +2261,7 @@ class WelcomeController:
             NSMakeRect(base_x, current_y - 32, content_width, 32)
         )
         hint.setStringValue_(
-            "Config: ~/.whisper_go/\n" "GitHub: github.com/KLIEBHAN/whisper_go"
+            "Config: ~/.pulsescribe/\n" "GitHub: github.com/KLIEBHAN/pulsescribe"
         )
         hint.setBezeled_(False)
         hint.setDrawsBackground_(False)
@@ -2580,47 +2580,47 @@ class WelcomeController:
         if self._mode_popup:
             mode = self._mode_popup.titleOfSelectedItem()
             if mode:
-                save_env_setting("WHISPER_GO_MODE", mode)
+                save_env_setting("PULSESCRIBE_MODE", mode)
 
         # Local Backend
         if self._local_backend_popup:
             backend = self._local_backend_popup.titleOfSelectedItem()
             if backend == "whisper":
-                remove_env_setting("WHISPER_GO_LOCAL_BACKEND")
+                remove_env_setting("PULSESCRIBE_LOCAL_BACKEND")
             elif backend:
-                save_env_setting("WHISPER_GO_LOCAL_BACKEND", backend)
+                save_env_setting("PULSESCRIBE_LOCAL_BACKEND", backend)
 
         # Local Model
         if self._local_model_popup:
             local_model = self._local_model_popup.titleOfSelectedItem()
             if local_model == "default":
-                remove_env_setting("WHISPER_GO_LOCAL_MODEL")
+                remove_env_setting("PULSESCRIBE_LOCAL_MODEL")
             elif local_model:
-                save_env_setting("WHISPER_GO_LOCAL_MODEL", local_model)
+                save_env_setting("PULSESCRIBE_LOCAL_MODEL", local_model)
 
         # Language
         if self._lang_popup:
             lang = self._lang_popup.titleOfSelectedItem()
             if lang == "auto":
-                remove_env_setting("WHISPER_GO_LANGUAGE")
+                remove_env_setting("PULSESCRIBE_LANGUAGE")
             elif lang:
-                save_env_setting("WHISPER_GO_LANGUAGE", lang)
+                save_env_setting("PULSESCRIBE_LANGUAGE", lang)
 
         # Local Device (openai-whisper)
         if self._device_popup:
             device = (self._device_popup.titleOfSelectedItem() or "").strip().lower()
             if not device or device == "auto":
-                remove_env_setting("WHISPER_GO_DEVICE")
+                remove_env_setting("PULSESCRIBE_DEVICE")
             else:
-                save_env_setting("WHISPER_GO_DEVICE", device)
+                save_env_setting("PULSESCRIBE_DEVICE", device)
 
         # Local Warmup (auto/true/false)
         if self._warmup_popup:
             warmup = (self._warmup_popup.titleOfSelectedItem() or "").strip().lower()
             if not warmup or warmup == "auto":
-                remove_env_setting("WHISPER_GO_LOCAL_WARMUP")
+                remove_env_setting("PULSESCRIBE_LOCAL_WARMUP")
             else:
-                save_env_setting("WHISPER_GO_LOCAL_WARMUP", warmup)
+                save_env_setting("PULSESCRIBE_LOCAL_WARMUP", warmup)
 
         def _save_bool_override(key: str, popup) -> None:
             if popup is None:
@@ -2632,10 +2632,10 @@ class WelcomeController:
                 save_env_setting(key, sel)
 
         # Local Fast (default/true/false)
-        _save_bool_override("WHISPER_GO_LOCAL_FAST", self._local_fast_popup)
+        _save_bool_override("PULSESCRIBE_LOCAL_FAST", self._local_fast_popup)
 
         # FP16 (default/true/false)
-        _save_bool_override("WHISPER_GO_FP16", self._fp16_popup)
+        _save_bool_override("PULSESCRIBE_FP16", self._fp16_popup)
 
         def _save_optional_int(key: str, field) -> None:
             if field is None:
@@ -2661,45 +2661,45 @@ class WelcomeController:
             save_env_setting(key, raw)
 
         # Decode overrides
-        _save_optional_int("WHISPER_GO_LOCAL_BEAM_SIZE", self._beam_size_field)
-        _save_optional_int("WHISPER_GO_LOCAL_BEST_OF", self._best_of_field)
-        _save_optional_str("WHISPER_GO_LOCAL_TEMPERATURE", self._temperature_field)
+        _save_optional_int("PULSESCRIBE_LOCAL_BEAM_SIZE", self._beam_size_field)
+        _save_optional_int("PULSESCRIBE_LOCAL_BEST_OF", self._best_of_field)
+        _save_optional_str("PULSESCRIBE_LOCAL_TEMPERATURE", self._temperature_field)
 
         # faster-whisper overrides
-        _save_optional_str("WHISPER_GO_LOCAL_COMPUTE_TYPE", self._compute_type_field)
-        _save_optional_int("WHISPER_GO_LOCAL_CPU_THREADS", self._cpu_threads_field)
-        _save_optional_int("WHISPER_GO_LOCAL_NUM_WORKERS", self._num_workers_field)
+        _save_optional_str("PULSESCRIBE_LOCAL_COMPUTE_TYPE", self._compute_type_field)
+        _save_optional_int("PULSESCRIBE_LOCAL_CPU_THREADS", self._cpu_threads_field)
+        _save_optional_int("PULSESCRIBE_LOCAL_NUM_WORKERS", self._num_workers_field)
         _save_bool_override(
-            "WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS", self._without_timestamps_popup
+            "PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS", self._without_timestamps_popup
         )
-        _save_bool_override("WHISPER_GO_LOCAL_VAD_FILTER", self._vad_filter_popup)
+        _save_bool_override("PULSESCRIBE_LOCAL_VAD_FILTER", self._vad_filter_popup)
 
         # Refine
         if self._refine_checkbox:
             enabled = self._refine_checkbox.state() == 1
-            save_env_setting("WHISPER_GO_REFINE", "true" if enabled else "false")
+            save_env_setting("PULSESCRIBE_REFINE", "true" if enabled else "false")
 
         # Clipboard Restore
         if self._clipboard_restore_checkbox:
             enabled = self._clipboard_restore_checkbox.state() == 1
             if enabled:
-                save_env_setting("WHISPER_GO_CLIPBOARD_RESTORE", "true")
+                save_env_setting("PULSESCRIBE_CLIPBOARD_RESTORE", "true")
             else:
-                remove_env_setting("WHISPER_GO_CLIPBOARD_RESTORE")
+                remove_env_setting("PULSESCRIBE_CLIPBOARD_RESTORE")
 
         # Refine Provider
         if self._provider_popup:
             provider = self._provider_popup.titleOfSelectedItem()
             if provider:
-                save_env_setting("WHISPER_GO_REFINE_PROVIDER", provider)
+                save_env_setting("PULSESCRIBE_REFINE_PROVIDER", provider)
 
         # Refine Model
         if self._model_field:
             model = self._model_field.stringValue().strip()
             if model:
-                save_env_setting("WHISPER_GO_REFINE_MODEL", model)
+                save_env_setting("PULSESCRIBE_REFINE_MODEL", model)
             else:
-                remove_env_setting("WHISPER_GO_REFINE_MODEL")
+                remove_env_setting("PULSESCRIBE_REFINE_MODEL")
 
         # Vocabulary / Keywords
         if self._vocab_text_view:

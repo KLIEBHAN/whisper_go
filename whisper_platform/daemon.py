@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-logger = logging.getLogger("whisper_go.platform.daemon")
+logger = logging.getLogger("pulsescribe.platform.daemon")
 
 # Standard-PID-Datei Pfad (platform-aware)
 if sys.platform == "win32":
@@ -20,7 +20,7 @@ if sys.platform == "win32":
 else:
     TEMP_DIR = Path("/tmp")
 
-PID_FILE = TEMP_DIR / "whisper_go.pid"
+PID_FILE = TEMP_DIR / "pulsescribe.pid"
 
 
 class MacOSDaemonController:
@@ -127,7 +127,7 @@ class WindowsDaemonController:
     - Named Events für IPC (statt SIGUSR1)
     """
 
-    STOP_EVENT_PREFIX = "Global\\WhisperGoStop_"
+    STOP_EVENT_PREFIX = "Global\\PulseScribeStop_"
 
     def __init__(self, pid_file: Path | None = None) -> None:
         self.pid_file = pid_file or PID_FILE
@@ -137,6 +137,7 @@ class WindowsDaemonController:
         try:
             import win32event  # type: ignore[import-not-found]
             import win32api  # type: ignore[import-not-found]
+
             self._win32event = win32event
             self._win32api = win32api
         except ImportError:
@@ -156,8 +157,7 @@ class WindowsDaemonController:
             process = subprocess.Popen(
                 command,
                 creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP |
-                    subprocess.DETACHED_PROCESS
+                    subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
                 ),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -181,9 +181,7 @@ class WindowsDaemonController:
             event_name = f"{self.STOP_EVENT_PREFIX}{pid}"
             # Event öffnen und setzen
             event = self._win32event.OpenEvent(
-                self._win32event.EVENT_MODIFY_STATE,
-                False,
-                event_name
+                self._win32event.EVENT_MODIFY_STATE, False, event_name
             )
             self._win32event.SetEvent(event)
             self._win32api.CloseHandle(event)
@@ -197,6 +195,7 @@ class WindowsDaemonController:
         """Prüft ob Prozess läuft via psutil."""
         try:
             import psutil
+
             return psutil.pid_exists(pid)
         except ImportError:
             # Fallback: tasklist

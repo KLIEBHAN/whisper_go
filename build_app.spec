@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec für WhisperGo.app
+PyInstaller spec für PulseScribe.app
 
 Build: pyinstaller build_app.spec
-Output: dist/WhisperGo.app
+Output: dist/PulseScribe.app
 
 WICHTIG: Accessibility-Berechtigungen und Code-Signing
 =======================================================
@@ -12,10 +12,10 @@ macOS identifiziert Apps anhand ihrer Signatur. Bei unsignierten Builds:
 - macOS merkt sich den Hash der Binary, der sich bei jedem Build ändert
 
 Für stabilen Betrieb die App signieren:
-    codesign --force --deep --sign - dist/WhisperGo.app
+    codesign --force --deep --sign - dist/PulseScribe.app
 
 Oder mit Developer ID für Distribution:
-    codesign --force --deep --sign "Developer ID Application: Name" dist/WhisperGo.app
+    codesign --force --deep --sign "Developer ID Application: Name" dist/PulseScribe.app
 """
 
 block_cipher = None
@@ -31,7 +31,7 @@ def _dedupe(items):
     return list(dict.fromkeys(items))
 
 def _read_app_version() -> str:
-    env_version = (os.getenv("WHISPERGO_VERSION") or os.getenv("VERSION") or "").strip()
+    env_version = (os.getenv("PULSESCRIBE_VERSION") or os.getenv("VERSION") or "").strip()
     if env_version:
         return env_version
 
@@ -157,7 +157,7 @@ excludes = [
 ]
 
 a = Analysis(
-    ['whisper_daemon.py'],
+    ['pulsescribe_daemon.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -179,7 +179,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='whisper_go',
+    name='pulsescribe',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -199,29 +199,29 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='whisper_go',
+    name='pulsescribe',
 )
 
 app = BUNDLE(
     coll,
-    name='WhisperGo.app',
+    name='PulseScribe.app',
     icon='assets/icon.icns',  # Custom app icon
-    bundle_identifier='com.kliebhan.whisper-go',
+    bundle_identifier='com.kliebhan.pulsescribe',
     info_plist={
         # Berechtigungen
-        'NSMicrophoneUsageDescription': 'Whisper Go benötigt Zugriff auf das Mikrofon für die Spracherkennung.',
-        'NSAppleEventsUsageDescription': 'Whisper Go benötigt Zugriff, um Text in andere Apps einzufügen.',
-        
+        'NSMicrophoneUsageDescription': 'PulseScribe benötigt Zugriff auf das Mikrofon für die Spracherkennung.',
+        'NSAppleEventsUsageDescription': 'PulseScribe benötigt Zugriff, um Text in andere Apps einzufügen.',
+
         # App-Verhalten
         'LSUIElement': False,  # App im Dock anzeigen (für CMD+Q Support)
         'LSBackgroundOnly': False,
-        
+
         # App-Info
-        'CFBundleName': 'Whisper Go',
-        'CFBundleDisplayName': 'Whisper Go',
+        'CFBundleName': 'PulseScribe',
+        'CFBundleDisplayName': 'PulseScribe',
         'CFBundleShortVersionString': APP_VERSION,
         'CFBundleVersion': APP_VERSION,
-        
+
         # macOS Features
         'NSHighResolutionCapable': True,
         'NSSupportsAutomaticGraphicsSwitching': True,

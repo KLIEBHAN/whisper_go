@@ -1,4 +1,4 @@
-"""UI-Komponenten für whisper_go (Menübar, Overlay, Welcome)."""
+"""UI-Komponenten für PulseScribe (Menübar, Overlay, Welcome)."""
 
 from .menubar import MenuBarController
 from .overlay import OverlayController

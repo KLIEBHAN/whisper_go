@@ -23,7 +23,7 @@ class TestGetCustomAppContexts:
         import refine.context
 
         monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"CustomApp": "email"}')
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", '{"CustomApp": "email"}')
 
         result = _get_custom_app_contexts()
 
@@ -34,7 +34,7 @@ class TestGetCustomAppContexts:
         import refine.context
 
         monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", "not valid json")
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", "not valid json")
 
         result = _get_custom_app_contexts()
 
@@ -45,14 +45,14 @@ class TestGetCustomAppContexts:
         import refine.context
 
         monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"App1": "chat"}')
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", '{"App1": "chat"}')
 
         # Erster Aufruf
         result1 = _get_custom_app_contexts()
         assert result1 == {"App1": "chat"}
 
         # ENV ändern - sollte ignoriert werden wegen Cache
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"App2": "code"}')
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", '{"App2": "code"}')
         result2 = _get_custom_app_contexts()
 
         assert result2 == {"App1": "chat"}  # Immer noch gecachter Wert
@@ -78,7 +78,7 @@ class TestAppToContext:
 
         monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         # Safari ist normalerweise nicht gemappt
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"Safari": "chat"}')
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", '{"Safari": "chat"}')
 
         assert _app_to_context("Safari") == "chat"
 
@@ -88,7 +88,7 @@ class TestAppToContext:
 
         monkeypatch.setattr(refine.context, "_custom_app_contexts_cache", None)
         # Slack ist normalerweise "chat"
-        monkeypatch.setenv("WHISPER_GO_APP_CONTEXTS", '{"Slack": "code"}')
+        monkeypatch.setenv("PULSESCRIBE_APP_CONTEXTS", '{"Slack": "code"}')
 
         assert _app_to_context("Slack") == "code"
 
@@ -106,7 +106,7 @@ class TestDetectContext:
 
     def test_env_override(self, monkeypatch, clean_env):
         """ENV-Override wenn kein CLI-Override."""
-        monkeypatch.setenv("WHISPER_GO_CONTEXT", "chat")
+        monkeypatch.setenv("PULSESCRIBE_CONTEXT", "chat")
 
         context, app, source = detect_context()
 
@@ -116,7 +116,7 @@ class TestDetectContext:
 
     def test_env_case_insensitive(self, monkeypatch, clean_env):
         """ENV-Wert wird lowercase normalisiert."""
-        monkeypatch.setenv("WHISPER_GO_CONTEXT", "EMAIL")
+        monkeypatch.setenv("PULSESCRIBE_CONTEXT", "EMAIL")
 
         context, app, source = detect_context()
 
@@ -124,7 +124,7 @@ class TestDetectContext:
 
     def test_cli_beats_env(self, monkeypatch, clean_env):
         """CLI-Override schlägt ENV."""
-        monkeypatch.setenv("WHISPER_GO_CONTEXT", "chat")
+        monkeypatch.setenv("PULSESCRIBE_CONTEXT", "chat")
 
         context, app, source = detect_context(override="code")
 

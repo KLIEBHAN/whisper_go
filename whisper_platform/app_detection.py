@@ -8,7 +8,7 @@ Windows: win32gui + psutil
 import logging
 import sys
 
-logger = logging.getLogger("whisper_go.platform.app_detection")
+logger = logging.getLogger("pulsescribe.platform.app_detection")
 
 
 class MacOSAppDetector:

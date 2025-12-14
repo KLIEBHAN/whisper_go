@@ -1,4 +1,4 @@
-"""Deepgram WebSocket Streaming Provider für whisper_go.
+"""Deepgram WebSocket Streaming Provider für pulsescribe.
 
 Bietet Real-Time Streaming-Transkription via Deepgram WebSocket API.
 
@@ -46,7 +46,7 @@ from config import (
     DEFAULT_DEEPGRAM_MODEL,
 )
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Default-Modell (Alias für Rückwärtskompatibilität)
 DEFAULT_MODEL = DEFAULT_DEEPGRAM_MODEL

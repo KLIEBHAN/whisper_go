@@ -1,7 +1,7 @@
-"""Persistente Einstellungen für WhisperGo.
+"""Persistente Einstellungen für PulseScribe.
 
-Speichert User-Preferences in ~/.whisper_go/preferences.json.
-API-Keys werden in ~/.whisper_go/.env gespeichert.
+Speichert User-Preferences in ~/.pulsescribe/preferences.json.
+API-Keys werden in ~/.pulsescribe/.env gespeichert.
 """
 
 import json
@@ -224,7 +224,7 @@ def get_env_setting(key_name: str) -> str | None:
     """Liest eine Einstellung aus der .env Datei.
 
     Args:
-        key_name: Name der Einstellung (z.B. "WHISPER_GO_MODE")
+        key_name: Name der Einstellung (z.B. "PULSESCRIBE_MODE")
 
     Returns:
         Der Wert oder None wenn nicht gefunden
@@ -236,7 +236,7 @@ def save_env_setting(key_name: str, value: str) -> None:
     """Speichert/aktualisiert eine Einstellung in der .env Datei.
 
     Args:
-        key_name: Name der Einstellung (z.B. "WHISPER_GO_MODE")
+        key_name: Name der Einstellung (z.B. "PULSESCRIBE_MODE")
         value: Der Wert
     """
     save_api_key(key_name, value)  # Gleiche Logik wie bei API-Keys
@@ -246,7 +246,7 @@ def remove_env_setting(key_name: str) -> None:
     """Entfernt eine Einstellung aus der .env Datei.
 
     Args:
-        key_name: Name der Einstellung (z.B. "WHISPER_GO_REFINE")
+        key_name: Name der Einstellung (z.B. "PULSESCRIBE_REFINE")
     """
     env_path = ENV_FILE
 
@@ -270,10 +270,10 @@ def apply_hotkey_setting(kind: str, hotkey_str: str) -> None:
         return
 
     if kind == "hold":
-        save_env_setting("WHISPER_GO_HOLD_HOTKEY", value)
+        save_env_setting("PULSESCRIBE_HOLD_HOTKEY", value)
     else:
-        save_env_setting("WHISPER_GO_TOGGLE_HOTKEY", value)
+        save_env_setting("PULSESCRIBE_TOGGLE_HOTKEY", value)
 
     # Remove legacy single-hotkey keys if present.
-    remove_env_setting("WHISPER_GO_HOTKEY")
-    remove_env_setting("WHISPER_GO_HOTKEY_MODE")
+    remove_env_setting("PULSESCRIBE_HOTKEY")
+    remove_env_setting("PULSESCRIBE_HOTKEY_MODE")

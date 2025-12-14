@@ -1,4 +1,4 @@
-"""LLM-Nachbearbeitung für whisper_go.
+"""LLM-Nachbearbeitung für PulseScribe.
 
 Enthält Funktionen für die Nachbearbeitung von Transkripten mit LLMs
 (OpenAI, OpenRouter, Groq).
@@ -17,11 +17,10 @@ from utils.env import get_env_bool_default
 # Zentrale Konfiguration importieren
 from config import (
     DEFAULT_REFINE_MODEL,
-    DEFAULT_GROQ_REFINE_MODEL,
     OPENROUTER_BASE_URL,
 )
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Groq-Client Singleton
 _groq_client = None
@@ -85,9 +84,9 @@ def refine_transcript(
 
     Args:
         transcript: Das zu verfeinernde Transkript
-        model: LLM-Modell (default: gpt-5-nano oder llama-3.3 für Groq)
+        model: LLM-Modell (default: openai/gpt-oss-120b für Groq)
         prompt: Custom Prompt (überschreibt Kontext-Prompt)
-        provider: LLM-Provider (openai, openrouter, groq)
+        provider: LLM-Provider (groq, openai, openrouter)
         context: Kontext-Typ für Prompt-Auswahl (email, chat, code, default)
 
     Returns:
@@ -127,16 +126,14 @@ def refine_transcript(
 
     # Provider und Modell zur Laufzeit bestimmen (CLI > ENV > Default)
     effective_provider = (
-        provider or os.getenv("WHISPER_GO_REFINE_PROVIDER", "openai")
+        provider or os.getenv("PULSESCRIBE_REFINE_PROVIDER", "openai")
     ).lower()
 
-    # Provider-spezifisches Default-Modell (Groq nutzt Llama, andere GPT-5)
+    # Provider-spezifisches Default-Modell
     if model:
         effective_model = model
-    elif os.getenv("WHISPER_GO_REFINE_MODEL"):
-        effective_model = os.getenv("WHISPER_GO_REFINE_MODEL")
-    elif effective_provider == "groq":
-        effective_model = DEFAULT_GROQ_REFINE_MODEL
+    elif os.getenv("PULSESCRIBE_REFINE_MODEL"):
+        effective_model = os.getenv("PULSESCRIBE_REFINE_MODEL")
     else:
         effective_model = DEFAULT_REFINE_MODEL
 

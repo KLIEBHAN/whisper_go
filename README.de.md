@@ -1,7 +1,7 @@
-# whisper_go
+# PulseScribe
 
-[![Tests](https://github.com/KLIEBHAN/whisper_go/actions/workflows/test.yml/badge.svg)](https://github.com/KLIEBHAN/whisper_go/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/KLIEBHAN/whisper_go/graph/badge.svg)](https://codecov.io/gh/KLIEBHAN/whisper_go)
+[![Tests](https://github.com/KLIEBHAN/pulsescribe/actions/workflows/test.yml/badge.svg)](https://github.com/KLIEBHAN/pulsescribe/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/KLIEBHAN/pulsescribe/graph/badge.svg)](https://codecov.io/gh/KLIEBHAN/pulsescribe)
 
 [🇺🇸 English Version](README.md)
 
@@ -13,11 +13,11 @@ Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). 
 
 ### Provider im Überblick
 
-| Provider     | Latenz    | Methode   | Besonderheit                  |
-| ------------ | --------- | --------- | ----------------------------- |
-| **Deepgram** | ~300ms ⚡ | WebSocket | Echtzeit-Streaming, empfohlen |
-| **Groq**     | ~1s       | REST      | Whisper auf LPU, sehr schnell |
-| **OpenAI**   | ~2-3s     | REST      | GPT-4o, höchste Qualität      |
+| Provider     | Latenz    | Methode   | Besonderheit                                            |
+| ------------ | --------- | --------- | ------------------------------------------------------- |
+| **Deepgram** | ~300ms ⚡ | WebSocket | Echtzeit-Streaming, empfohlen                           |
+| **Groq**     | ~1s       | REST      | Whisper auf LPU, sehr schnell                           |
+| **OpenAI**   | ~2-3s     | REST      | GPT-4o, höchste Qualität                                |
 | **Lokal**    | variiert  | Whisper   | Offline, keine API-Kosten (MLX/Metal auf Apple Silicon) |
 
 ## Schnellstart
@@ -26,7 +26,7 @@ In unter 2 Minuten einsatzbereit:
 
 ```bash
 # 1. Repository klonen
-git clone https://github.com/KLIEBHAN/whisper_go.git && cd whisper_go
+git clone https://github.com/KLIEBHAN/pulsescribe.git && cd pulsescribe
 
 # 2. Dependencies installieren
 pip install -r requirements.txt
@@ -40,15 +40,15 @@ python transcribe.py --record --copy --mode deepgram
 
 ### Empfohlene `.env` Konfiguration
 
-WhisperGo lädt Einstellungen aus `~/.whisper_go/.env` (empfohlen; wird von Settings-UI und Daemon genutzt).  
+PulseScribe lädt Einstellungen aus `~/.pulsescribe/.env` (empfohlen; wird von Settings-UI und Daemon genutzt).  
 Für Development wird zusätzlich eine lokale `.env` im Projektverzeichnis unterstützt.
 
 ```bash
 # Empfohlen (funktioniert für Daemon / App Bundle)
-cp .env.example ~/.whisper_go/.env
+cp .env.example ~/.pulsescribe/.env
 ```
 
-Beispiel `~/.whisper_go/.env`:
+Beispiel `~/.pulsescribe/.env`:
 
 ```bash
 # API-Keys
@@ -58,13 +58,13 @@ OPENAI_API_KEY=...
 OPENROUTER_API_KEY=...
 
 # Transkription
-WHISPER_GO_MODE=deepgram
-WHISPER_GO_LANGUAGE=de
+PULSESCRIBE_MODE=deepgram
+PULSESCRIBE_LANGUAGE=de
 
 # LLM-Nachbearbeitung
-WHISPER_GO_REFINE=true
-WHISPER_GO_REFINE_PROVIDER=groq
-WHISPER_GO_REFINE_MODEL=openai/gpt-oss-120b
+PULSESCRIBE_REFINE=true
+PULSESCRIBE_REFINE_PROVIDER=groq
+PULSESCRIBE_REFINE_MODEL=openai/gpt-oss-120b
 ```
 
 **Warum diese Einstellungen?**
@@ -107,7 +107,7 @@ python transcribe.py --record --refine                # Mit LLM-Nachbearbeitung
 | Option                                 | Beschreibung                                                                  |
 | -------------------------------------- | ----------------------------------------------------------------------------- |
 | `--mode openai\|local\|deepgram\|groq` | Transkriptions-Provider (default: `openai`)                                   |
-| `--model NAME`                         | Modell (CLI > `WHISPER_GO_MODEL` env > Provider-Default)                      |
+| `--model NAME`                         | Modell (CLI > `PULSESCRIBE_MODEL` env > Provider-Default)                     |
 | `--record`, `-r`                       | Mikrofon-Aufnahme statt Datei                                                 |
 | `--copy`, `-c`                         | Ergebnis in Zwischenablage                                                    |
 | `--language CODE`                      | Sprachcode z.B. `de`, `en`                                                    |
@@ -115,8 +115,8 @@ python transcribe.py --record --refine                # Mit LLM-Nachbearbeitung
 | `--no-streaming`                       | WebSocket-Streaming deaktivieren (nur Deepgram)                               |
 | `--refine`                             | LLM-Nachbearbeitung aktivieren                                                |
 | `--no-refine`                          | LLM-Nachbearbeitung deaktivieren (überschreibt env)                           |
-| `--refine-model`                       | Modell für Nachbearbeitung (default: `gpt-5-nano`)                            |
-| `--refine-provider`                    | LLM-Provider: `openai`, `openrouter`, `groq`                                  |
+| `--refine-model`                       | Modell für Nachbearbeitung (default: `openai/gpt-oss-120b`)                   |
+| `--refine-provider`                    | LLM-Provider: `groq`, `openai` oder `openrouter`                              |
 | `--context`                            | Kontext für Nachbearbeitung: `email`, `chat`, `code`, `default` (auto-detect) |
 
 ## Konfiguration
@@ -145,63 +145,63 @@ export OPENROUTER_API_KEY="sk-or-..."
 
 ```bash
 # Transkriptions-Modus (openai, local, deepgram, groq)
-export WHISPER_GO_MODE="deepgram"
+export PULSESCRIBE_MODE="deepgram"
 
 # Transkriptions-Modell (überschreibt Provider-Default)
-export WHISPER_GO_MODEL="nova-3"
+export PULSESCRIBE_MODEL="nova-3"
 
 # Device für lokales Whisper (auto, mps, cpu, cuda)
 # Standard: auto → nutzt MPS auf Apple Silicon, sonst CPU/CUDA
-export WHISPER_GO_DEVICE="auto"
+export PULSESCRIBE_DEVICE="auto"
 
 # FP16 für lokales Whisper erzwingen (true/false)
 # Standard: CPU/MPS → false (stabil), CUDA → true
-export WHISPER_GO_FP16="false"
+export PULSESCRIBE_FP16="false"
 
 # Backend für lokales Whisper (whisper, faster, mlx, auto)
 # whisper = openai-whisper (PyTorch, nutzt MPS/GPU)
 # faster  = faster-whisper (CTranslate2, sehr schnell auf CPU)
 # mlx     = mlx-whisper (MLX/Metal, Apple Silicon, optional)
 # auto    = faster falls installiert, sonst whisper
-export WHISPER_GO_LOCAL_BACKEND="whisper"
+export PULSESCRIBE_LOCAL_BACKEND="whisper"
 
 # Lokales Modell überschreiben (nur für lokalen Modus)
 # Standard: Provider-Default (turbo)
-# export WHISPER_GO_LOCAL_MODEL="turbo"
+# export PULSESCRIBE_LOCAL_MODEL="turbo"
 
 # Compute-Type für faster-whisper (optional)
 # Default: int8 auf CPU, float16 auf CUDA
-# export WHISPER_GO_LOCAL_COMPUTE_TYPE="int8"
+# export PULSESCRIBE_LOCAL_COMPUTE_TYPE="int8"
 
 # Faster-whisper Threads (optional)
 # 0 Threads = auto (alle Kerne)
-# export WHISPER_GO_LOCAL_CPU_THREADS=0
-# export WHISPER_GO_LOCAL_NUM_WORKERS=1
+# export PULSESCRIBE_LOCAL_CPU_THREADS=0
+# export PULSESCRIBE_LOCAL_NUM_WORKERS=1
 
 # Faster-whisper Optionen (optional)
 # Standard bei faster: without_timestamps=true, vad_filter=false
-# export WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS="true"
-# export WHISPER_GO_LOCAL_VAD_FILTER="false"
+# export PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS="true"
+# export PULSESCRIBE_LOCAL_VAD_FILTER="false"
 
 # Optional: schnelleres lokales Decoding (mehr Speed, leicht weniger Robustheit)
 # Standard: true bei faster-whisper, false bei openai-whisper
-# export WHISPER_GO_LOCAL_FAST="true"  # setzt beam_size=1, best_of=1, temperature=0.0
+# export PULSESCRIBE_LOCAL_FAST="true"  # setzt beam_size=1, best_of=1, temperature=0.0
 # Feintuning:
-# export WHISPER_GO_LOCAL_BEAM_SIZE=1
-# export WHISPER_GO_LOCAL_BEST_OF=1
-# export WHISPER_GO_LOCAL_TEMPERATURE=0.0
+# export PULSESCRIBE_LOCAL_BEAM_SIZE=1
+# export PULSESCRIBE_LOCAL_BEST_OF=1
+# export PULSESCRIBE_LOCAL_TEMPERATURE=0.0
 
 # Optional: Local Warmup (reduziert "cold start" beim ersten lokalen Call)
 # Default: auto (Warmup nur bei openai-whisper auf MPS). Werte: true/false (nicht gesetzt = auto)
-# export WHISPER_GO_LOCAL_WARMUP="true"
+# export PULSESCRIBE_LOCAL_WARMUP="true"
 
 # WebSocket-Streaming für Deepgram (default: true)
-export WHISPER_GO_STREAMING="true"
+export PULSESCRIBE_STREAMING="true"
 
 # LLM-Nachbearbeitung
-export WHISPER_GO_REFINE="true"
-export WHISPER_GO_REFINE_MODEL="gpt-5-nano"
-export WHISPER_GO_REFINE_PROVIDER="openai"  # oder openrouter, groq
+export PULSESCRIBE_REFINE="true"
+export PULSESCRIBE_REFINE_MODEL="openai/gpt-oss-120b"
+export PULSESCRIBE_REFINE_PROVIDER="groq"  # oder openai, openrouter
 ```
 
 ### System-Abhängigkeiten
@@ -210,7 +210,7 @@ Für bestimmte Modi werden zusätzliche Tools benötigt:
 
 ```bash
 # Lokaler Modus (Datei-Transkription)
-# Benötigt für `WHISPER_GO_LOCAL_BACKEND=whisper` und `mlx`, wenn Audiodateien transkribiert werden.
+# Benötigt für `PULSESCRIBE_LOCAL_BACKEND=whisper` und `mlx`, wenn Audiodateien transkribiert werden.
 brew install ffmpeg          # macOS
 sudo apt install ffmpeg      # Ubuntu/Debian
 
@@ -220,7 +220,7 @@ brew install portaudio
 
 ## Erweiterte Features
 
-Über die Basis-Transkription hinaus bietet whisper_go intelligente Nachbearbeitung und Anpassung.
+Über die Basis-Transkription hinaus bietet pulsescribe intelligente Nachbearbeitung und Anpassung.
 
 ### LLM-Nachbearbeitung
 
@@ -251,7 +251,7 @@ python transcribe.py --record --refine
 python transcribe.py --record --refine --context email
 
 # Eigene App-Mappings
-export WHISPER_GO_APP_CONTEXTS='{"MyApp": "chat"}'
+export PULSESCRIBE_APP_CONTEXTS='{"MyApp": "chat"}'
 ```
 
 ### Real-Time Audio Feedback
@@ -290,7 +290,7 @@ python transcribe.py --record --refine
 
 ### Custom Vocabulary
 
-Eigene Begriffe für bessere Erkennung in `~/.whisper_go/vocabulary.json`:
+Eigene Begriffe für bessere Erkennung in `~/.pulsescribe/vocabulary.json`:
 
 ```json
 {
@@ -302,11 +302,11 @@ Unterstützt von Deepgram und lokalem Whisper. Die OpenAI API unterstützt kein 
 
 ## Hotkey Integration
 
-Für systemweite Spracheingabe per Hotkey – der Hauptanwendungsfall von whisper_go.
+Für systemweite Spracheingabe per Hotkey – der Hauptanwendungsfall von pulsescribe.
 
 ### Unified Daemon (empfohlen)
 
-Der `whisper_daemon.py` kombiniert alle Komponenten in einem Prozess:
+Der `pulsescribe_daemon.py` kombiniert alle Komponenten in einem Prozess:
 
 - Hotkey-Listener (QuickMacHotKey)
 - Microphone Recording + Deepgram Streaming
@@ -316,10 +316,10 @@ Der `whisper_daemon.py` kombiniert alle Komponenten in einem Prozess:
 
 ```bash
 # Manueller Start
-python whisper_daemon.py
+python pulsescribe_daemon.py
 
 # Mit CLI-Optionen
-python whisper_daemon.py --hotkey cmd+shift+r --debug
+python pulsescribe_daemon.py --hotkey cmd+shift+r --debug
 
 # Als Login Item (Doppelklick oder zu Anmeldeobjekten hinzufügen)
 open start_daemon.command
@@ -331,7 +331,7 @@ open start_daemon.command
 ### Settings UI (Menübar)
 
 Über das Menübar-Icon → **Settings...** kannst du Provider-Keys, Modus, Local Backend/Modell und erweiterte Local-Performance-Settings (Device, Warmup, Fast-Decoding, faster-whisper Compute/Threads, etc.) konfigurieren.  
-Einstellungen werden in `~/.whisper_go/.env` gespeichert und live übernommen (Hotkey-Änderungen greifen sofort).
+Einstellungen werden in `~/.pulsescribe/.env` gespeichert und live übernommen (Hotkey-Änderungen greifen sofort).
 
 ### Konfiguration
 
@@ -341,35 +341,35 @@ In `.env` oder als Umgebungsvariable:
 # Hotkeys (default: Fn/Globe als Hold)
 #
 # Optional: Toggle + Hold parallel nutzen.
-# Wenn gesetzt, überschreibt dies WHISPER_GO_HOTKEY / WHISPER_GO_HOTKEY_MODE.
+# Wenn gesetzt, überschreibt dies PULSESCRIBE_HOTKEY / PULSESCRIBE_HOTKEY_MODE.
 #
 # Empfohlener Default: Fn/Globe als Push‑to‑Talk (Hold).
-# WHISPER_GO_HOLD_HOTKEY=fn
+# PULSESCRIBE_HOLD_HOTKEY=fn
 # Optional: separaten Toggle‑Hotkey ergänzen (z.B. F19).
-# WHISPER_GO_TOGGLE_HOTKEY=f19
+# PULSESCRIBE_TOGGLE_HOTKEY=f19
 #
 # Legacy (Single Hotkey):
-WHISPER_GO_HOTKEY=fn
-WHISPER_GO_HOTKEY_MODE=hold
+PULSESCRIBE_HOTKEY=fn
+PULSESCRIBE_HOTKEY_MODE=hold
 
 # Dock-Icon (default: true) – auf false setzen für Menubar-only Modus
-WHISPER_GO_DOCK_ICON=true
+PULSESCRIBE_DOCK_ICON=true
 ```
 
 **Unterstützte Hotkeys:**
 
-| Format            | Beispiel              |
-| ----------------- | --------------------- |
-| Funktionstasten   | `f19`, `f1`, `f12`    |
+| Format            | Beispiel                                |
+| ----------------- | --------------------------------------- |
+| Funktionstasten   | `f19`, `f1`, `f12`                      |
 | Einzeltaste       | `fn`, `capslock`, `space`, `tab`, `esc` |
-| Tastenkombination | `cmd+shift+r`         |
+| Tastenkombination | `cmd+shift+r`                           |
 
 **Empfohlene Hotkey‑Konfiguration (macOS):**
 
-- **Fn/Globe als Hold‑to‑Record:** `WHISPER_GO_HOLD_HOTKEY=fn`.  
+- **Fn/Globe als Hold‑to‑Record:** `PULSESCRIBE_HOLD_HOTKEY=fn`.  
   Sehr schneller Push‑to‑Talk Workflow mit einer Taste. Benötigt Bedienungshilfen/Input‑Monitoring.
 - **CapsLock‑Alternative:** CapsLock geht direkt als Toggle‑Hotkey, kollidiert aber oft mit der Großschreibung.  
-  Für einen konfliktfreien „Ein‑Tasten‑Toggle“ CapsLock per **Karabiner‑Elements** auf `F19` mappen und `WHISPER_GO_TOGGLE_HOTKEY=f19` setzen.
+  Für einen konfliktfreien „Ein‑Tasten‑Toggle“ CapsLock per **Karabiner‑Elements** auf `F19` mappen und `PULSESCRIBE_TOGGLE_HOTKEY=f19` setzen.
 
 ### Nutzung
 
@@ -400,11 +400,11 @@ Beides ist integriert und startet automatisch mit dem Daemon.
 
 ## Provider-Vergleich
 
-| Modus      | Provider | Methode   | Latenz    | Besonderheit                        |
-| ---------- | -------- | --------- | --------- | ----------------------------------- |
-| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Echtzeit-Streaming (empfohlen)      |
-| `groq`     | Groq     | REST      | ~1s       | Whisper auf LPU, sehr schnell       |
-| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, höchste Qualität |
+| Modus      | Provider | Methode   | Latenz    | Besonderheit                                       |
+| ---------- | -------- | --------- | --------- | -------------------------------------------------- |
+| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Echtzeit-Streaming (empfohlen)                     |
+| `groq`     | Groq     | REST      | ~1s       | Whisper auf LPU, sehr schnell                      |
+| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, höchste Qualität                |
 | `local`    | Whisper  | Lokal     | variiert  | Offline, keine API-Kosten (Whisper / Faster / MLX) |
 
 > **Empfehlung:** `--mode deepgram` für den täglichen Gebrauch. Die Streaming-Architektur sorgt für minimale Wartezeit zwischen Aufnahme-Stopp und Text-Einfügen.
@@ -443,7 +443,7 @@ python transcribe.py --record --mode deepgram
 # REST-Fallback (falls Streaming Probleme macht)
 python transcribe.py --record --mode deepgram --no-streaming
 # oder via ENV:
-WHISPER_GO_STREAMING=false
+PULSESCRIBE_STREAMING=false
 ```
 
 ### Groq-Modelle
@@ -459,16 +459,16 @@ Groq nutzt LPU-Chips (Language Processing Units) für besonders schnelle Inferen
 
 Der lokale Modus unterstützt jetzt drei Backends:
 
-- **`whisper` (Standard):** openai‑whisper auf PyTorch. Nutzt auf M‑Series Macs automatisch MPS (`WHISPER_GO_DEVICE=auto`). Beste Kompatibilität/Qualität.
-- **`faster`:** faster‑whisper (CTranslate2). Sehr schnell auf CPU und mit weniger Speicherbedarf. Unter macOS läuft es auf CPU (kein MPS/Metal). Default‑`compute_type` ist `int8` auf CPU und `float16` auf CUDA. Aktivieren mit `WHISPER_GO_LOCAL_BACKEND=faster`.
-- **`mlx`:** mlx‑whisper (MLX/Metal). GPU‑beschleunigtes lokales Backend auf Apple Silicon. Installieren mit `pip install mlx-whisper` und aktivieren via `WHISPER_GO_LOCAL_BACKEND=mlx`.
+- **`whisper` (Standard):** openai‑whisper auf PyTorch. Nutzt auf M‑Series Macs automatisch MPS (`PULSESCRIBE_DEVICE=auto`). Beste Kompatibilität/Qualität.
+- **`faster`:** faster‑whisper (CTranslate2). Sehr schnell auf CPU und mit weniger Speicherbedarf. Unter macOS läuft es auf CPU (kein MPS/Metal). Default‑`compute_type` ist `int8` auf CPU und `float16` auf CUDA. Aktivieren mit `PULSESCRIBE_LOCAL_BACKEND=faster`.
+- **`mlx`:** mlx‑whisper (MLX/Metal). GPU‑beschleunigtes lokales Backend auf Apple Silicon. Installieren mit `pip install mlx-whisper` und aktivieren via `PULSESCRIBE_LOCAL_BACKEND=mlx`.
 
 Hinweise:
 
 - Modellname `turbo` wird bei faster‑whisper zu `large-v3-turbo` gemappt.
-- Für maximale Geschwindigkeit (mit leicht weniger Robustheit) `WHISPER_GO_LOCAL_FAST=true` oder kleinere `WHISPER_GO_LOCAL_BEAM_SIZE`/`WHISPER_GO_LOCAL_BEST_OF` wählen.
-- Für längere Aufnahmen unter `faster` kannst du Durchsatz via `WHISPER_GO_LOCAL_CPU_THREADS` und `WHISPER_GO_LOCAL_NUM_WORKERS` tunen.
-- Für `mlx` wird `WHISPER_GO_LOCAL_BEAM_SIZE` ignoriert (Beam Search ist in mlx‑whisper nicht implementiert).
+- Für maximale Geschwindigkeit (mit leicht weniger Robustheit) `PULSESCRIBE_LOCAL_FAST=true` oder kleinere `PULSESCRIBE_LOCAL_BEAM_SIZE`/`PULSESCRIBE_LOCAL_BEST_OF` wählen.
+- Für längere Aufnahmen unter `faster` kannst du Durchsatz via `PULSESCRIBE_LOCAL_CPU_THREADS` und `PULSESCRIBE_LOCAL_NUM_WORKERS` tunen.
+- Für `mlx` wird `PULSESCRIBE_LOCAL_BEAM_SIZE` ignoriert (Beam Search ist in mlx‑whisper nicht implementiert).
 
 #### Schnellstart (Offline‑Diktat)
 
@@ -476,16 +476,16 @@ Apple Silicon (empfohlenes lokales Backend):
 
 ```bash
 pip install mlx-whisper
-export WHISPER_GO_MODE=local
-export WHISPER_GO_LOCAL_BACKEND=mlx
-export WHISPER_GO_LOCAL_MODEL=large   # oder: turbo
-export WHISPER_GO_LANGUAGE=de         # optional
-python whisper_daemon.py --debug
+export PULSESCRIBE_MODE=local
+export PULSESCRIBE_LOCAL_BACKEND=mlx
+export PULSESCRIBE_LOCAL_MODEL=large   # oder: turbo
+export PULSESCRIBE_LANGUAGE=de         # optional
+python pulsescribe_daemon.py --debug
 ```
 
 #### Apple Silicon: MLX Modellnamen
 
-Mit `WHISPER_GO_LOCAL_BACKEND=mlx` unterstützt `WHISPER_GO_LOCAL_MODEL` sowohl kurze Namen als auch vollständige Hugging‑Face Repo‑IDs:
+Mit `PULSESCRIBE_LOCAL_BACKEND=mlx` unterstützt `PULSESCRIBE_LOCAL_MODEL` sowohl kurze Namen als auch vollständige Hugging‑Face Repo‑IDs:
 
 - `large` → `mlx-community/whisper-large-v3-mlx`
 - `turbo` → `mlx-community/whisper-large-v3-turbo`
@@ -499,7 +499,7 @@ Wenn du vorher `whisper-large-v3` probiert hast und eine 404 bekommst, nutze `la
 #### Warmup / cold start
 
 Wenn der Daemon im `local`‑Modus läuft, wird das lokale Modell im Hintergrund vorab geladen, um die erste Latenz zu reduzieren.  
-Optional kannst du zusätzlich ein Warmup via `WHISPER_GO_LOCAL_WARMUP=true` aktivieren (am nützlichsten für `whisper` auf MPS). Wenn du währenddessen schon aufnimmst, wird nichts „verworfen“ — die erste lokale Transkription kann nur trotzdem noch etwas Cold‑Start‑Overhead enthalten.
+Optional kannst du zusätzlich ein Warmup via `PULSESCRIBE_LOCAL_WARMUP=true` aktivieren (am nützlichsten für `whisper` auf MPS). Wenn du währenddessen schon aufnimmst, wird nichts „verworfen“ — die erste lokale Transkription kann nur trotzdem noch etwas Cold‑Start‑Overhead enthalten.
 
 | Modell | Parameter | VRAM   | Geschwindigkeit  |
 | ------ | --------- | ------ | ---------------- |
@@ -514,24 +514,24 @@ Optional kannst du zusätzlich ein Warmup via `WHISPER_GO_LOCAL_WARMUP=true` akt
 
 ## Troubleshooting
 
-| Problem                                    | Lösung                                                                     |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| Modul nicht installiert                    | `pip install -r requirements.txt`                                          |
-| API-Key fehlt                              | `export DEEPGRAM_API_KEY="..."` (oder OPENAI/GROQ)                         |
-| Mikrofon geht nicht (macOS)                | `brew install portaudio && pip install --force-reinstall sounddevice`      |
-| Mikrofon-Berechtigung                      | Zugriff erlauben unter Systemeinstellungen → Datenschutz → Mikrofon        |
-| ffmpeg fehlt                               | `brew install ffmpeg` (macOS) oder `sudo apt install ffmpeg` (Ubuntu) — nötig für lokale Datei-Transkription (`whisper`/`mlx`) |
-| MLX Modell-Download 404                    | `WHISPER_GO_LOCAL_MODEL=large` oder volle Repo‑ID nutzen (z.B. `mlx-community/whisper-large-v3-mlx`) |
-| Beam Search nicht implementiert (mlx)      | `WHISPER_GO_LOCAL_BEAM_SIZE` entfernen (wird bei `mlx` ignoriert) oder Backend wechseln |
-| Transkription langsam                      | Wechsel zu `--mode groq`/`deepgram` oder lokal `WHISPER_GO_LOCAL_BACKEND=mlx` (Apple Silicon) / `faster` (CPU) und `WHISPER_GO_LOCAL_FAST=true` bzw. kleineres Modell |
-| Daemon startet nicht                       | Prüfe `~/.whisper_go/startup.log` für Emergency-Logs                       |
-| Auto-Paste funktioniert nicht (App Bundle) | Siehe [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle) |
+| Problem                                    | Lösung                                                                                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modul nicht installiert                    | `pip install -r requirements.txt`                                                                                                                                       |
+| API-Key fehlt                              | `export DEEPGRAM_API_KEY="..."` (oder OPENAI/GROQ)                                                                                                                      |
+| Mikrofon geht nicht (macOS)                | `brew install portaudio && pip install --force-reinstall sounddevice`                                                                                                   |
+| Mikrofon-Berechtigung                      | Zugriff erlauben unter Systemeinstellungen → Datenschutz → Mikrofon                                                                                                     |
+| ffmpeg fehlt                               | `brew install ffmpeg` (macOS) oder `sudo apt install ffmpeg` (Ubuntu) — nötig für lokale Datei-Transkription (`whisper`/`mlx`)                                          |
+| MLX Modell-Download 404                    | `PULSESCRIBE_LOCAL_MODEL=large` oder volle Repo‑ID nutzen (z.B. `mlx-community/whisper-large-v3-mlx`)                                                                   |
+| Beam Search nicht implementiert (mlx)      | `PULSESCRIBE_LOCAL_BEAM_SIZE` entfernen (wird bei `mlx` ignoriert) oder Backend wechseln                                                                                |
+| Transkription langsam                      | Wechsel zu `--mode groq`/`deepgram` oder lokal `PULSESCRIBE_LOCAL_BACKEND=mlx` (Apple Silicon) / `faster` (CPU) und `PULSESCRIBE_LOCAL_FAST=true` bzw. kleineres Modell |
+| Daemon startet nicht                       | Prüfe `~/.pulsescribe/startup.log` für Emergency-Logs                                                                                                                   |
+| Auto-Paste funktioniert nicht (App Bundle) | Siehe [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle)                                                                                              |
 
 ### Auto-Paste Troubleshooting (App Bundle)
 
-Wenn Auto-Paste in `WhisperGo.app` nicht funktioniert (Text wird kopiert, aber nicht eingefügt):
+Wenn Auto-Paste in `PulseScribe.app` nicht funktioniert (Text wird kopiert, aber nicht eingefügt):
 
-**Zwischenablage:** WhisperGo stellt nach einem erfolgreichen Paste deine vorherige Zwischenablage wieder her. Wenn Paste fehlschlägt, bleibt das Transkript in der Zwischenablage, damit du manuell `CMD+V` nutzen kannst.
+**Zwischenablage:** PulseScribe stellt nach einem erfolgreichen Paste deine vorherige Zwischenablage wieder her. Wenn Paste fehlschlägt, bleibt das Transkript in der Zwischenablage, damit du manuell `CMD+V` nutzen kannst.
 
 **Symptom:** Log zeigt `AXIsProcessTrusted = False` obwohl App in Bedienungshilfen aktiviert ist.
 
@@ -540,24 +540,24 @@ Wenn Auto-Paste in `WhisperGo.app` nicht funktioniert (Text wird kopiert, aber n
 **Lösung:**
 
 1. Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen
-2. `WhisperGo` **entfernen** (Minus-Button)
-3. `WhisperGo` **neu hinzufügen** (Plus-Button oder App per Drag & Drop)
+2. `PulseScribe` **entfernen** (Minus-Button)
+3. `PulseScribe` **neu hinzufügen** (Plus-Button oder App per Drag & Drop)
 
 > **Tipp:** Nach jedem `pyinstaller build_app.spec` muss dieser Schritt wiederholt werden, solange die App nicht signiert ist.
 
 ### Log-Dateien
 
-Logs werden in `~/.whisper_go/logs/` gespeichert:
+Logs werden in `~/.pulsescribe/logs/` gespeichert:
 
 ```bash
 # Haupt-Log
-~/.whisper_go/logs/whisper_go.log
+~/.pulsescribe/logs/pulsescribe.log
 
 # Emergency Startup-Log (falls Daemon nicht startet)
-~/.whisper_go/startup.log
+~/.pulsescribe/startup.log
 ```
 
-**Diagnostics-Report:** Menübar → **Export Diagnostics…** erstellt ein Zip unter `~/.whisper_go/diagnostics/` (API-Keys maskiert, Log-Tail redacted).
+**Diagnostics-Report:** Menübar → **Export Diagnostics…** erstellt ein Zip unter `~/.pulsescribe/diagnostics/` (API-Keys maskiert, Log-Tail redacted).
 
 ## Development
 
@@ -576,7 +576,7 @@ Tests laufen automatisch via GitHub Actions bei Push und Pull Requests.
 
 ### macOS App Bundle erstellen
 
-Um eine eigenständige `WhisperGo.app` zu erstellen:
+Um eine eigenständige `PulseScribe.app` zu erstellen:
 
 ```bash
 # PyInstaller installieren (falls noch nicht vorhanden)
@@ -585,13 +585,13 @@ pip install pyinstaller
 # App bauen
 pyinstaller build_app.spec
 
-# Output: dist/WhisperGo.app
+# Output: dist/PulseScribe.app
 ```
 
 **Optional: Code-Signierung für stabile Accessibility-Berechtigungen**
 
 ```bash
-codesign --force --deep --sign - dist/WhisperGo.app
+codesign --force --deep --sign - dist/PulseScribe.app
 ```
 
 > **Hinweis:** Ohne Signierung muss die App nach jedem Neubuild in Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen neu autorisiert werden. Siehe [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle).

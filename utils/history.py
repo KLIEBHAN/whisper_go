@@ -1,6 +1,6 @@
-"""Transkript-Historie für WhisperGo.
+"""Transkript-Historie für PulseScribe.
 
-Speichert transkribierte Texte in ~/.whisper_go/history.jsonl.
+Speichert transkribierte Texte in ~/.pulsescribe/history.jsonl.
 Jede Zeile ist ein JSON-Objekt mit Timestamp und Text.
 """
 

@@ -1,1 +1,1 @@
-# whisper_go integration tests
+# pulsescribe integration tests

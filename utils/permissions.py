@@ -15,7 +15,7 @@ from AVFoundation import (
     AVAuthorizationStatusNotDetermined,
 )
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Used to suppress permission-related popups (we have dedicated UI for that now).
 _PERMISSION_MESSAGE_TOKENS = (

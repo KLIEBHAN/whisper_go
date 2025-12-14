@@ -10,7 +10,7 @@ from utils.timing import timed_operation
 
 from config import DEFAULT_API_MODEL
 
-logger = logging.getLogger("whisper_go.providers.openai")
+logger = logging.getLogger("pulsescribe.providers.openai")
 
 # Singleton Client
 _client = None

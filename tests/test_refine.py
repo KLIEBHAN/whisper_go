@@ -8,7 +8,6 @@ from refine.llm import (
     refine_transcript,
     _get_refine_client,
     DEFAULT_REFINE_MODEL,
-    DEFAULT_GROQ_REFINE_MODEL,
 )
 from transcribe import (
     copy_to_clipboard,
@@ -116,7 +115,7 @@ class TestRefineProviderSelection:
         """CLI-Parameter überschreibt ENV."""
         # from transcribe import refine_transcript (removed)
 
-        monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "groq")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_PROVIDER", "groq")
 
         with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
@@ -132,14 +131,14 @@ class TestRefineProviderSelection:
         """ENV-Provider wird genutzt wenn kein CLI-Argument."""
         # from transcribe import refine_transcript (removed)
 
-        monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "groq")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_PROVIDER", "groq")
 
         with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.chat.completions.create.return_value = Mock(
                 choices=[Mock(message=Mock(content="refined"))]
             )
 
-            refine_transcript("test", model="llama-3.3-70b-versatile")
+            refine_transcript("test", model="openai/gpt-oss-120b")
 
         mock_client.assert_called_with("groq")
 
@@ -164,8 +163,8 @@ class TestRefineModelSelection:
         """CLI-Model überschreibt alles."""
         # from transcribe import refine_transcript (removed)
 
-        monkeypatch.setenv("WHISPER_GO_REFINE_MODEL", "env-model")
-        monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "openai")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_MODEL", "env-model")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_PROVIDER", "openai")
 
         with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
@@ -182,8 +181,8 @@ class TestRefineModelSelection:
         """ENV-Model wird genutzt wenn kein CLI-Argument."""
         # from transcribe import refine_transcript (removed)
 
-        monkeypatch.setenv("WHISPER_GO_REFINE_MODEL", "env-model")
-        monkeypatch.setenv("WHISPER_GO_REFINE_PROVIDER", "openai")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_MODEL", "env-model")
+        monkeypatch.setenv("PULSESCRIBE_REFINE_PROVIDER", "openai")
 
         with patch("refine.llm._get_refine_client") as mock_client:
             mock_client.return_value.responses.create.return_value = Mock(
@@ -196,7 +195,7 @@ class TestRefineModelSelection:
         assert call_kwargs[1]["model"] == "env-model"
 
     def test_groq_default_model(self, monkeypatch, clean_env):
-        """Groq-Provider nutzt llama-3.3 als Default."""
+        """Groq-Provider nutzt openai/gpt-oss-120b als Default."""
         # from transcribe import refine_transcript (removed)
 
         with patch("refine.llm._get_refine_client") as mock_client:
@@ -207,7 +206,7 @@ class TestRefineModelSelection:
             refine_transcript("test", provider="groq")
 
         call_kwargs = mock_client.return_value.chat.completions.create.call_args
-        assert call_kwargs[1]["model"] == DEFAULT_GROQ_REFINE_MODEL
+        assert call_kwargs[1]["model"] == DEFAULT_REFINE_MODEL
 
     def test_openai_default_model(self, monkeypatch, clean_env):
         """OpenAI-Provider nutzt gpt-5-nano als Default."""

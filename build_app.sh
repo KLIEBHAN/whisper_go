@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# WhisperGo App Builder
+# PulseScribe App Builder
 # =============================================================================
-# Erstellt die WhisperGo.app mit PyInstaller.
+# Erstellt die PulseScribe.app mit PyInstaller.
 #
 # Usage:
 #   ./build_app.sh              # Standard-Build
@@ -24,7 +24,7 @@ OPEN_APP="false"
 
 usage() {
     cat <<'EOF'
-WhisperGo App Builder
+PulseScribe App Builder
 
 Usage:
   ./build_app.sh [options]
@@ -74,7 +74,7 @@ while [ "${1:-}" != "" ]; do
 done
 
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  WhisperGo App Builder${NC}"
+echo -e "${GREEN}  PulseScribe App Builder${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -91,7 +91,7 @@ fi
 # Clean wenn gewünscht
 if [ "$CLEAN" = "true" ]; then
     echo -e "${YELLOW}🧹 Lösche Build-Cache...${NC}"
-    rm -rf build/ dist/WhisperGo.app dist/whisper_go/
+    rm -rf build/ dist/PulseScribe.app dist/pulsescribe/
     rm -rf ~/Library/Application\ Support/pyinstaller/
     echo -e "${GREEN}   ✓ Cache gelöscht${NC}"
 fi
@@ -107,24 +107,24 @@ fi
 echo ""
 
 # Prüfe Ergebnis
-if [ ! -d "dist/WhisperGo.app" ]; then
-    die "Build fehlgeschlagen: dist/WhisperGo.app nicht gefunden"
+if [ ! -d "dist/PulseScribe.app" ]; then
+    die "Build fehlgeschlagen: dist/PulseScribe.app nicht gefunden"
 fi
 
 # Signiere App (ad-hoc)
 echo -e "${YELLOW}🔐 Signiere App (ad-hoc)...${NC}"
-codesign --force --deep --sign - dist/WhisperGo.app
+codesign --force --deep --sign - dist/PulseScribe.app
 echo -e "${GREEN}   ✓ Signiert${NC}"
 
 # Größe anzeigen
-APP_SIZE=$(du -sh dist/WhisperGo.app | cut -f1)
+APP_SIZE=$(du -sh dist/PulseScribe.app | cut -f1)
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  ✅ Build erfolgreich!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
-echo "   📁 App:   dist/WhisperGo.app"
+echo "   📁 App:   dist/PulseScribe.app"
 echo "   📊 Größe: ${APP_SIZE}"
 echo ""
 
@@ -138,5 +138,5 @@ fi
 # App öffnen wenn gewünscht
 if [ "$OPEN_APP" = "true" ]; then
     echo -e "${YELLOW}🚀 Starte App...${NC}"
-    open dist/WhisperGo.app
+    open dist/PulseScribe.app
 fi

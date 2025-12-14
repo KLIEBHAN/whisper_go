@@ -1,4 +1,4 @@
-"""Platform-Abstraktion für whisper_go.
+"""Platform-Abstraktion für PulseScribe.
 
 Dieses Modul stellt plattformunabhängige Interfaces bereit und
 lädt automatisch die richtige Implementierung für das aktuelle OS.
@@ -59,9 +59,11 @@ def get_sound_player() -> "SoundPlayer":
     platform = get_platform()
     if platform == "macos":
         from .sound import MacOSSoundPlayer
+
         return MacOSSoundPlayer()
     elif platform == "windows":
         from .sound import WindowsSoundPlayer
+
         return WindowsSoundPlayer()
     raise NotImplementedError(f"Sound nicht implementiert für {platform}")
 
@@ -75,9 +77,11 @@ def get_clipboard() -> "ClipboardHandler":
     platform = get_platform()
     if platform == "macos":
         from .clipboard import MacOSClipboard
+
         return MacOSClipboard()
     elif platform == "windows":
         from .clipboard import WindowsClipboard
+
         return WindowsClipboard()
     raise NotImplementedError(f"Clipboard nicht implementiert für {platform}")
 
@@ -91,9 +95,11 @@ def get_app_detector() -> "AppDetector":
     platform = get_platform()
     if platform == "macos":
         from .app_detection import MacOSAppDetector
+
         return MacOSAppDetector()
     elif platform == "windows":
         from .app_detection import WindowsAppDetector
+
         return WindowsAppDetector()
     raise NotImplementedError(f"App-Detection nicht implementiert für {platform}")
 
@@ -107,9 +113,11 @@ def get_daemon_controller() -> "DaemonController":
     platform = get_platform()
     if platform == "macos":
         from .daemon import MacOSDaemonController
+
         return MacOSDaemonController()
     elif platform == "windows":
         from .daemon import WindowsDaemonController
+
         return WindowsDaemonController()
     raise NotImplementedError(f"Daemon nicht implementiert für {platform}")
 
@@ -127,9 +135,11 @@ def get_hotkey_listener(hotkey: str, callback) -> "HotkeyListener":
     platform = get_platform()
     if platform == "macos":
         from .hotkey import MacOSHotkeyListener
+
         return MacOSHotkeyListener(hotkey, callback)
     elif platform == "windows":
         from .hotkey import WindowsHotkeyListener
+
         return WindowsHotkeyListener(hotkey, callback)
     raise NotImplementedError(f"Hotkeys nicht implementiert für {platform}")
 

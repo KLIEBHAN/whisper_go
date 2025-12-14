@@ -10,7 +10,7 @@ import os
 import subprocess
 import sys
 
-logger = logging.getLogger("whisper_go.platform.clipboard")
+logger = logging.getLogger("pulsescribe.platform.clipboard")
 
 
 def _get_utf8_env() -> dict:

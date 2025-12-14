@@ -1,4 +1,4 @@
-"""Menübar-Controller für whisper_go."""
+"""Menübar-Controller für pulsescribe."""
 
 from pathlib import Path
 

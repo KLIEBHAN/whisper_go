@@ -1,4 +1,4 @@
-"""Logging-Setup für whisper_go.
+"""Logging-Setup für PulseScribe.
 
 Konfiguriert Datei-Logging mit Rotation und optionalem stderr-Output.
 """
@@ -10,7 +10,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # Logger-Singleton
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 # Session-ID für Korrelation (wird beim ersten setup_logging() generiert)
 _session_id: str = ""
@@ -30,7 +30,7 @@ def get_session_id() -> str:
 
 
 def get_logger() -> logging.Logger:
-    """Gibt den whisper_go Logger zurück."""
+    """Gibt den pulsescribe Logger zurück."""
     return logger
 
 
@@ -60,7 +60,7 @@ def setup_logging(debug: bool = False) -> None:
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     except Exception:
-        pass # Ignorieren falls keine Berechtigung, Handler wird dann meckern
+        pass  # Ignorieren falls keine Berechtigung, Handler wird dann meckern
 
     handler_added = False
 
@@ -78,7 +78,7 @@ def setup_logging(debug: bool = False) -> None:
     except PermissionError:
         # Fallback: /tmp, wenn Home-Verzeichnis nicht beschreibbar (z.B. Sandbox)
         try:
-            fallback = Path("/tmp/whisper_go.log")
+            fallback = Path("/tmp/pulsescribe.log")
             fallback.parent.mkdir(parents=True, exist_ok=True)
             file_handler = RotatingFileHandler(
                 fallback, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
@@ -99,7 +99,9 @@ def setup_logging(debug: bool = False) -> None:
         # Minimaler Fallback, um Stillstand zu vermeiden
         stderr_handler = logging.StreamHandler(sys.stderr)
         stderr_handler.setLevel(logging.DEBUG if debug else logging.INFO)
-        stderr_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S"))
+        stderr_handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
+        )
         logger.addHandler(stderr_handler)
 
     # Stderr-Handler (nur im Debug-Modus)

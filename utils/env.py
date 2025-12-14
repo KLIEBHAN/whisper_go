@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -61,10 +61,20 @@ def get_env_int(name: str) -> int | None:
         return None
 
 
+def get_env_migrated(new_name: str, default: str | None = None) -> str | None:
+    """Get ENV variable with fallback to old WHISPER_GO_* name.
+
+    Wrapper around migration.get_env_migrated for convenience.
+    """
+    from utils.migration import get_env_migrated as _get_env_migrated
+
+    return _get_env_migrated(new_name, default)
+
+
 __all__ = [
     "get_env_bool",
     "get_env_bool_default",
     "get_env_int",
+    "get_env_migrated",
     "parse_bool",
 ]
-

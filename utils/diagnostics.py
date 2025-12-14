@@ -1,4 +1,4 @@
-"""Diagnostics export for WhisperGo (no audio).
+"""Diagnostics export for PulseScribe (no audio).
 
 Creates a zip archive with:
 - system/app info
@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 def _user_config_dir() -> Path:
-    return Path.home() / ".whisper_go"
+    return Path.home() / ".pulsescribe"
 
 
 def _read_text_safe(path: Path) -> str:
@@ -136,11 +136,11 @@ def export_diagnostics_report() -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     ts = time.strftime("%Y%m%d_%H%M%S")
-    zip_path = out_dir / f"whispergo_diagnostics_{ts}.zip"
+    zip_path = out_dir / f"pulsescribe_diagnostics_{ts}.zip"
 
     env_path = cfg / ".env"
     prefs_path = cfg / "preferences.json"
-    log_path = cfg / "logs" / "whisper_go.log"
+    log_path = cfg / "logs" / "pulsescribe.log"
     startup_log_path = cfg / "startup.log"
 
     env_values = _sanitize_env(_read_env_file(env_path)) if env_path.exists() else {}
@@ -155,7 +155,7 @@ def export_diagnostics_report() -> Path:
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "app": {
-            "name": "WhisperGo",
+            "name": "PulseScribe",
             "version": _get_app_version(),
             "frozen": bool(getattr(sys, "frozen", False)),
         },
@@ -179,7 +179,9 @@ def export_diagnostics_report() -> Path:
     # Redacted log tail (avoid transcripts)
     log_tail = ""
     if log_path.exists():
-        log_tail = _tail_lines(_redact_log_text(_read_text_safe(log_path)), max_lines=800)
+        log_tail = _tail_lines(
+            _redact_log_text(_read_text_safe(log_path)), max_lines=800
+        )
 
     startup_tail = ""
     if startup_log_path.exists():
@@ -187,17 +189,21 @@ def export_diagnostics_report() -> Path:
 
     try:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("report.json", json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            zf.writestr(
+                "report.json", json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+            )
             if env_values:
                 zf.writestr(
-                    "env_sanitized.json", json.dumps(env_values, indent=2, ensure_ascii=False) + "\n"
+                    "env_sanitized.json",
+                    json.dumps(env_values, indent=2, ensure_ascii=False) + "\n",
                 )
             if prefs:
                 zf.writestr(
-                    "preferences.json", json.dumps(prefs, indent=2, ensure_ascii=False) + "\n"
+                    "preferences.json",
+                    json.dumps(prefs, indent=2, ensure_ascii=False) + "\n",
                 )
             if log_tail:
-                zf.writestr("logs/whisper_go.log.tail.txt", log_tail)
+                zf.writestr("logs/pulsescribe.log.tail.txt", log_tail)
             if startup_tail:
                 zf.writestr("logs/startup.log.tail.txt", startup_tail)
     except OSError:
@@ -210,4 +216,3 @@ def export_diagnostics_report() -> Path:
         pass
 
     return zip_path
-

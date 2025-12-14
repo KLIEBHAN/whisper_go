@@ -1,5 +1,5 @@
 """
-Gemeinsame Test-Fixtures für whisper_go.
+Gemeinsame Test-Fixtures für pulsescribe.
 
 Diese Fixtures isolieren Tests von externen Abhängigkeiten:
 - Dateisystem (IPC-Dateien, Vocabulary)
@@ -92,7 +92,7 @@ def mock_pid_file(monkeypatch, tmp_path):
     """
     import transcribe
     import utils.daemon
-    
+
     mock_file = tmp_path / "test.pid"
     monkeypatch.setattr(transcribe, "PID_FILE", mock_file)
     monkeypatch.setattr(utils.daemon, "PID_FILE", mock_file)
@@ -104,7 +104,7 @@ def temp_files(tmp_path, monkeypatch):
     """
     Ersetzt alle IPC-Dateipfade durch temporäre Verzeichnisse.
 
-    Verhindert Konflikte mit laufenden whisper_go Instanzen
+    Verhindert Konflikte mit laufenden pulsescribe Instanzen
     und ermöglicht parallele Test-Ausführung.
     """
     import transcribe
@@ -133,9 +133,9 @@ def reset_caches(monkeypatch):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Entfernt alle WHISPER_GO_* Umgebungsvariablen für saubere Tests."""
+    """Entfernt alle PULSESCRIBE_* Umgebungsvariablen für saubere Tests."""
     import os
 
     for key in list(os.environ.keys()):
-        if key.startswith("WHISPER_GO_"):
+        if key.startswith("PULSESCRIBE_"):
             monkeypatch.delenv(key, raising=False)

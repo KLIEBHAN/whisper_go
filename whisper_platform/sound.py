@@ -9,7 +9,7 @@ import logging
 import subprocess
 import sys
 
-logger = logging.getLogger("whisper_go.platform.sound")
+logger = logging.getLogger("pulsescribe.platform.sound")
 
 # Sound-Registry: Name → System-Sound-Pfad (macOS)
 MACOS_SYSTEM_SOUNDS = {

@@ -1,4 +1,4 @@
-"""Standalone first-run onboarding wizard for WhisperGo."""
+"""Standalone first-run onboarding wizard for PulseScribe."""
 
 from __future__ import annotations
 
@@ -230,7 +230,7 @@ class OnboardingWizardController:
             NSBackingStoreBuffered,
             False,
         )
-        self._window.setTitle_("WhisperGo Setup Wizard")
+        self._window.setTitle_("PulseScribe Setup Wizard")
         self._window.setReleasedWhenClosed_(False)
         # Wizard always stays on top during setup
         self._window.setLevel_(NSFloatingWindowLevel)
@@ -494,7 +494,7 @@ class OnboardingWizardController:
         lang_popup.setFont_(NSFont.systemFontOfSize_(11))
         for lang in LANGUAGE_OPTIONS:
             lang_popup.addItemWithTitle_(lang)
-        current_lang = get_env_setting("WHISPER_GO_LANGUAGE") or "auto"
+        current_lang = get_env_setting("PULSESCRIBE_LANGUAGE") or "auto"
         if current_lang in LANGUAGE_OPTIONS:
             lang_popup.selectItemWithTitle_(current_lang)
         self._lang_popup = lang_popup
@@ -808,7 +808,7 @@ class OnboardingWizardController:
         )
         ready.setStringValue_(
             "You're ready to go! Press your hotkey anywhere to start dictating. "
-            "WhisperGo will transcribe your speech and paste automatically.\n\n"
+            "PulseScribe will transcribe your speech and paste automatically.\n\n"
             "You can change all settings anytime via the menu bar icon."
         )
         ready.setBezeled_(False)
@@ -859,7 +859,7 @@ class OnboardingWizardController:
         warn_color = _get_color(255, 200, 90)
 
         # Provider
-        mode = (get_env_setting("WHISPER_GO_MODE") or "deepgram").strip()
+        mode = (get_env_setting("PULSESCRIBE_MODE") or "deepgram").strip()
         mode_display = {
             "deepgram": "Deepgram (Cloud, fastest)",
             "openai": "OpenAI Whisper (Cloud)",
@@ -874,8 +874,8 @@ class OnboardingWizardController:
                 pass
 
         # Hotkeys
-        toggle_hk = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip().upper()
-        hold_hk = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip().upper()
+        toggle_hk = (get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY") or "").strip().upper()
+        hold_hk = (get_env_setting("PULSESCRIBE_HOLD_HOTKEY") or "").strip().upper()
         hotkey_parts = []
         if toggle_hk:
             hotkey_parts.append(f"Toggle: {toggle_hk}")
@@ -920,7 +920,7 @@ class OnboardingWizardController:
 
     def _wizard_title(self, step: OnboardingStep) -> str:
         titles = {
-            OnboardingStep.CHOOSE_GOAL: "Welcome to WhisperGo",
+            OnboardingStep.CHOOSE_GOAL: "Welcome to PulseScribe",
             OnboardingStep.PERMISSIONS: "Permissions",
             OnboardingStep.HOTKEY: "Hotkey",
             OnboardingStep.TEST_DICTATION: "Test dictation",
@@ -979,8 +979,8 @@ class OnboardingWizardController:
         if self._step == OnboardingStep.PERMISSIONS:
             return get_microphone_permission_state() not in ("denied", "restricted")
         if self._step == OnboardingStep.HOTKEY:
-            toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
-            hold = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip()
+            toggle = (get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY") or "").strip()
+            hold = (get_env_setting("PULSESCRIBE_HOLD_HOTKEY") or "").strip()
             return bool(toggle or hold)
         if self._step == OnboardingStep.TEST_DICTATION:
             return bool(self._test_successful)
@@ -1033,8 +1033,8 @@ class OnboardingWizardController:
         if label is None:
             return
 
-        toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
-        hold = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip()
+        toggle = (get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY") or "").strip()
+        hold = (get_env_setting("PULSESCRIBE_HOLD_HOTKEY") or "").strip()
 
         def disp(value: str) -> str:
             return (value or "").strip().upper()
@@ -1088,7 +1088,7 @@ class OnboardingWizardController:
                 self._choice = OnboardingChoice.FAST
                 set_onboarding_choice(self._choice)
                 if get_api_key("DEEPGRAM_API_KEY") or os.getenv("DEEPGRAM_API_KEY"):
-                    save_env_setting("WHISPER_GO_MODE", "deepgram")
+                    save_env_setting("PULSESCRIBE_MODE", "deepgram")
                 else:
                     apply_local_preset_to_env(default_local_preset_fast())
             elif action == "choose_private":
@@ -1103,9 +1103,9 @@ class OnboardingWizardController:
             if self._lang_popup:
                 lang = self._lang_popup.titleOfSelectedItem()
                 if lang and lang != "auto":
-                    save_env_setting("WHISPER_GO_LANGUAGE", lang)
+                    save_env_setting("PULSESCRIBE_LANGUAGE", lang)
                 else:
-                    remove_env_setting("WHISPER_GO_LANGUAGE")
+                    remove_env_setting("PULSESCRIBE_LANGUAGE")
 
             if self._on_settings_changed:
                 try:

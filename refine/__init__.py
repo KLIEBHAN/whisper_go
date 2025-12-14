@@ -1,4 +1,4 @@
-"""LLM-Nachbearbeitung für whisper_go.
+"""LLM-Nachbearbeitung für PulseScribe.
 
 Bietet Funktionen für die Nachbearbeitung von Transkripten mit LLMs.
 

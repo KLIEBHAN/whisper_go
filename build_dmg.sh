@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# WhisperGo DMG Builder
+# PulseScribe DMG Builder
 # =============================================================================
 # Erstellt eine DMG-Datei für die Distribution.
 #
@@ -11,11 +11,11 @@
 #   - Developer ID Signing + Notarization + Stapling für "Install → läuft".
 #
 # Voraussetzungen:
-#   - PyInstaller Build existiert: dist/WhisperGo.app
+#   - PyInstaller Build existiert: dist/PulseScribe.app
 #   - Xcode Command Line Tools (für xcrun/notarytool): xcode-select --install
 #
 # Setup (einmalig) für Notarization:
-#   xcrun notarytool store-credentials "whispergo-notary" \
+#   xcrun notarytool store-credentials "pulsescribe-notary" \
 #     --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
 #
 # Usage:
@@ -23,22 +23,22 @@
 #   ./build_dmg.sh 1.0.0                 # ad-hoc signed
 #
 #   CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-#   NOTARY_PROFILE="whispergo-notary" \
+#   NOTARY_PROFILE="pulsescribe-notary" \
 #   ./build_dmg.sh 1.0.0 --notarize
 # =============================================================================
 
 set -euo pipefail
 
-APP_NAME="WhisperGo"
+APP_NAME="PulseScribe"
 APP_PATH="dist/${APP_NAME}.app"
 
 VERSION=""
 NOTARIZE="false"
 
 # Override via env (recommended for CI/local)
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-${WHISPERGO_CODESIGN_IDENTITY:-"-"}}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-${WHISPERGO_NOTARY_PROFILE:-""}}"
-ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-${WHISPERGO_ENTITLEMENTS_PATH:-"macos/entitlements.plist"}}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-${PULSESCRIBE_CODESIGN_IDENTITY:-"-"}}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-${PULSESCRIBE_NOTARY_PROFILE:-""}}"
+ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-${PULSESCRIBE_ENTITLEMENTS_PATH:-"macos/entitlements.plist"}}"
 
 DMG_NAME=""
 DMG_PATH=""
@@ -51,7 +51,7 @@ NC='\033[0m'
 
 usage() {
     cat <<'EOF'
-WhisperGo DMG Builder
+PulseScribe DMG Builder
 
 Usage:
   ./build_dmg.sh [version] [--notarize] [--identity "Developer ID Application: ..."] [--profile PROFILE]
@@ -220,7 +220,7 @@ DMG_PATH="dist/${DMG_NAME}.dmg"
 VOLUME_NAME="${APP_NAME} ${VERSION}"
 
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  WhisperGo DMG Builder - Version ${VERSION}${NC}"
+echo -e "${GREEN}  PulseScribe DMG Builder - Version ${VERSION}${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 

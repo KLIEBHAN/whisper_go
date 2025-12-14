@@ -10,7 +10,7 @@ from utils.timing import timed_operation
 
 from config import DEFAULT_GROQ_MODEL
 
-logger = logging.getLogger("whisper_go.providers.groq")
+logger = logging.getLogger("pulsescribe.providers.groq")
 
 # Singleton Client
 _client = None

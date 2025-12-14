@@ -14,11 +14,11 @@ from config import PID_FILE
 from utils.logging import get_session_id
 import logging
 
-logger = logging.getLogger("whisper_go")
+logger = logging.getLogger("pulsescribe")
 
 
-def is_whisper_go_process(pid: int) -> bool:
-    """Prüft ob die PID zu einem whisper_go Prozess gehört."""
+def is_pulsescribe_process(pid: int) -> bool:
+    """Prüft ob die PID zu einem PulseScribe Prozess gehört."""
     try:
         # ps -p PID -o command=
         result = subprocess.run(
@@ -29,7 +29,7 @@ def is_whisper_go_process(pid: int) -> bool:
         )
         if result.returncode != 0:
             return False
-        
+
         command = result.stdout.strip()
         # Prüfe auf transcribe.py und Argumente
         return "transcribe.py" in command and "--record-daemon" in command
@@ -84,20 +84,22 @@ def cleanup_stale_pid_file() -> None:
             os.kill(old_pid, 0)
         except ProcessLookupError:
             # Prozess tot -> PID-File löschen
-            logger.info(f"[{get_session_id()}] Stale PID-File gelöscht (Prozess weg): {PID_FILE}")
+            logger.info(
+                f"[{get_session_id()}] Stale PID-File gelöscht (Prozess weg): {PID_FILE}"
+            )
             PID_FILE.unlink(missing_ok=True)
             return
 
-        # SICHERHEIT: Nur killen wenn es wirklich ein whisper_go Prozess ist!
-        if not is_whisper_go_process(old_pid):
+        # SICHERHEIT: Nur killen wenn es wirklich ein PulseScribe Prozess ist!
+        if not is_pulsescribe_process(old_pid):
             logger.warning(
-                f"[{get_session_id()}] PID {old_pid} ist kein whisper_go Prozess, "
+                f"[{get_session_id()}] PID {old_pid} ist kein PulseScribe Prozess, "
                 f"lösche nur PID-File (PID-Recycling?)"
             )
             PID_FILE.unlink(missing_ok=True)
             return
 
-        # Prozess läuft noch und ist whisper_go -> KILL
+        # Prozess läuft noch und ist pulsescribe -> KILL
         logger.warning(
             f"[{get_session_id()}] Alter Daemon-Prozess {old_pid} läuft noch, beende ihn..."
         )
@@ -124,4 +126,6 @@ def cleanup_stale_pid_file() -> None:
         logger.info(f"[{get_session_id()}] Stale PID-File gelöscht: {PID_FILE}")
         PID_FILE.unlink(missing_ok=True)
     except PermissionError:
-        logger.error(f"[{get_session_id()}] Keine Berechtigung PID-File zu löschen: {PID_FILE}")
+        logger.error(
+            f"[{get_session_id()}] Keine Berechtigung PID-File zu löschen: {PID_FILE}"
+        )

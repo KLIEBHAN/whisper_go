@@ -148,7 +148,9 @@ class HotkeyCard:
             add_preset_btn(
                 "Opt+Space (Toggle)", "hotkey_opt_space", btn_w + spacing, btn_w
             )
-            add_preset_btn("F19 (Toggle)", "hotkey_f19_toggle", 2 * (btn_w + spacing), btn_w)
+            add_preset_btn(
+                "F19 (Toggle)", "hotkey_f19_toggle", 2 * (btn_w + spacing), btn_w
+            )
             current_y -= 16
 
         # Custom hotkey rows
@@ -255,8 +257,8 @@ class HotkeyCard:
         from utils.preferences import get_env_setting
 
         try:
-            toggle = (get_env_setting("WHISPER_GO_TOGGLE_HOTKEY") or "").strip()
-            hold = (get_env_setting("WHISPER_GO_HOLD_HOTKEY") or "").strip()
+            toggle = (get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY") or "").strip()
+            hold = (get_env_setting("PULSESCRIBE_HOLD_HOTKEY") or "").strip()
             self._widgets.toggle_field.setStringValue_(toggle.upper())
             self._widgets.hold_field.setStringValue_(hold.upper())
         except Exception:

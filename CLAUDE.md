@@ -2,7 +2,7 @@
 
 ## Projekt-Übersicht
 
-**whisper_go** – Minimalistische Spracheingabe für macOS, inspiriert von [Wispr Flow](https://wisprflow.ai).
+**PulseScribe** – Minimalistische Spracheingabe für macOS, inspiriert von [Wispr Flow](https://wisprflow.ai).
 
 Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
 
@@ -11,7 +11,7 @@ Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
 ```
 whisper_go/
 ├── transcribe.py          # CLI Orchestrierung (Wrapper)
-├── whisper_daemon.py      # Unified Daemon (Hotkey + Recording + UI)
+├── pulsescribe_daemon.py  # Unified Daemon (Hotkey + Recording + UI)
 ├── start_daemon.command   # macOS Login Item für Auto-Start
 ├── build_app.spec         # PyInstaller Spec für macOS App Bundle
 ├── config.py              # Zentrale Konfiguration (Pfade, Konstanten)
@@ -51,18 +51,18 @@ whisper_go/
 - **Lazy Imports:** `openai`, `whisper`, `sounddevice` werden erst bei Bedarf importiert
 - **Double-Fork:** Daemonisierung für saubere Prozess-Trennung
 
-## Unified Daemon: `whisper_daemon.py`
+## Unified Daemon: `pulsescribe_daemon.py`
 
 Konsolidiert alle Komponenten in einem Prozess (empfohlen für tägliche Nutzung):
 
 **Komponenten:**
 
-| Klasse              | Modul            | Zweck                                           |
-| ------------------- | ---------------- | ----------------------------------------------- |
-| `MenuBarController` | `ui.menubar`     | Menübar-Status via NSStatusBar (🎤 🔴 ⏳ ✅ ❌) |
-| `OverlayController` | `ui.overlay`     | Animiertes Overlay am unteren Bildschirmrand    |
-| `SoundWaveView`     | `ui.overlay`     | Animierte Schallwellen-Visualisierung           |
-| `WhisperDaemon`     | `whisper_daemon` | Hauptklasse: Orchestriert Hotkey, Audio & UI    |
+| Klasse              | Modul                | Zweck                                           |
+| ------------------- | -------------------- | ----------------------------------------------- |
+| `MenuBarController` | `ui.menubar`         | Menübar-Status via NSStatusBar (🎤 🔴 ⏳ ✅ ❌) |
+| `OverlayController` | `ui.overlay`         | Animiertes Overlay am unteren Bildschirmrand    |
+| `SoundWaveView`     | `ui.overlay`         | Animierte Schallwellen-Visualisierung           |
+| `PulseScribeDaemon` | `pulsescribe_daemon` | Hauptklasse: Orchestriert Hotkey, Audio & UI    |
 
 **Architektur:**
 
@@ -103,34 +103,34 @@ python transcribe.py --record --copy --language de
 
 ## Konfiguration (ENV-Variablen)
 
-| Variable                       | Beschreibung                                                             |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `WHISPER_GO_MODE`              | Default-Modus: `openai`, `local`, `deepgram`, `groq`                     |
-| `WHISPER_GO_MODEL`             | Transkriptions-Modell (überschreibt Provider-Default)                    |
-| `WHISPER_GO_STREAMING`         | WebSocket-Streaming für Deepgram: `true`/`false`                         |
-| `WHISPER_GO_REFINE`            | LLM-Nachbearbeitung: `true`/`false`                                      |
-| `WHISPER_GO_REFINE_MODEL`      | Modell für Refine (default: `gpt-5-nano`)                                |
-| `WHISPER_GO_REFINE_PROVIDER`   | Provider: `openai`, `openrouter` oder `groq`                             |
-| `WHISPER_GO_CONTEXT`           | Kontext-Override: `email`/`chat`/`code`                                  |
-| `WHISPER_GO_APP_CONTEXTS`      | Custom App-Mappings (JSON)                                               |
-| `WHISPER_GO_OVERLAY`           | Untertitel-Overlay aktivieren: `true`/`false`                            |
-| `WHISPER_GO_DOCK_ICON`         | Dock-Icon anzeigen: `true`/`false` (default: `true`)                     |
-| `WHISPER_GO_CLIPBOARD_RESTORE` | Clipboard nach Paste wiederherstellen: `true`/`false` (default: `false`) |
-| `OPENAI_API_KEY`               | Für API-Modus und OpenAI-Refine                                          |
-| `DEEPGRAM_API_KEY`             | Für Deepgram-Modus (REST + Streaming)                                    |
-| `GROQ_API_KEY`                 | Für Groq-Modus und Groq-Refine                                           |
-| `OPENROUTER_API_KEY`           | Für OpenRouter-Refine                                                    |
+| Variable                        | Beschreibung                                                             |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `PULSESCRIBE_MODE`              | Default-Modus: `openai`, `local`, `deepgram`, `groq`                     |
+| `PULSESCRIBE_MODEL`             | Transkriptions-Modell (überschreibt Provider-Default)                    |
+| `PULSESCRIBE_STREAMING`         | WebSocket-Streaming für Deepgram: `true`/`false`                         |
+| `PULSESCRIBE_REFINE`            | LLM-Nachbearbeitung: `true`/`false`                                      |
+| `PULSESCRIBE_REFINE_MODEL`      | Modell für Refine (default: `openai/gpt-oss-120b`)                       |
+| `PULSESCRIBE_REFINE_PROVIDER`   | Provider: `groq`, `openai` oder `openrouter`                             |
+| `PULSESCRIBE_CONTEXT`           | Kontext-Override: `email`/`chat`/`code`                                  |
+| `PULSESCRIBE_APP_CONTEXTS`      | Custom App-Mappings (JSON)                                               |
+| `PULSESCRIBE_OVERLAY`           | Untertitel-Overlay aktivieren: `true`/`false`                            |
+| `PULSESCRIBE_DOCK_ICON`         | Dock-Icon anzeigen: `true`/`false` (default: `true`)                     |
+| `PULSESCRIBE_CLIPBOARD_RESTORE` | Clipboard nach Paste wiederherstellen: `true`/`false` (default: `false`) |
+| `OPENAI_API_KEY`                | Für API-Modus und OpenAI-Refine                                          |
+| `DEEPGRAM_API_KEY`              | Für Deepgram-Modus (REST + Streaming)                                    |
+| `GROQ_API_KEY`                  | Für Groq-Modus und Groq-Refine                                           |
+| `OPENROUTER_API_KEY`            | Für OpenRouter-Refine                                                    |
 
 ## Dateipfade
 
-| Pfad                                | Beschreibung                             |
-| ----------------------------------- | ---------------------------------------- |
-| `~/.whisper_go/`                    | User-Konfigurationsverzeichnis           |
-| `~/.whisper_go/.env`                | User-spezifische ENV-Datei (Priorität 1) |
-| `~/.whisper_go/logs/whisper_go.log` | Haupt-Logdatei (rotierend, max 1MB)      |
-| `~/.whisper_go/startup.log`         | Emergency-Log für Startup-Fehler         |
-| `~/.whisper_go/vocabulary.json`     | Custom Vocabulary für Transkription      |
-| `~/.whisper_go/prompts.toml`        | Custom Prompts für LLM-Nachbearbeitung   |
+| Pfad                                  | Beschreibung                             |
+| ------------------------------------- | ---------------------------------------- |
+| `~/.pulsescribe/`                     | User-Konfigurationsverzeichnis           |
+| `~/.pulsescribe/.env`                 | User-spezifische ENV-Datei (Priorität 1) |
+| `~/.pulsescribe/logs/pulsescribe.log` | Haupt-Logdatei (rotierend, max 1MB)      |
+| `~/.pulsescribe/startup.log`          | Emergency-Log für Startup-Fehler         |
+| `~/.pulsescribe/vocabulary.json`      | Custom Vocabulary für Transkription      |
+| `~/.pulsescribe/prompts.toml`         | Custom Prompts für LLM-Nachbearbeitung   |
 
 ## Transkriptions-Modi
 
@@ -153,16 +153,16 @@ Die LLM-Nachbearbeitung passt den Prompt automatisch an den Nutzungskontext an:
 | `code`    | Technisch, Begriffe beibehalten | VS Code, Cursor, iTerm   |
 | `default` | Standard-Korrektur              | Alle anderen             |
 
-**Priorität:** CLI (`--context`) > ENV (`WHISPER_GO_CONTEXT`) > App-Auto-Detection > Default
+**Priorität:** CLI (`--context`) > ENV (`PULSESCRIBE_CONTEXT`) > App-Auto-Detection > Default
 
 **Performance:** NSWorkspace-API (~0.2ms) statt AppleScript (~207ms)
 
 ## Custom Prompts
 
-Prompts können über `~/.whisper_go/prompts.toml` angepasst werden:
+Prompts können über `~/.pulsescribe/prompts.toml` angepasst werden:
 
 ```toml
-# Custom Prompts für whisper_go
+# Custom Prompts für PulseScribe
 
 [voice_commands]
 instruction = """
@@ -200,7 +200,7 @@ Voice-Commands werden vom LLM in der Refine-Pipeline interpretiert (nur mit `--r
 | "Komma" / "comma"                | `,`      |
 | "Fragezeichen" / "question mark" | `?`      |
 
-**Implementierung:** `refine/prompts.py` + `utils/custom_prompts.py` → Voice-Commands werden automatisch in alle Prompts eingefügt via `get_prompt_for_context(context, voice_commands=True)`. Custom Prompts aus `~/.whisper_go/prompts.toml` haben Priorität.
+**Implementierung:** `refine/prompts.py` + `utils/custom_prompts.py` → Voice-Commands werden automatisch in alle Prompts eingefügt via `get_prompt_for_context(context, voice_commands=True)`. Custom Prompts aus `~/.pulsescribe/prompts.toml` haben Priorität.
 
 ## App Bundle (PyInstaller)
 
@@ -209,15 +209,15 @@ Build einer nativen macOS App:
 ```bash
 pip install pyinstaller
 pyinstaller build_app.spec --clean
-# Output: dist/WhisperGo.app
+# Output: dist/PulseScribe.app
 ```
 
 **Besonderheiten:**
 
 - `utils/paths.py`: `get_resource_path()` für Bundle-kompatible Pfade
 - `utils/permissions.py`: Mikrofon-Berechtigung mit Alert-Dialog
-- `config.py`: Logs in `~/.whisper_go/logs/` (nicht im Bundle)
-- Emergency Logging in `~/.whisper_go/startup.log` für Crash-Debugging
+- `config.py`: Logs in `~/.pulsescribe/logs/` (nicht im Bundle)
+- Emergency Logging in `~/.pulsescribe/startup.log` für Crash-Debugging
 - **Accessibility-Problem bei unsignierten Bundles:** Siehe README.md → Troubleshooting
 
 ## Entwicklungs-Konventionen

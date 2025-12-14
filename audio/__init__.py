@@ -1,4 +1,4 @@
-"""Audio-Modul für whisper_go.
+"""Audio-Modul für PulseScribe.
 
 Bietet Funktionen für die Mikrofon-Aufnahme.
 

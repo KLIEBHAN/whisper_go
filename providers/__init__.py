@@ -1,4 +1,4 @@
-"""Transkriptions-Provider für whisper_go.
+"""Transkriptions-Provider für PulseScribe.
 
 Dieses Modul stellt ein einheitliches Interface für alle Transkriptions-Provider bereit.
 
@@ -54,18 +54,23 @@ def get_provider(mode: str) -> "TranscriptionProvider":
     """
     if mode == "openai":
         from .openai import OpenAIProvider
+
         return OpenAIProvider()
     elif mode == "deepgram":
         from .deepgram import DeepgramProvider
+
         return DeepgramProvider()
     elif mode == "deepgram_stream":
         from .deepgram_stream import DeepgramStreamProvider
+
         return DeepgramStreamProvider()
     elif mode == "groq":
         from .groq import GroqProvider
+
         return GroqProvider()
     elif mode == "local":
         from .local import LocalProvider
+
         return LocalProvider()
     else:
         raise ValueError(f"Unbekannter Provider: {mode}")

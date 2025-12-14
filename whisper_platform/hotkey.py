@@ -16,7 +16,7 @@ from utils.hotkey import (  # noqa: F401
     parse_hotkey,
 )
 
-logger = logging.getLogger("whisper_go.platform.hotkey")
+logger = logging.getLogger("pulsescribe.platform.hotkey")
 
 # Hotkey-Callback Typ
 HotkeyCallback = Callable[[], None]

@@ -28,8 +28,8 @@ def validate_hotkey_change(kind: str, hotkey_str: str) -> tuple[str, str, str | 
     if not normalized:
         return "", "error", "Hotkey ist leer."
 
-    toggle_current = _normalize(get_env_setting("WHISPER_GO_TOGGLE_HOTKEY"))
-    hold_current = _normalize(get_env_setting("WHISPER_GO_HOLD_HOTKEY"))
+    toggle_current = _normalize(get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY"))
+    hold_current = _normalize(get_env_setting("PULSESCRIBE_HOLD_HOTKEY"))
 
     other = hold_current if kind == "toggle" else toggle_current
     if other and normalized == other:
@@ -79,7 +79,7 @@ def validate_hotkey_change(kind: str, hotkey_str: str) -> tuple[str, str, str | 
             return (
                 normalized,
                 "warning",
-                "macOS blockiert diese Kombination als globalen Hotkey. WhisperGo nutzt Eingabemonitoring als Fallback.",
+                "macOS blockiert diese Kombination als globalen Hotkey. PulseScribe nutzt Eingabemonitoring als Fallback.",
             )
 
         return (
@@ -92,4 +92,3 @@ def validate_hotkey_change(kind: str, hotkey_str: str) -> tuple[str, str, str | 
 
 
 __all__ = ["validate_hotkey_change"]
-

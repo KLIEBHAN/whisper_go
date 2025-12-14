@@ -1,4 +1,4 @@
-"""LLM-Prompts und Kontext-Mappings für whisper_go.
+"""LLM-Prompts und Kontext-Mappings für PulseScribe.
 
 Enthält alle Prompts für die LLM-Nachbearbeitung (Refine) sowie
 das App-zu-Kontext Mapping für die automatische Kontext-Erkennung.
@@ -63,7 +63,7 @@ Gib NUR den korrigierten Text zurück.""",
 def get_prompt_for_context(context: str, voice_commands: bool = True) -> str:
     """Gibt den Prompt für einen Kontext zurück, mit Fallback auf 'default'.
 
-    Lädt Custom Prompts aus ~/.whisper_go/prompts.toml falls vorhanden,
+    Lädt Custom Prompts aus ~/.pulsescribe/prompts.toml falls vorhanden,
     sonst Fallback auf Hardcoded Defaults.
 
     Args:

@@ -58,7 +58,7 @@ class TestCleanupStalePidFile:
         with (
             patch("os.kill") as mock_kill,
             patch(
-                "utils.daemon.is_whisper_go_process", return_value=False
+                "utils.daemon.is_pulsescribe_process", return_value=False
             ) as mock_check,
         ):
             # Signal 0 (Ping) erfolgreich - Prozess existiert
@@ -66,13 +66,13 @@ class TestCleanupStalePidFile:
 
             cleanup_stale_pid_file()
 
-        # _is_whisper_go_process wurde geprüft
+        # _is_pulsescribe_process wurde geprüft
         mock_check.assert_called_once_with(12345)
         # PID-File wurde gelöscht (nur File, nicht Prozess)
         assert not utils.daemon.PID_FILE.exists()
 
-    def test_whisper_go_process_killed(self, temp_files):
-        """Echter whisper_go Prozess wird gekillt."""
+    def test_pulsescribe_process_killed(self, temp_files):
+        """Echter PulseScribe Prozess wird gekillt."""
         utils.daemon.PID_FILE.write_text("12345")
 
         kill_signals = []
@@ -85,7 +85,7 @@ class TestCleanupStalePidFile:
 
         with (
             patch("os.kill", side_effect=track_kill),
-            patch("utils.daemon.is_whisper_go_process", return_value=True),
+            patch("utils.daemon.is_pulsescribe_process", return_value=True),
         ):
             cleanup_stale_pid_file()
 
@@ -103,7 +103,7 @@ class TestCleanupStalePidFile:
         mock_path = unittest.mock.MagicMock()
         mock_path.exists.return_value = True
         mock_path.read_text.side_effect = PermissionError
-        
+
         with patch("utils.daemon.PID_FILE", mock_path):
             # Sollte nicht crashen
             cleanup_stale_pid_file()

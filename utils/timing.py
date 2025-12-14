@@ -1,4 +1,4 @@
-"""Zeitmessung für whisper_go.
+"""Zeitmessung für pulsescribe.
 
 Context Manager und Hilfsfunktionen für Performance-Tracking.
 """
@@ -34,7 +34,7 @@ def timed_operation(
 
     Args:
         name: Name der Operation (Log-Label).
-        logger: Optionaler Logger. Default: whisper_go Root-Logger.
+        logger: Optionaler Logger. Default: pulsescribe Root-Logger.
         include_session: Wenn False, wird keine Session-ID vorangestellt.
 
     Usage:

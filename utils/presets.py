@@ -71,11 +71,17 @@ def is_apple_silicon() -> bool:
 
 
 def default_local_preset_fast() -> str:
-    return "macOS: MLX Fast (turbo)" if is_apple_silicon() else "CPU: faster int8 (turbo)"
+    return (
+        "macOS: MLX Fast (turbo)" if is_apple_silicon() else "CPU: faster int8 (turbo)"
+    )
 
 
 def default_local_preset_private() -> str:
-    return "macOS: MLX Balanced (large)" if is_apple_silicon() else "CPU: faster int8 (turbo)"
+    return (
+        "macOS: MLX Balanced (large)"
+        if is_apple_silicon()
+        else "CPU: faster int8 (turbo)"
+    )
 
 
 def apply_local_preset_to_env(preset_name: str) -> bool:
@@ -87,7 +93,9 @@ def apply_local_preset_to_env(preset_name: str) -> bool:
     values = dict(LOCAL_PRESET_BASE)
     values.update(preset_values)
 
-    def _set_or_remove(key: str, value: str | None, *, remove_when: set[str] | None = None) -> None:
+    def _set_or_remove(
+        key: str, value: str | None, *, remove_when: set[str] | None = None
+    ) -> None:
         if value is None:
             remove_env_setting(key)
             return
@@ -101,25 +109,25 @@ def apply_local_preset_to_env(preset_name: str) -> bool:
         save_env_setting(key, normalized)
 
     # Ensure local mode when applying local presets.
-    save_env_setting("WHISPER_GO_MODE", "local")
+    save_env_setting("PULSESCRIBE_MODE", "local")
 
     _set_or_remove(
-        "WHISPER_GO_LOCAL_BACKEND",
+        "PULSESCRIBE_LOCAL_BACKEND",
         values.get("local_backend"),
         remove_when={"whisper"},
     )
     _set_or_remove(
-        "WHISPER_GO_LOCAL_MODEL",
+        "PULSESCRIBE_LOCAL_MODEL",
         values.get("local_model"),
         remove_when={"default"},
     )
     _set_or_remove(
-        "WHISPER_GO_DEVICE",
+        "PULSESCRIBE_DEVICE",
         values.get("device"),
         remove_when={"auto"},
     )
     _set_or_remove(
-        "WHISPER_GO_LOCAL_WARMUP",
+        "PULSESCRIBE_LOCAL_WARMUP",
         values.get("warmup"),
         remove_when={"auto"},
     )
@@ -134,12 +142,12 @@ def apply_local_preset_to_env(preset_name: str) -> bool:
             return
         save_env_setting(key, normalized)
 
-    _save_bool_override("WHISPER_GO_LOCAL_FAST", values.get("local_fast"))
-    _save_bool_override("WHISPER_GO_FP16", values.get("fp16"))
+    _save_bool_override("PULSESCRIBE_LOCAL_FAST", values.get("local_fast"))
+    _save_bool_override("PULSESCRIBE_FP16", values.get("fp16"))
     _save_bool_override(
-        "WHISPER_GO_LOCAL_WITHOUT_TIMESTAMPS", values.get("without_timestamps")
+        "PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS", values.get("without_timestamps")
     )
-    _save_bool_override("WHISPER_GO_LOCAL_VAD_FILTER", values.get("vad_filter"))
+    _save_bool_override("PULSESCRIBE_LOCAL_VAD_FILTER", values.get("vad_filter"))
 
     def _save_optional_str(key: str, raw: str | None) -> None:
         normalized = (raw or "").strip()
@@ -148,12 +156,11 @@ def apply_local_preset_to_env(preset_name: str) -> bool:
             return
         save_env_setting(key, normalized)
 
-    _save_optional_str("WHISPER_GO_LOCAL_BEAM_SIZE", values.get("beam_size"))
-    _save_optional_str("WHISPER_GO_LOCAL_BEST_OF", values.get("best_of"))
-    _save_optional_str("WHISPER_GO_LOCAL_TEMPERATURE", values.get("temperature"))
-    _save_optional_str("WHISPER_GO_LOCAL_COMPUTE_TYPE", values.get("compute_type"))
-    _save_optional_str("WHISPER_GO_LOCAL_CPU_THREADS", values.get("cpu_threads"))
-    _save_optional_str("WHISPER_GO_LOCAL_NUM_WORKERS", values.get("num_workers"))
+    _save_optional_str("PULSESCRIBE_LOCAL_BEAM_SIZE", values.get("beam_size"))
+    _save_optional_str("PULSESCRIBE_LOCAL_BEST_OF", values.get("best_of"))
+    _save_optional_str("PULSESCRIBE_LOCAL_TEMPERATURE", values.get("temperature"))
+    _save_optional_str("PULSESCRIBE_LOCAL_COMPUTE_TYPE", values.get("compute_type"))
+    _save_optional_str("PULSESCRIBE_LOCAL_CPU_THREADS", values.get("cpu_threads"))
+    _save_optional_str("PULSESCRIBE_LOCAL_NUM_WORKERS", values.get("num_workers"))
 
     return True
-

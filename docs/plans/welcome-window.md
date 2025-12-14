@@ -22,14 +22,14 @@ Erstelle eine native macOS Übersichtsseite (Welcome Window), die:
 
 ## Dateien
 
-| Datei                  | Aktion  | Beschreibung                         |
-| ---------------------- | ------- | ------------------------------------ |
-| `ui/welcome.py`        | **NEU** | WelcomeController mit NSWindow       |
-| `ui/__init__.py`       | Ändern  | Export WelcomeController             |
-| `ui/menubar.py`        | Ändern  | "Setup..." Menu-Item hinzufügen      |
-| `utils/preferences.py` | **NEU** | Persistenz für `has_seen_onboarding` |
-| `utils/__init__.py`    | Ändern  | Export Preferences                   |
-| `whisper_daemon.py`    | Ändern  | Welcome-Window beim Start zeigen     |
+| Datei                   | Aktion  | Beschreibung                         |
+| ----------------------- | ------- | ------------------------------------ |
+| `ui/welcome.py`         | **NEU** | WelcomeController mit NSWindow       |
+| `ui/__init__.py`        | Ändern  | Export WelcomeController             |
+| `ui/menubar.py`         | Ändern  | "Setup..." Menu-Item hinzufügen      |
+| `utils/preferences.py`  | **NEU** | Persistenz für `has_seen_onboarding` |
+| `utils/__init__.py`     | Ändern  | Export Preferences                   |
+| `pulsescribe_daemon.py` | Ändern  | Welcome-Window beim Start zeigen     |
 
 ## UI-Design
 
@@ -218,7 +218,7 @@ def showSetup_(self, _sender) -> None:
         self.welcome_callback()
 ```
 
-### 4. Daemon-Integration (`whisper_daemon.py`)
+### 4. Daemon-Integration (`pulsescribe_daemon.py`)
 
 ```python
 def run(self):
@@ -267,7 +267,7 @@ def run(self):
 
 ## Entscheidungen
 
-1. **API-Key-Eingabe**: ✅ Direkt im Window mit Textfeldern (speichert in `~/.whisper_go/.env`)
+1. **API-Key-Eingabe**: ✅ Direkt im Window mit Textfeldern (speichert in `~/.pulsescribe/.env`)
 2. **Sprache**: ✅ Englisch (konsistent mit Release Notes)
 
 ## Geschätzter Aufwand
