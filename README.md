@@ -13,11 +13,11 @@ Voice input for macOS – inspired by [Wispr Flow](https://wisprflow.ai). Transc
 
 ### Provider Overview
 
-| Provider     | Latency   | Method    | Special Feature                  |
-| ------------ | --------- | --------- | -------------------------------- |
-| **Deepgram** | ~300ms ⚡ | WebSocket | Real-time streaming, recommended |
-| **Groq**     | ~1s       | REST      | Whisper on LPU, very fast        |
-| **OpenAI**   | ~2-3s     | REST      | GPT-4o, highest quality          |
+| Provider     | Latency   | Method    | Special Feature                                    |
+| ------------ | --------- | --------- | -------------------------------------------------- |
+| **Deepgram** | ~300ms ⚡ | WebSocket | Real-time streaming, recommended                   |
+| **Groq**     | ~1s       | REST      | Whisper on LPU, very fast                          |
+| **OpenAI**   | ~2-3s     | REST      | GPT-4o, highest quality                            |
 | **Local**    | varies    | Whisper   | Offline, no API costs (MLX/Metal on Apple Silicon) |
 
 ## Quick Start
@@ -358,11 +358,11 @@ WHISPER_GO_DOCK_ICON=true
 
 **Supported Hotkeys:**
 
-| Format          | Example               |
-| --------------- | --------------------- |
-| Function Keys   | `f19`, `f1`, `f12`    |
+| Format          | Example                                 |
+| --------------- | --------------------------------------- |
+| Function Keys   | `f19`, `f1`, `f12`                      |
 | Single Key      | `fn`, `capslock`, `space`, `tab`, `esc` |
-| Key Combination | `cmd+shift+r`         |
+| Key Combination | `cmd+shift+r`                           |
 
 **Recommended hotkey setup (macOS):**
 
@@ -400,11 +400,11 @@ Both are integrated and start automatically with the daemon.
 
 ## Provider Comparison
 
-| Mode       | Provider | Method    | Latency   | Special Feature                    |
-| ---------- | -------- | --------- | --------- | ---------------------------------- |
-| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Real-time streaming (recommended)  |
-| `groq`     | Groq     | REST      | ~1s       | Whisper on LPU, very fast          |
-| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, highest quality |
+| Mode       | Provider | Method    | Latency   | Special Feature                                |
+| ---------- | -------- | --------- | --------- | ---------------------------------------------- |
+| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Real-time streaming (recommended)              |
+| `groq`     | Groq     | REST      | ~1s       | Whisper on LPU, very fast                      |
+| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, highest quality             |
 | `local`    | Whisper  | Local     | varies    | Offline, no API costs (Whisper / Faster / MLX) |
 
 > **Recommendation:** `--mode deepgram` for daily use. The streaming architecture ensures minimal waiting time between recording stop and text insertion.
@@ -514,24 +514,33 @@ Optionally enable an additional warmup inference via `WHISPER_GO_LOCAL_WARMUP=tr
 
 ## Troubleshooting
 
-| Problem                             | Solution                                                                 |
-| ----------------------------------- | ------------------------------------------------------------------------ |
-| Module not installed                | `pip install -r requirements.txt`                                        |
-| API Key missing                     | `export DEEPGRAM_API_KEY="..."` (or OPENAI/GROQ)                         |
-| Microphone issues (macOS)           | `brew install portaudio && pip install --force-reinstall sounddevice`    |
-| Microphone permission               | Grant access in System Settings → Privacy & Security → Microphone        |
-| ffmpeg missing                      | `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Ubuntu) — needed for local file transcription (`whisper`/`mlx`) |
-| MLX model download 404              | Use `WHISPER_GO_LOCAL_MODEL=large` or a full repo ID (e.g. `mlx-community/whisper-large-v3-mlx`) |
-| Beam search not implemented (mlx)   | Remove `WHISPER_GO_LOCAL_BEAM_SIZE` (ignored on `mlx`) or switch backend  |
+| Problem                             | Solution                                                                                                                                                              |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Module not installed                | `pip install -r requirements.txt`                                                                                                                                     |
+| API Key missing                     | `export DEEPGRAM_API_KEY="..."` (or OPENAI/GROQ)                                                                                                                      |
+| Microphone issues (macOS)           | `brew install portaudio && pip install --force-reinstall sounddevice`                                                                                                 |
+| Microphone permission               | Grant access in System Settings → Privacy & Security → Microphone                                                                                                     |
+| ffmpeg missing                      | `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Ubuntu) — needed for local file transcription (`whisper`/`mlx`)                                           |
+| MLX model download 404              | Use `WHISPER_GO_LOCAL_MODEL=large` or a full repo ID (e.g. `mlx-community/whisper-large-v3-mlx`)                                                                      |
+| Beam search not implemented (mlx)   | Remove `WHISPER_GO_LOCAL_BEAM_SIZE` (ignored on `mlx`) or switch backend                                                                                              |
 | Transcription slow                  | Switch to `--mode groq`/`deepgram`, or use `WHISPER_GO_LOCAL_BACKEND=mlx` (Apple Silicon) / `faster` (CPU) and `WHISPER_GO_LOCAL_FAST=true`, or a smaller local model |
-| Daemon crashes silently             | Check `~/.whisper_go/startup.log` for emergency logs                     |
-| Auto-Paste not working (App Bundle) | See [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle) |
+| Daemon crashes silently             | Check `~/.whisper_go/startup.log` for emergency logs                                                                                                                  |
+| Auto-Paste not working (App Bundle) | See [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle)                                                                                              |
 
 ### Auto-Paste Troubleshooting (App Bundle)
 
 If Auto-Paste doesn't work in `WhisperGo.app` (text is copied but not pasted):
 
-**Clipboard behavior:** WhisperGo restores your previous clipboard content after a successful paste. If paste fails, the transcript stays in the clipboard so you can paste manually.
+**Clipboard behavior:** By default, the transcribed text stays in the clipboard after pasting. You can optionally restore your previous clipboard content:
+
+```bash
+# In ~/.whisper_go/.env:
+WHISPER_GO_CLIPBOARD_RESTORE=true
+```
+
+When enabled, WhisperGo re-copies the previous text after a successful paste. This means clipboard history tools (Paste, Alfred, etc.) will see **both** entries: your transcription and the previous content.
+
+If paste fails, the transcript stays in the clipboard so you can paste manually.
 
 **Symptom:** Log shows `AXIsProcessTrusted = False` even though the app is enabled in Accessibility.
 
