@@ -1,21 +1,17 @@
-"""Custom Prompts aus TOML laden.
+"""Custom Prompts Management für whisper_go.
 
-Lädt User-angepasste Prompts aus ~/.whisper_go/prompts.toml.
-Falls nicht vorhanden oder fehlerhaft, Fallback auf Hardcoded Defaults.
+Ermöglicht Benutzern, LLM-Prompts über ~/.whisper_go/prompts.toml anzupassen.
+Bei fehlender oder fehlerhafter Datei werden Hardcoded-Defaults verwendet.
 
-Struktur der TOML-Datei:
+Dateiformat:
     [voice_commands]
     instruction = \"\"\"...\"\"\"
-
-    [prompts.default]
-    prompt = \"\"\"...\"\"\"
 
     [prompts.email]
     prompt = \"\"\"...\"\"\"
 
     [app_contexts]
     Mail = "email"
-    Slack = "chat"
 """
 
 from __future__ import annotations
@@ -33,164 +29,209 @@ from refine.prompts import (
 
 logger = logging.getLogger("whisper_go")
 
+# =============================================================================
+# Konfiguration
+# =============================================================================
+
 PROMPTS_FILE = USER_CONFIG_DIR / "prompts.toml"
 
-# Cache per path: {Path: (mtime, data)}
+# Bekannte Kontext-Typen für Prompt-Auswahl
+KNOWN_CONTEXTS = ("default", "email", "chat", "code")
+
+# =============================================================================
+# Cache (mtime-basiert für Hot-Reload)
+# =============================================================================
+
 _cache: dict[Path, tuple[float, dict]] = {}
 
 
 def _clear_cache() -> None:
-    """Leert den Cache (für Tests)."""
+    """Leert den Cache. Nur für Tests relevant."""
     global _cache
     _cache = {}
 
 
-def get_defaults() -> dict:
-    """Gibt die Hardcoded Defaults zurück (für UI Reset-Funktion).
+def _invalidate_cache(path: Path) -> None:
+    """Entfernt einen Pfad aus dem Cache."""
+    _cache.pop(path, None)
 
-    Returns:
-        Dict mit allen Default-Prompts, Voice-Commands und App-Contexts.
+
+# =============================================================================
+# Defaults (Hardcoded Fallback)
+# =============================================================================
+
+
+def get_defaults() -> dict:
+    """Gibt die Hardcoded-Defaults zurück.
+
+    Wird verwendet für:
+    - Fallback bei fehlender/fehlerhafter TOML-Datei
+    - "Reset to Default" in der UI
+    - Vergleich, ob User etwas geändert hat
     """
     return {
         "voice_commands": {"instruction": VOICE_COMMANDS_INSTRUCTION},
-        "prompts": {
-            context: {"prompt": prompt} for context, prompt in CONTEXT_PROMPTS.items()
-        },
+        "prompts": {ctx: {"prompt": text} for ctx, text in CONTEXT_PROMPTS.items()},
         "app_contexts": dict(DEFAULT_APP_CONTEXTS),
     }
 
 
+# =============================================================================
+# Laden (mit Cache und Merge)
+# =============================================================================
+
+
 def load_custom_prompts(path: Path | None = None) -> dict:
-    """Lädt Custom Prompts mit Fallback auf Defaults.
+    """Lädt Custom Prompts mit automatischem Fallback auf Defaults.
+
+    Features:
+    - mtime-basierter Cache (Änderungen werden erkannt)
+    - Partielle Configs werden mit Defaults aufgefüllt
+    - Fehlerhafte TOML → stille Rückkehr zu Defaults
 
     Args:
-        path: Optional override für Tests.
-
-    Returns:
-        Dict mit Prompts, Voice-Commands und App-Contexts.
-        Fehlende Felder werden mit Defaults aufgefüllt.
+        path: Überschreibt PROMPTS_FILE (für Tests)
     """
     prompts_file = path or PROMPTS_FILE
 
+    # Datei-Metadaten prüfen
     try:
-        mtime = prompts_file.stat().st_mtime
+        current_mtime = prompts_file.stat().st_mtime
     except FileNotFoundError:
-        _cache.pop(prompts_file, None)
+        _invalidate_cache(prompts_file)
         return get_defaults()
     except OSError as e:
         logger.warning(f"Prompts-Datei nicht lesbar: {e}")
-        _cache.pop(prompts_file, None)
+        _invalidate_cache(prompts_file)
         return get_defaults()
 
-    # Cache-Hit?
+    # Cache nutzen wenn Datei unverändert
     cached = _cache.get(prompts_file)
-    if cached and cached[0] == mtime:
+    if cached and cached[0] == current_mtime:
         return cached[1]
 
-    # Parsen
+    # TOML parsen
     try:
-        raw = tomllib.loads(prompts_file.read_text())
+        user_config = tomllib.loads(prompts_file.read_text())
     except (tomllib.TOMLDecodeError, OSError) as e:
         logger.warning(f"Prompts-Datei fehlerhaft: {e}")
         return get_defaults()
 
-    # Mit Defaults mergen
+    # User-Config mit Defaults zusammenführen
+    merged = _merge_user_with_defaults(user_config)
+    _cache[prompts_file] = (current_mtime, merged)
+    return merged
+
+
+def _merge_user_with_defaults(user_config: dict) -> dict:
+    """Führt User-Konfiguration mit Defaults zusammen.
+
+    Strategie: User-Werte überschreiben Defaults, fehlende Felder
+    werden aus Defaults ergänzt.
+    """
     defaults = get_defaults()
-    result = _merge_with_defaults(raw, defaults)
 
-    _cache[prompts_file] = (mtime, result)
-    return result
-
-
-def _merge_with_defaults(custom: dict, defaults: dict) -> dict:
-    """Merged Custom-Config mit Defaults (Custom hat Priorität)."""
-    result = {
-        "voice_commands": {
-            "instruction": custom.get("voice_commands", {}).get(
-                "instruction", defaults["voice_commands"]["instruction"]
-            )
-        },
-        "prompts": {},
-        "app_contexts": {**defaults["app_contexts"]},  # Defaults als Basis
+    return {
+        "voice_commands": _merge_voice_commands(user_config, defaults),
+        "prompts": _merge_prompts(user_config, defaults),
+        "app_contexts": _merge_app_contexts(user_config, defaults),
     }
 
-    # Prompts mergen
-    for context in defaults["prompts"]:
-        if context in custom.get("prompts", {}):
-            result["prompts"][context] = custom["prompts"][context]
-        else:
-            result["prompts"][context] = defaults["prompts"][context]
 
-    # Custom App-Contexts überschreiben Defaults
-    if "app_contexts" in custom:
-        result["app_contexts"].update(custom["app_contexts"])
+def _merge_voice_commands(user: dict, defaults: dict) -> dict:
+    """Voice-Commands: User überschreibt komplett oder Default."""
+    user_vc = user.get("voice_commands", {})
+    return {
+        "instruction": user_vc.get(
+            "instruction", defaults["voice_commands"]["instruction"]
+        )
+    }
+
+
+def _merge_prompts(user: dict, defaults: dict) -> dict:
+    """Prompts: Jeder Kontext einzeln überschreibbar."""
+    result = {}
+    user_prompts = user.get("prompts", {})
+
+    for context in defaults["prompts"]:
+        if context in user_prompts:
+            result[context] = user_prompts[context]
+        else:
+            result[context] = defaults["prompts"][context]
 
     return result
 
 
-def get_custom_prompt_for_context(context: str) -> str:
-    """Gibt Custom Prompt für Kontext zurück (oder Default).
-
-    Args:
-        context: Kontext-Typ (email, chat, code, default)
-
-    Returns:
-        Der Prompt-Text. Bei unbekanntem Kontext → default.
-    """
-    data = load_custom_prompts()
-    prompts = data["prompts"]  # Garantiert durch _merge_with_defaults
-
-    # Bekannter Kontext → dessen Prompt, sonst "default"
-    ctx = context if context in prompts else "default"
-    return prompts[ctx]["prompt"]
-
-
-def get_custom_voice_commands() -> str:
-    """Gibt Custom Voice-Commands zurück (oder Default)."""
-    data = load_custom_prompts()
-    return data["voice_commands"][
-        "instruction"
-    ]  # Garantiert durch _merge_with_defaults
-
-
-def get_custom_app_contexts() -> dict[str, str]:
-    """Gibt Custom App-Mappings zurück (merged mit Defaults)."""
-    data = load_custom_prompts()
-    return data["app_contexts"]  # Garantiert durch _merge_with_defaults
+def _merge_app_contexts(user: dict, defaults: dict) -> dict:
+    """App-Contexts: Defaults + User-Ergänzungen/Überschreibungen."""
+    merged = dict(defaults["app_contexts"])
+    if "app_contexts" in user:
+        merged.update(user["app_contexts"])
+    return merged
 
 
 # =============================================================================
-# App-Mappings Text-Format (für UI-Editor)
+# Getter (Public API)
+# =============================================================================
+
+
+def get_prompt_for_context(context: str) -> str:
+    """Gibt den Prompt-Text für einen Kontext zurück.
+
+    Bei unbekanntem Kontext wird "default" verwendet.
+    """
+    data = load_custom_prompts()
+    # Fallback auf "default" für unbekannte Kontexte
+    effective_context = context if context in KNOWN_CONTEXTS else "default"
+    return data["prompts"][effective_context]["prompt"]
+
+
+# Alias für Rückwärtskompatibilität
+get_custom_prompt_for_context = get_prompt_for_context
+
+
+def get_voice_commands() -> str:
+    """Gibt die Voice-Commands Instruktion zurück."""
+    return load_custom_prompts()["voice_commands"]["instruction"]
+
+
+# Alias für Rückwärtskompatibilität
+get_custom_voice_commands = get_voice_commands
+
+
+def get_app_contexts() -> dict[str, str]:
+    """Gibt das App→Kontext Mapping zurück (Defaults + User-Anpassungen)."""
+    return load_custom_prompts()["app_contexts"]
+
+
+# Alias für Rückwärtskompatibilität
+get_custom_app_contexts = get_app_contexts
+
+
+# =============================================================================
+# App-Mappings: Text-Format für UI-Editor
 # =============================================================================
 
 
 def format_app_mappings(mappings: dict[str, str]) -> str:
-    """Formatiert App-Mappings als editierbaren Text.
+    """Konvertiert App-Mappings Dict zu editierbarem Text.
 
-    Args:
-        mappings: Dict {AppName: context}
-
-    Returns:
-        Text im Format "AppName = context" (eine Zeile pro Eintrag)
+    Format: Eine Zeile pro App, "AppName = context"
     """
     lines = ["# App → Context Mappings (one per line: AppName = context)"]
-    for app, ctx in sorted(mappings.items()):
-        lines.append(f"{app} = {ctx}")
+    lines.extend(f"{app} = {ctx}" for app, ctx in sorted(mappings.items()))
     return "\n".join(lines)
 
 
 def parse_app_mappings(text: str) -> dict[str, str]:
-    """Parsed App-Mappings aus Text.
+    """Parst App-Mappings aus Text zurück zu Dict.
 
-    Args:
-        text: Text im Format "AppName = context"
-
-    Returns:
-        Dict {AppName: context}
+    Ignoriert Leerzeilen und Kommentare (#).
     """
     result = {}
     for line in text.strip().split("\n"):
         line = line.strip()
+        # Leerzeilen und Kommentare überspringen
         if not line or line.startswith("#"):
             continue
         if "=" in line:
@@ -202,55 +243,30 @@ def parse_app_mappings(text: str) -> dict[str, str]:
     return result
 
 
-def _escape_toml_multiline(text: str) -> str:
-    """Escaped Text für TOML multi-line basic strings.
-
-    In TOML multi-line basic strings (\"\"\"...\"\"\":
-    - Backslashes müssen escaped werden: \\ → \\\\
-    - Triple-Quotes müssen escaped werden: \"\"\" → \\\"\"\"
-    """
-    # Erst Backslashes escapen, dann Triple-Quotes
-    text = text.replace("\\", "\\\\")
-    text = text.replace('"""', '\\"""')
-    return text
+# =============================================================================
+# Speichern (TOML-Serialisierung)
+# =============================================================================
 
 
 def save_custom_prompts(data: dict, path: Path | None = None) -> None:
-    """Speichert Custom Prompts als TOML.
+    """Speichert Custom Prompts als TOML-Datei.
 
-    Args:
-        data: Dict mit prompts, voice_commands und/oder app_contexts.
-        path: Optional override für Tests.
+    Speichert nur die übergebenen Felder (partielle Updates möglich).
     """
     prompts_file = path or PROMPTS_FILE
     prompts_file.parent.mkdir(parents=True, exist_ok=True)
 
-    lines: list[str] = ["# Custom Prompts für whisper_go", ""]
+    lines = ["# Custom Prompts für whisper_go", ""]
 
-    # Voice Commands
-    if "voice_commands" in data and "instruction" in data["voice_commands"]:
-        lines.append("[voice_commands]")
-        instruction = _escape_toml_multiline(data["voice_commands"]["instruction"])
-        lines.append(f'instruction = """\n{instruction}"""')
-        lines.append("")
+    # Jede Sektion einzeln serialisieren
+    if "voice_commands" in data:
+        lines.extend(_serialize_voice_commands(data["voice_commands"]))
 
-    # Prompts
     if "prompts" in data:
-        for context, cfg in data["prompts"].items():
-            if "prompt" in cfg:
-                lines.append(f"[prompts.{context}]")
-                prompt = _escape_toml_multiline(cfg["prompt"])
-                lines.append(f'prompt = """\n{prompt}"""')
-                lines.append("")
+        lines.extend(_serialize_prompts(data["prompts"]))
 
-    # App Contexts
     if "app_contexts" in data:
-        lines.append("[app_contexts]")
-        for app, ctx in sorted(data["app_contexts"].items()):
-            # Quote app name if contains spaces
-            key = f'"{app}"' if " " in app else app
-            lines.append(f'{key} = "{ctx}"')
-        lines.append("")
+        lines.extend(_serialize_app_contexts(data["app_contexts"]))
 
     try:
         prompts_file.write_text("\n".join(lines))
@@ -258,17 +274,61 @@ def save_custom_prompts(data: dict, path: Path | None = None) -> None:
         logger.warning(f"Prompts-Datei nicht schreibbar: {e}")
         raise
 
-    # Cache invalidieren und neu laden
-    _cache.pop(prompts_file, None)
+    # Cache aktualisieren damit nächster Load die neuen Daten sieht
+    _invalidate_cache(prompts_file)
     load_custom_prompts(path=prompts_file)
 
 
-def reset_to_defaults(path: Path | None = None) -> None:
-    """Löscht User-Config und setzt auf Defaults zurück.
+def _serialize_voice_commands(voice_commands: dict) -> list[str]:
+    """Serialisiert Voice-Commands Sektion zu TOML-Zeilen."""
+    if "instruction" not in voice_commands:
+        return []
 
-    Args:
-        path: Optional override für Tests.
+    instruction = _escape_toml_multiline(voice_commands["instruction"])
+    return ["[voice_commands]", f'instruction = """\n{instruction}"""', ""]
+
+
+def _serialize_prompts(prompts: dict) -> list[str]:
+    """Serialisiert Prompts Sektion zu TOML-Zeilen."""
+    lines = []
+    for context, config in prompts.items():
+        if "prompt" in config:
+            prompt_text = _escape_toml_multiline(config["prompt"])
+            lines.extend(
+                [f"[prompts.{context}]", f'prompt = """\n{prompt_text}"""', ""]
+            )
+    return lines
+
+
+def _serialize_app_contexts(app_contexts: dict) -> list[str]:
+    """Serialisiert App-Contexts Sektion zu TOML-Zeilen."""
+    lines = ["[app_contexts]"]
+    for app, ctx in sorted(app_contexts.items()):
+        # App-Namen mit Leerzeichen müssen gequotet werden
+        key = f'"{app}"' if " " in app else app
+        lines.append(f'{key} = "{ctx}"')
+    lines.append("")
+    return lines
+
+
+def _escape_toml_multiline(text: str) -> str:
+    """Escaped Text für TOML Multi-Line Strings.
+
+    Reihenfolge wichtig: Erst Backslashes, dann Triple-Quotes.
+    Sonst würde \\\" zu \\\\\" statt zu \\\"
     """
+    text = text.replace("\\", "\\\\")
+    text = text.replace('"""', '\\"""')
+    return text
+
+
+# =============================================================================
+# Reset
+# =============================================================================
+
+
+def reset_to_defaults(path: Path | None = None) -> None:
+    """Löscht die User-Config und kehrt zu Defaults zurück."""
     prompts_file = path or PROMPTS_FILE
 
     try:
@@ -276,19 +336,34 @@ def reset_to_defaults(path: Path | None = None) -> None:
     except OSError as e:
         logger.warning(f"Prompts-Datei nicht löschbar: {e}")
 
-    _cache.pop(prompts_file, None)
+    _invalidate_cache(prompts_file)
 
+
+# =============================================================================
+# Public API
+# =============================================================================
 
 __all__ = [
+    # Laden
     "load_custom_prompts",
+    "get_defaults",
+    # Getter (neue Namen)
+    "get_prompt_for_context",
+    "get_voice_commands",
+    "get_app_contexts",
+    # Getter (Aliase für Rückwärtskompatibilität)
     "get_custom_prompt_for_context",
     "get_custom_voice_commands",
     "get_custom_app_contexts",
+    # App-Mappings Format
     "format_app_mappings",
     "parse_app_mappings",
+    # Speichern/Reset
     "save_custom_prompts",
     "reset_to_defaults",
-    "get_defaults",
+    # Konstanten
     "PROMPTS_FILE",
+    "KNOWN_CONTEXTS",
+    # Testing
     "_clear_cache",
 ]
