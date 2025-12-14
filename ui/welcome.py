@@ -1347,6 +1347,7 @@ class WelcomeController:
         import objc  # type: ignore[import-not-found]
 
         from utils.custom_prompts import (
+            format_app_mappings,
             get_custom_app_contexts,
             get_custom_prompt_for_context,
             get_custom_voice_commands,
@@ -1504,32 +1505,6 @@ class WelcomeController:
         self._prompts_cache: dict[str, str] = {}
         self._prompts_current_context = "default"
 
-        # Helper: App Mappings als Text formatieren
-        def _format_app_mappings(mappings: dict[str, str]) -> str:
-            """Formatiert App-Mappings als editierbaren Text."""
-            lines = ["# App → Context Mappings (one per line: AppName = context)"]
-            for app, ctx in sorted(mappings.items()):
-                lines.append(f"{app} = {ctx}")
-            return "\n".join(lines)
-
-        def _parse_app_mappings(text: str) -> dict[str, str]:
-            """Parsed App-Mappings aus Text."""
-            result = {}
-            for line in text.strip().split("\n"):
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    app, ctx = line.split("=", 1)
-                    app = app.strip().strip('"')
-                    ctx = ctx.strip().strip('"')
-                    if app and ctx:
-                        result[app] = ctx
-            return result
-
-        # Parser als Attribut speichern für _save_custom_prompts
-        self._parse_app_mappings = _parse_app_mappings
-
         # Action Handlers
         def on_context_change(_sender) -> None:
             # Aktuellen Prompt speichern
@@ -1550,7 +1525,7 @@ class WelcomeController:
             elif new_ctx == "── App Mappings":
                 # App Mappings als Text laden
                 mappings = get_custom_app_contexts()
-                self._prompts_text_view.setString_(_format_app_mappings(mappings))
+                self._prompts_text_view.setString_(format_app_mappings(mappings))
             else:
                 prompt = get_custom_prompt_for_context(new_ctx)
                 self._prompts_text_view.setString_(prompt)
@@ -1568,7 +1543,7 @@ class WelcomeController:
             elif ctx == "── App Mappings":
                 # App Mappings auf Default zurücksetzen
                 default_mappings = defaults["app_contexts"]
-                text = _format_app_mappings(default_mappings)
+                text = format_app_mappings(default_mappings)
                 self._prompts_text_view.setString_(text)
                 self._prompts_cache[ctx] = text
                 self._prompts_status_label.setStringValue_("Reset App Mappings")
@@ -2672,6 +2647,7 @@ class WelcomeController:
 
         from utils.custom_prompts import (
             get_defaults,
+            parse_app_mappings,
             save_custom_prompts,
         )
 
@@ -2711,8 +2687,8 @@ class WelcomeController:
         changed_app_contexts: dict = {}
         app_key = "── App Mappings"
         cached_apps = self._prompts_cache.get(app_key)
-        if cached_apps is not None and hasattr(self, "_parse_app_mappings"):
-            parsed_apps = self._parse_app_mappings(cached_apps)
+        if cached_apps is not None:
+            parsed_apps = parse_app_mappings(cached_apps)
             default_apps = defaults["app_contexts"]
             if parsed_apps != default_apps:
                 changed_app_contexts = parsed_apps

@@ -138,25 +138,68 @@ def get_custom_prompt_for_context(context: str) -> str:
         Der Prompt-Text. Bei unbekanntem Kontext → default.
     """
     data = load_custom_prompts()
-    prompts = data.get("prompts", {})
+    prompts = data["prompts"]  # Garantiert durch _merge_with_defaults
 
-    if context in prompts:
-        return prompts[context].get("prompt", CONTEXT_PROMPTS.get(context, ""))
-
-    # Fallback auf default
-    return prompts.get("default", {}).get("prompt", CONTEXT_PROMPTS["default"])
+    # Bekannter Kontext → dessen Prompt, sonst "default"
+    ctx = context if context in prompts else "default"
+    return prompts[ctx]["prompt"]
 
 
 def get_custom_voice_commands() -> str:
     """Gibt Custom Voice-Commands zurück (oder Default)."""
     data = load_custom_prompts()
-    return data.get("voice_commands", {}).get("instruction", VOICE_COMMANDS_INSTRUCTION)
+    return data["voice_commands"][
+        "instruction"
+    ]  # Garantiert durch _merge_with_defaults
 
 
 def get_custom_app_contexts() -> dict[str, str]:
     """Gibt Custom App-Mappings zurück (merged mit Defaults)."""
     data = load_custom_prompts()
-    return data.get("app_contexts", dict(DEFAULT_APP_CONTEXTS))
+    return data["app_contexts"]  # Garantiert durch _merge_with_defaults
+
+
+# =============================================================================
+# App-Mappings Text-Format (für UI-Editor)
+# =============================================================================
+
+
+def format_app_mappings(mappings: dict[str, str]) -> str:
+    """Formatiert App-Mappings als editierbaren Text.
+
+    Args:
+        mappings: Dict {AppName: context}
+
+    Returns:
+        Text im Format "AppName = context" (eine Zeile pro Eintrag)
+    """
+    lines = ["# App → Context Mappings (one per line: AppName = context)"]
+    for app, ctx in sorted(mappings.items()):
+        lines.append(f"{app} = {ctx}")
+    return "\n".join(lines)
+
+
+def parse_app_mappings(text: str) -> dict[str, str]:
+    """Parsed App-Mappings aus Text.
+
+    Args:
+        text: Text im Format "AppName = context"
+
+    Returns:
+        Dict {AppName: context}
+    """
+    result = {}
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            app, ctx = line.split("=", 1)
+            app = app.strip().strip('"')
+            ctx = ctx.strip().strip('"')
+            if app and ctx:
+                result[app] = ctx
+    return result
 
 
 def _escape_toml_multiline(text: str) -> str:
@@ -241,6 +284,8 @@ __all__ = [
     "get_custom_prompt_for_context",
     "get_custom_voice_commands",
     "get_custom_app_contexts",
+    "format_app_mappings",
+    "parse_app_mappings",
     "save_custom_prompts",
     "reset_to_defaults",
     "get_defaults",
