@@ -385,6 +385,29 @@ class TestPasteTranscript:
         # Erst Transkription, dann vorheriger Text (Re-Copy)
         assert copy_calls == ["test", "previous text"]
 
+    def test_paste_transcript_clipboard_restore_with_empty_clipboard(self, monkeypatch):
+        """Kein Re-Copy wenn Clipboard vor Transkription leer war."""
+        copy_calls = []
+
+        def mock_copy(text):
+            copy_calls.append(text)
+            return True
+
+        monkeypatch.setenv("WHISPER_GO_CLIPBOARD_RESTORE", "true")
+
+        with (
+            patch(
+                "utils.hotkey._get_clipboard_text", return_value=None
+            ),  # Leerer Clipboard
+            patch("utils.hotkey._copy_to_clipboard_native", side_effect=mock_copy),
+            patch("utils.hotkey._paste_via_pynput", return_value=True),
+            patch("time.sleep"),
+        ):
+            utils.hotkey.paste_transcript("test")
+
+        # Nur Transkription, kein Re-Copy (da vorheriger Clipboard leer)
+        assert copy_calls == ["test"]
+
 
 # =============================================================================
 # Tests: _paste_via_osascript (Fallback)
