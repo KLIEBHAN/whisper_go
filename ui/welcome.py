@@ -256,6 +256,7 @@ class WelcomeController:
         self._add_tab(tab_view, "Providers", self._build_providers_tab, content_height)
         self._add_tab(tab_view, "Advanced", self._build_advanced_tab, content_height)
         self._add_tab(tab_view, "Refine", self._build_refine_tab, content_height)
+        self._add_tab(tab_view, "Prompts", self._build_prompts_tab, content_height)
         self._add_tab(
             tab_view, "Vocabulary", self._build_vocabulary_tab, content_height
         )
@@ -666,6 +667,10 @@ class WelcomeController:
     def _build_refine_tab(self, parent_view, tab_height: int) -> None:
         y_pos = tab_height - WELCOME_PADDING
         self._build_refine_card(y_pos, parent_view)
+
+    def _build_prompts_tab(self, parent_view, tab_height: int) -> None:
+        y_pos = tab_height - WELCOME_PADDING
+        self._build_prompts_card(y_pos, parent_view, tab_height)
 
     def _build_vocabulary_tab(self, parent_view, tab_height: int) -> None:
         y_pos = tab_height - WELCOME_PADDING
@@ -1318,6 +1323,227 @@ class WelcomeController:
         model_field.setStringValue_(current_model)
         self._model_field = model_field
         parent_view.addSubview_(model_field)
+
+        return card_y - CARD_SPACING
+
+    def _build_prompts_card(
+        self, y: int, parent_view=None, tab_height: int | None = None
+    ) -> int:
+        """Erstellt Custom Prompts Editor."""
+        from AppKit import (  # type: ignore[import-not-found]
+            NSBezelBorder,
+            NSBezelStyleRounded,
+            NSButton,
+            NSColor,
+            NSFont,
+            NSFontWeightMedium,
+            NSFontWeightSemibold,
+            NSMakeRect,
+            NSPopUpButton,
+            NSScrollView,
+            NSTextField,
+            NSTextView,
+        )
+        import objc  # type: ignore[import-not-found]
+
+        from utils.custom_prompts import (
+            get_custom_prompt_for_context,
+            get_defaults,
+        )
+
+        parent_view = parent_view or self._content_view
+
+        card_width = WELCOME_WIDTH - 2 * WELCOME_PADDING
+        max_height = (tab_height - 2 * WELCOME_PADDING) if tab_height else 500
+        card_height = min(500, max_height)
+        card_y = y - card_height
+
+        card = _create_card(WELCOME_PADDING, card_y, card_width, card_height)
+        parent_view.addSubview_(card)
+
+        base_x = WELCOME_PADDING + CARD_PADDING
+        content_width = card_width - 2 * CARD_PADDING
+
+        # Titel
+        title = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 28, 260, 18)
+        )
+        title.setStringValue_("📝 Custom Prompts")
+        title.setBezeled_(False)
+        title.setDrawsBackground_(False)
+        title.setEditable_(False)
+        title.setSelectable_(False)
+        title.setFont_(NSFont.systemFontOfSize_weight_(13, NSFontWeightSemibold))
+        title.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(title)
+
+        # Beschreibung
+        desc = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + card_height - 46, content_width, 14)
+        )
+        desc.setStringValue_(
+            "Edit prompts for LLM post-processing. Changes saved to ~/.whisper_go/prompts.toml"
+        )
+        desc.setBezeled_(False)
+        desc.setDrawsBackground_(False)
+        desc.setEditable_(False)
+        desc.setSelectable_(False)
+        desc.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        desc.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(desc)
+
+        # Context-Auswahl + Reset-Button Zeile
+        row_y = card_y + card_height - 76
+        context_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, row_y, 60, 22)
+        )
+        context_label.setStringValue_("Context:")
+        context_label.setBezeled_(False)
+        context_label.setDrawsBackground_(False)
+        context_label.setEditable_(False)
+        context_label.setSelectable_(False)
+        context_label.setFont_(NSFont.systemFontOfSize_(11))
+        context_label.setTextColor_(NSColor.whiteColor())
+        parent_view.addSubview_(context_label)
+
+        context_popup = NSPopUpButton.alloc().initWithFrame_(
+            NSMakeRect(base_x + 65, row_y, 120, 22)
+        )
+        context_popup.setFont_(NSFont.systemFontOfSize_(11))
+        for ctx in ["default", "email", "chat", "code"]:
+            context_popup.addItemWithTitle_(ctx)
+        parent_view.addSubview_(context_popup)
+        self._prompts_context_popup = context_popup
+
+        # Reset-Button
+        reset_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(base_x + 200, row_y, 100, 22)
+        )
+        reset_btn.setTitle_("Reset to Default")
+        reset_btn.setBezelStyle_(NSBezelStyleRounded)
+        reset_btn.setFont_(NSFont.systemFontOfSize_(10))
+        parent_view.addSubview_(reset_btn)
+        self._prompts_reset_btn = reset_btn
+
+        # Prompt-Editor (NSTextView in NSScrollView)
+        scroll_y = card_y + 80
+        scroll_height = card_height - 170
+        scroll = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(base_x, scroll_y, content_width, scroll_height)
+        )
+        scroll.setBorderType_(NSBezelBorder)
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(False)
+        try:
+            scroll.setDrawsBackground_(False)
+        except Exception:
+            pass
+
+        text_view = NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_width, scroll_height)
+        )
+        text_view.setFont_(NSFont.monospacedSystemFontOfSize_weight_(11, 0.0))
+        text_view.setTextColor_(NSColor.whiteColor())
+        try:
+            text_view.setDrawsBackground_(False)
+        except Exception:
+            pass
+        text_view.setVerticallyResizable_(True)
+        text_view.setHorizontallyResizable_(False)
+        tc = text_view.textContainer()
+        if tc is not None:
+            tc.setWidthTracksTextView_(True)
+
+        # Initial laden
+        current_prompt = get_custom_prompt_for_context("default")
+        text_view.setString_(current_prompt)
+        scroll.setDocumentView_(text_view)
+        parent_view.addSubview_(scroll)
+        self._prompts_text_view = text_view
+
+        # Voice-Commands Label
+        vc_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 54, content_width, 14)
+        )
+        vc_label.setStringValue_("Voice Commands (prepended to all prompts):")
+        vc_label.setBezeled_(False)
+        vc_label.setDrawsBackground_(False)
+        vc_label.setEditable_(False)
+        vc_label.setSelectable_(False)
+        vc_label.setFont_(NSFont.systemFontOfSize_weight_(10, NSFontWeightMedium))
+        vc_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6))
+        parent_view.addSubview_(vc_label)
+
+        # Status-Label
+        status_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, card_y + 16, content_width, 16)
+        )
+        status_label.setStringValue_("")
+        status_label.setBezeled_(False)
+        status_label.setDrawsBackground_(False)
+        status_label.setEditable_(False)
+        status_label.setSelectable_(False)
+        status_label.setFont_(NSFont.systemFontOfSize_(10))
+        status_label.setTextColor_(_get_color(76, 175, 80, 0.9))
+        parent_view.addSubview_(status_label)
+        self._prompts_status_label = status_label
+
+        # Cache für unsaved changes
+        self._prompts_cache: dict[str, str] = {}
+        self._prompts_current_context = "default"
+
+        # Action Handlers
+        def on_context_change(_sender) -> None:
+            # Aktuellen Prompt speichern
+            old_ctx = self._prompts_current_context
+            self._prompts_cache[old_ctx] = str(self._prompts_text_view.string())
+
+            # Neuen Kontext laden
+            new_ctx = str(self._prompts_context_popup.titleOfSelectedItem())
+            self._prompts_current_context = new_ctx
+
+            # Aus Cache oder frisch laden
+            if new_ctx in self._prompts_cache:
+                self._prompts_text_view.setString_(self._prompts_cache[new_ctx])
+            else:
+                prompt = get_custom_prompt_for_context(new_ctx)
+                self._prompts_text_view.setString_(prompt)
+
+        def on_reset(_sender) -> None:
+            ctx = str(self._prompts_context_popup.titleOfSelectedItem())
+            defaults = get_defaults()
+            default_prompt = defaults["prompts"].get(ctx, {}).get("prompt", "")
+            self._prompts_text_view.setString_(default_prompt)
+            self._prompts_cache[ctx] = default_prompt
+            self._prompts_status_label.setStringValue_(f"Reset '{ctx}' to default")
+
+        # Handler-Klasse für ObjC
+        class _PromptsActionHandler(objc.lookUpClass("NSObject")):
+            def initWithCallback_(self, callback):
+                self = objc.super(_PromptsActionHandler, self).init()
+                if self is None:
+                    return None
+                self._callback = callback
+                return self
+
+            def performAction_(self, sender):
+                self._callback(sender)
+
+        context_handler = _PromptsActionHandler.alloc().initWithCallback_(
+            on_context_change
+        )
+        context_popup.setTarget_(context_handler)
+        context_popup.setAction_(
+            objc.selector(context_handler.performAction_, signature=b"v@:@")
+        )
+        self._prompts_context_handler = context_handler
+
+        reset_handler = _PromptsActionHandler.alloc().initWithCallback_(on_reset)
+        reset_btn.setTarget_(reset_handler)
+        reset_btn.setAction_(
+            objc.selector(reset_handler.performAction_, signature=b"v@:@")
+        )
+        self._prompts_reset_handler = reset_handler
 
         return card_y - CARD_SPACING
 
@@ -2356,6 +2582,9 @@ class WelcomeController:
                     log.warning(f"Could not save vocabulary: {e}")
             self._update_vocabulary_warning()
 
+        # Custom Prompts speichern
+        self._save_custom_prompts()
+
         log.info("All settings saved to .env file")
 
         # Callback aufrufen damit Daemon Settings neu lädt
@@ -2375,6 +2604,57 @@ class WelcomeController:
             NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
                 1.5, False, lambda _: reset_title()
             )
+
+    def _save_custom_prompts(self) -> None:
+        """Speichert Custom Prompts in prompts.toml."""
+        import logging
+
+        from utils.custom_prompts import (
+            get_defaults,
+            save_custom_prompts,
+        )
+
+        log = logging.getLogger(__name__)
+
+        if not hasattr(self, "_prompts_text_view") or not self._prompts_text_view:
+            return
+
+        # Aktuellen Kontext in Cache speichern
+        current_ctx = getattr(self, "_prompts_current_context", "default")
+        current_text = str(self._prompts_text_view.string())
+        if not hasattr(self, "_prompts_cache"):
+            self._prompts_cache = {}
+        self._prompts_cache[current_ctx] = current_text
+
+        # Vergleiche mit Defaults
+        defaults = get_defaults()
+
+        # Nur geänderte Prompts speichern
+        changed_prompts: dict = {}
+        for ctx in ["default", "email", "chat", "code"]:
+            default_prompt = defaults["prompts"].get(ctx, {}).get("prompt", "")
+            cached_prompt = self._prompts_cache.get(ctx)
+
+            if cached_prompt is not None and cached_prompt != default_prompt:
+                changed_prompts[ctx] = {"prompt": cached_prompt}
+
+        # Nur speichern wenn es Änderungen gibt
+        if changed_prompts:
+            try:
+                save_custom_prompts({"prompts": changed_prompts})
+                log.info(f"Saved custom prompts for: {list(changed_prompts.keys())}")
+                if (
+                    hasattr(self, "_prompts_status_label")
+                    and self._prompts_status_label
+                ):
+                    self._prompts_status_label.setStringValue_("✓ Prompts saved")
+            except Exception as e:
+                log.warning(f"Could not save custom prompts: {e}")
+                if (
+                    hasattr(self, "_prompts_status_label")
+                    and self._prompts_status_label
+                ):
+                    self._prompts_status_label.setStringValue_(f"Error: {e}")
 
     def _restart_application(self) -> None:
         """Speichert Settings und startet die Applikation neu."""
