@@ -395,7 +395,10 @@ def paste_transcript(text: str) -> bool:
     # 3. Clipboard wiederherstellen (nur wenn Paste erfolgreich war).
     # Bei Fehlern bleibt der Text im Clipboard, damit User manuell CMD+V nutzen kann.
     if pasted_ok:
-        time.sleep(0.2)
+        # Längere Verzögerung für In-App TextViews (z.B. Settings-Fenster).
+        # Bei kürzerer Verzögerung kann der alte Clipboard-Inhalt wiederhergestellt
+        # werden, BEVOR das CMD+V Event vom NSTextView verarbeitet wurde.
+        time.sleep(1.0)
         _restore_clipboard_snapshot(clipboard_snapshot)
         return True
 
