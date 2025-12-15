@@ -648,9 +648,24 @@ class PulseScribeDaemon:
             return
 
         if transcript:
-            self._paste_result(transcript)
-            self._save_to_history(transcript)
+            # State auf DONE setzen und UI-Rendering erzwingen
             self._update_state(AppState.DONE, transcript)
+
+            # Run-Loop einmal durchlaufen lassen für AppKit-Updates (~0.2ms).
+            # NSStatusBar ist AppKit, nicht Core Animation, daher reicht CATransaction.flush() nicht.
+            from Foundation import (  # type: ignore[import-not-found]
+                NSRunLoop,
+                NSDate,
+                NSDefaultRunLoopMode,
+            )
+
+            NSRunLoop.currentRunLoop().runMode_beforeDate_(
+                NSDefaultRunLoopMode, NSDate.date()
+            )
+
+            # Jetzt pasten (UI zeigt bereits ✅)
+            self._save_to_history(transcript)
+            self._paste_result(transcript)
         else:
             logger.warning("Leeres Transkript")
             self._update_state(AppState.IDLE)
