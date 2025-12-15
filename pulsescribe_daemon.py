@@ -648,6 +648,7 @@ class PulseScribeDaemon:
             self._finish_test_run("", str(err))
             self._update_state(AppState.ERROR)
             get_sound_player().play("error")
+            self._update_state(AppState.IDLE)  # Reset nach Error
             self._apply_pending_hotkey_reconfigure_if_safe()
             return
 
@@ -660,6 +661,7 @@ class PulseScribeDaemon:
 
         self._update_state(AppState.ERROR)
         get_sound_player().play("error")
+        self._update_state(AppState.IDLE)  # Reset nach Error
         self._apply_pending_hotkey_reconfigure_if_safe()
 
     def _handle_transcript_result(self, transcript: str) -> None:
@@ -686,6 +688,7 @@ class PulseScribeDaemon:
         self._flush_ui_and_wait()  # ✅ muss sichtbar sein BEVOR Text eingefügt wird
         self._save_to_history(transcript)
         self._paste_result(transcript)
+        self._update_state(AppState.IDLE)  # Reset nach erfolgreichem Paste
         self._apply_pending_hotkey_reconfigure_if_safe()
 
     def _save_to_history(self, transcript: str) -> None:
