@@ -92,7 +92,7 @@ class MenuBarController:
 
         # Titel-Item (Info)
         title_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Whisper Go", None, ""
+            "PulseScribe", None, ""
         )
         title_item.setEnabled_(False)
         menu.addItem_(title_item)

@@ -1630,24 +1630,24 @@ class PulseScribeDaemon:
 
         # App-Menü (erstes Menü, zeigt App-Name in der Menüleiste)
         app_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Whisper Go", None, ""
+            "PulseScribe", None, ""
         )
         menubar.addItem_(app_menu_item)
 
         # App-Menü Inhalt (Submenu)
-        app_menu = NSMenu.alloc().initWithTitle_("Whisper Go")
+        app_menu = NSMenu.alloc().initWithTitle_("PulseScribe")
 
-        # "About Whisper Go" Item
+        # "About PulseScribe" Item
         about_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "About Whisper Go", "orderFrontStandardAboutPanel:", ""
+            "About PulseScribe", "orderFrontStandardAboutPanel:", ""
         )
         app_menu.addItem_(about_item)
 
         app_menu.addItem_(NSMenuItem.separatorItem())
 
-        # "Quit Whisper Go" Item mit CMD+Q
+        # "Quit PulseScribe" Item mit CMD+Q
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Quit Whisper Go", "terminate:", "q"
+            "Quit PulseScribe", "terminate:", "q"
         )
         quit_item.setKeyEquivalentModifierMask_(NSEventModifierFlagCommand)
         app_menu.addItem_(quit_item)
@@ -2271,7 +2271,7 @@ def main() -> int:
 
     sys.excepthook = handle_exception
 
-    emergency_log("=== Whisper Go Daemon gestartet ===")
+    emergency_log("=== PulseScribe Daemon gestartet ===")
 
     # Environment laden bevor Argumente definiert werden (für Defaults)
     load_environment()
