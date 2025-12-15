@@ -38,3 +38,9 @@ exclude_lines = [
 # Audio/Streaming-Code ist bewusst nicht getestet (Hardware-abhängig)
 # Erwartete Coverage für transcribe.py: ~30-40% (Kernfunktionen)
 # Erwartete Coverage für prompts.py: 100%
+
+[tool.pyright]
+pythonVersion = "3.10"
+# pyobjc (Quartz/Foundation) hat keine Type Stubs – auf macOS funktioniert der Code.
+# Diese Regel ist für dieses Projekt nicht sinnvoll.
+reportAttributeAccessIssue = "none"

@@ -232,7 +232,7 @@ class PulseScribeDaemon:
     ) -> bool:
         """Installiert einen Quartz FlagsChanged Tap für Modifier-Keys."""
         try:
-            from Quartz import (  # type: ignore[import-not-found]
+            from Quartz import (  # type: ignore[import-not-found,attr-defined]
                 CGEventTapCreate,
                 CGEventTapEnable,
                 CGEventMaskBit,
@@ -446,7 +446,7 @@ class PulseScribeDaemon:
 
         def _preload():
             try:
-                provider.preload(self.model)
+                provider.preload(self.model)  # type: ignore[attr-defined]
                 logger.debug("Lokales Modell vorab geladen")
                 warmup_flag = get_env_bool("PULSESCRIBE_LOCAL_WARMUP")
                 backend = getattr(provider, "backend", None) or getattr(
@@ -469,7 +469,7 @@ class PulseScribeDaemon:
                     warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
                     warmup_language = self.language or "en"
                     try:
-                        provider.transcribe_audio(
+                        provider.transcribe_audio(  # type: ignore[attr-defined]
                             warmup_audio,
                             model=self.model,
                             language=warmup_language,
@@ -506,7 +506,7 @@ class PulseScribeDaemon:
 
         Gesamt-Latenz: ~15ms, nicht wahrnehmbar für User.
         """
-        from Foundation import (  # type: ignore[import-not-found]
+        from Foundation import (  # type: ignore[import-not-found,attr-defined]
             NSDate,
             NSRunLoop,
         )
@@ -727,7 +727,7 @@ class PulseScribeDaemon:
             raise ValueError(f"Unbekannte Taste: {key}")
 
         try:
-            from Quartz import (  # type: ignore[import-not-found]
+            from Quartz import (  # type: ignore[import-not-found,attr-defined]
                 kCGEventFlagMaskAlternate,
                 kCGEventFlagMaskCommand,
                 kCGEventFlagMaskControl,
@@ -767,7 +767,7 @@ class PulseScribeDaemon:
             return False
 
         try:
-            from Quartz import (  # type: ignore[import-not-found]
+            from Quartz import (  # type: ignore[import-not-found,attr-defined]
                 CGEventTapCreate,
                 CGEventTapEnable,
                 CGEventMaskBit,
@@ -1403,14 +1403,18 @@ class PulseScribeDaemon:
                 # (via Queue nicht direkt möglich, aber _stop_recording setzt es im Main-Thread)
 
                 # Transkribieren via Provider
-                mode_for_run = self._run_mode or self.mode or "deepgram"
+                mode_for_run = (
+                    self._run_mode
+                    or self.mode
+                    or os.getenv("PULSESCRIBE_MODE", "deepgram")
+                )
                 provider = self._get_provider(mode_for_run)
                 t0 = time.perf_counter()
                 try:
                     if mode_for_run == "local" and hasattr(
                         provider, "transcribe_audio"
                     ):
-                        transcript = provider.transcribe_audio(
+                        transcript = provider.transcribe_audio(  # type: ignore[attr-defined]
                             audio_data, model=self.model, language=self.language
                         )
                     else:
@@ -1427,7 +1431,7 @@ class PulseScribeDaemon:
                         )
                         provider = self._get_provider("local")
                         if hasattr(provider, "transcribe_audio"):
-                            transcript = provider.transcribe_audio(
+                            transcript = provider.transcribe_audio(  # type: ignore[attr-defined]
                                 audio_data,
                                 # Don't pass provider-specific model names (e.g. 'nova-3').
                                 model=None,
@@ -1640,7 +1644,7 @@ class PulseScribeDaemon:
         for name, provider in list(self._provider_cache.items()):
             if hasattr(provider, "cleanup"):
                 try:
-                    provider.cleanup()
+                    provider.cleanup()  # type: ignore[attr-defined]
                 except Exception:
                     pass
         self._provider_cache.clear()
@@ -1992,7 +1996,7 @@ class PulseScribeDaemon:
         # Modifier taps (Quartz)
         if self._modifier_taps:
             try:
-                from Quartz import (  # type: ignore[import-not-found]
+                from Quartz import (  # type: ignore[import-not-found,attr-defined]
                     CGEventTapEnable,
                     CFMachPortInvalidate,
                     CFRunLoopGetCurrent,
