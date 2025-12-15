@@ -79,7 +79,7 @@ class TestGetRefineClient:
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
         mock_openai_class = Mock()
         with patch("openai.OpenAI", mock_openai_class):
-            client = _get_refine_client("openrouter")
+            _get_refine_client("openrouter")
 
         mock_openai_class.assert_called_once_with(
             base_url="https://openrouter.ai/api/v1",

@@ -15,7 +15,7 @@ class TestDaemonMode(unittest.TestCase):
         daemon = PulseScribeDaemon(mode="openai")
 
         # Unlink INTERIM_FILE mock? It's a Path object in the module.
-        with patch("pulsescribe_daemon.INTERIM_FILE") as mock_interim:
+        with patch("pulsescribe_daemon.INTERIM_FILE"):
             daemon._start_recording()
 
         # Check that thread was started with _recording_worker

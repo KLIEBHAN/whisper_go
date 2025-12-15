@@ -26,7 +26,6 @@ import time as _time_module  # noqa: E402 - muss vor anderen Imports sein
 _PROCESS_START = _time_module.perf_counter()
 
 import argparse  # noqa: E402
-import json  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
@@ -48,7 +47,7 @@ time = _time_module  # Alias für restlichen Code
 # Zentrale Konfiguration importieren
 # =============================================================================
 
-from config import (
+from config import (  # noqa: E402
     # Audio
     WHISPER_SAMPLE_RATE,
     WHISPER_CHANNELS,
@@ -66,7 +65,6 @@ from config import (
     STATE_FILE,
     INTERIM_FILE,
     # Paths
-    SCRIPT_DIR,
     VOCABULARY_FILE,
 )
 
@@ -82,14 +80,19 @@ _custom_app_contexts_cache: dict | None = None  # Cache für PULSESCRIBE_APP_CON
 _groq_client = None
 
 
-from utils.logging import setup_logging, log, error, get_session_id as _get_session_id
-from utils.env import get_env_bool_default
-from utils.environment import load_environment
-from utils.timing import (
+from utils.logging import (  # noqa: E402
+    setup_logging,
+    log,
+    error,
+    get_session_id as _get_session_id,
+)
+from utils.env import get_env_bool_default  # noqa: E402
+from utils.environment import load_environment  # noqa: E402
+from utils.timing import (  # noqa: E402
     format_duration as _format_duration,
     log_preview as _shared_log_preview,
 )
-from utils.vocabulary import load_vocabulary as _load_vocabulary_shared
+from utils.vocabulary import load_vocabulary as _load_vocabulary_shared  # noqa: E402
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -117,7 +120,7 @@ def copy_to_clipboard(text: str) -> bool:
 # Sound-Playback & Audio-Aufnahme
 # =============================================================================
 
-from whisper_platform import get_sound_player
+from whisper_platform import get_sound_player  # noqa: E402
 
 
 def play_sound(name: str) -> None:
@@ -128,7 +131,7 @@ def play_sound(name: str) -> None:
         pass
 
 
-from audio.recording import record_audio, record_audio_daemon
+from audio.recording import record_audio, record_audio_daemon  # noqa: E402
 
 # =============================================================================
 # Logging-Helfer
@@ -161,7 +164,7 @@ def _is_pulsescribe_process(pid: int) -> bool:
 # =============================================================================
 
 
-from utils.daemon import (
+from utils.daemon import (  # noqa: E402
     cleanup_stale_pid_file as _cleanup_stale_pid_file,
     daemonize as _daemonize,
     is_pulsescribe_process as _shared_is_pulsescribe_process,
@@ -204,7 +207,7 @@ def load_vocabulary() -> dict:
 # LLM-Nachbearbeitung (delegiert an refine.llm)
 # =============================================================================
 
-from refine.llm import maybe_refine_transcript
+from refine.llm import maybe_refine_transcript  # noqa: E402
 
 
 # Standard-Modelle pro Modus
