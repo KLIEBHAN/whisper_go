@@ -118,7 +118,12 @@ class PulseScribeDaemon:
     ):
         self.hotkey = hotkey
         self.language = language
-        self.model = model
+        # Model: CLI > LOCAL_MODEL ENV > MODEL ENV > None (Provider-Default)
+        self.model = (
+            model
+            or os.getenv("PULSESCRIBE_LOCAL_MODEL")
+            or os.getenv("PULSESCRIBE_MODEL")
+        )
         self.refine = refine
         self.refine_model = refine_model
         self.refine_provider = refine_provider
@@ -454,8 +459,9 @@ class PulseScribeDaemon:
 
         def _preload():
             t0 = time.perf_counter()
-            # Zeige Loading-Status in der Menubar
-            self._update_state(AppState.LOADING)
+            model_name = self.model or "turbo"
+            # Phase 1: Loading
+            self._update_state(AppState.LOADING, f"Loading {model_name}...")
             try:
                 provider.preload(self.model)  # type: ignore[attr-defined]
                 t_preload = time.perf_counter() - t0
@@ -476,6 +482,8 @@ class PulseScribeDaemon:
                 if should_warmup and hasattr(provider, "transcribe_audio"):
                     import numpy as np
 
+                    # Phase 2: Warmup
+                    self._update_state(AppState.LOADING, "Warming up...")
                     warmup_s = 0.5
                     warmup_samples = int(WHISPER_SAMPLE_RATE * warmup_s)
                     warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
@@ -501,7 +509,11 @@ class PulseScribeDaemon:
         threading.Thread(target=_preload, daemon=True, name="LocalPreload").start()
 
     def _update_state(self, state: AppState, text: str | None = None) -> None:
-        """Aktualisiert State und benachrichtigt UI-Controller."""
+        """Aktualisiert State und benachrichtigt UI-Controller.
+
+        Thread-safe: Kann von jedem Thread aufgerufen werden.
+        UI-Updates werden automatisch auf den Main-Thread dispatcht.
+        """
         prev_state = self._current_state
         self._current_state = state
         logger.debug(
@@ -517,6 +529,27 @@ class PulseScribeDaemon:
             # Stoppe Watchdog bei Abschluss
             self._stop_transcribing_watchdog()
 
+        # UI-Updates müssen auf dem Main-Thread laufen (macOS 26+ Requirement)
+        if threading.current_thread().name != "MainThread":
+            self._dispatch_ui_update_to_main(state, text)
+            return
+
+        # Wir sind auf dem Main-Thread - direkt ausführen
+        self._do_ui_update(state, text)
+
+    def _dispatch_ui_update_to_main(self, state: AppState, text: str | None) -> None:
+        """Dispatcht UI-Update auf den Main-Thread."""
+        from Foundation import (  # type: ignore[import-not-found]
+            NSOperationQueue,
+        )
+
+        def update_block():
+            self._do_ui_update(state, text)
+
+        NSOperationQueue.mainQueue().addOperationWithBlock_(update_block)
+
+    def _do_ui_update(self, state: AppState, text: str | None) -> None:
+        """Führt das eigentliche UI-Update aus (muss auf Main-Thread laufen)."""
         if self._menubar:
             self._menubar.update_state(state, text)
         if self._overlay:
@@ -1472,6 +1505,14 @@ class PulseScribeDaemon:
                             "Transkription startet BEVOR Preload fertig ist - "
                             "dies kann zu erhöhter Latenz führen!"
                         )
+                        # On-demand Loading: Zeige LOADING statt TRANSCRIBING
+                        model_name = self.model or "turbo"
+                        self._result_queue.put(
+                            DaemonMessage(
+                                type=MessageType.STATUS_UPDATE,
+                                payload=(AppState.LOADING, f"Loading {model_name}..."),
+                            )
+                        )
 
                 t0 = time.perf_counter()
                 try:
@@ -1658,7 +1699,12 @@ class PulseScribeDaemon:
                     # DaemonMessage Handling
                     if isinstance(result, DaemonMessage):
                         if result.type == MessageType.STATUS_UPDATE:
-                            daemon._update_state(result.payload)
+                            # Support both simple state and (state, text) tuple
+                            if isinstance(result.payload, tuple):
+                                state, text = result.payload
+                                daemon._update_state(state, text)
+                            else:
+                                daemon._update_state(result.payload)
                             # Continue draining
 
                         elif result.type == MessageType.AUDIO_LEVEL:
@@ -2021,6 +2067,12 @@ class PulseScribeDaemon:
         new_mode = env_values.get("PULSESCRIBE_MODE")
         if new_mode:
             self.mode = new_mode
+
+        # Modell aktualisieren (LOCAL_MODEL hat Priorität über generisches MODEL)
+        new_model = env_values.get("PULSESCRIBE_LOCAL_MODEL") or env_values.get(
+            "PULSESCRIBE_MODEL"
+        )
+        self.model = new_model  # None ist valid für Provider-Default
 
         new_language = env_values.get("PULSESCRIBE_LANGUAGE")
         self.language = new_language  # None ist valid für "auto"

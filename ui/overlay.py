@@ -11,25 +11,25 @@ from utils.state import AppState
 # =============================================================================
 # Overlay-Fenster Konfiguration
 # =============================================================================
-OVERLAY_MIN_WIDTH = 260        # Mindestbreite für kurze Texte
-OVERLAY_MAX_WIDTH_RATIO = 0.75 # Max. 75% der Bildschirmbreite für lange Interim-Texte
-OVERLAY_HEIGHT = 100           # Feste Höhe für konsistentes Erscheinungsbild
-OVERLAY_MARGIN_BOTTOM = 110    # Abstand vom unteren Rand (über Dock)
-OVERLAY_CORNER_RADIUS = 22     # Abgerundete Ecken (Apple HIG)
-OVERLAY_PADDING_H = 24         # Horizontaler Innenabstand für Text
-OVERLAY_ALPHA = 0.95           # Leicht transparent für Kontext
-OVERLAY_FONT_SIZE = 15         # SF Pro Standard-Größe
-OVERLAY_TEXT_FIELD_HEIGHT = 24 # Einzeilige Textanzeige
-OVERLAY_WINDOW_LEVEL = 25      # Über allen Fenstern, kCGFloatingWindowLevel
+OVERLAY_MIN_WIDTH = 260  # Mindestbreite für kurze Texte
+OVERLAY_MAX_WIDTH_RATIO = 0.75  # Max. 75% der Bildschirmbreite für lange Interim-Texte
+OVERLAY_HEIGHT = 100  # Feste Höhe für konsistentes Erscheinungsbild
+OVERLAY_MARGIN_BOTTOM = 110  # Abstand vom unteren Rand (über Dock)
+OVERLAY_CORNER_RADIUS = 22  # Abgerundete Ecken (Apple HIG)
+OVERLAY_PADDING_H = 24  # Horizontaler Innenabstand für Text
+OVERLAY_ALPHA = 0.95  # Leicht transparent für Kontext
+OVERLAY_FONT_SIZE = 15  # SF Pro Standard-Größe
+OVERLAY_TEXT_FIELD_HEIGHT = 24  # Einzeilige Textanzeige
+OVERLAY_WINDOW_LEVEL = 25  # Über allen Fenstern, kCGFloatingWindowLevel
 
 # =============================================================================
 # Schallwellen-Visualisierung
 # =============================================================================
-WAVE_BAR_COUNT = 10            # Anzahl der animierten Balken
-WAVE_BAR_WIDTH = 3             # Schlankere Balkenbreite in Pixel
-WAVE_BAR_GAP = 4               # Etwas mehr Abstand zwischen Balken
-WAVE_BAR_MIN_HEIGHT = 8        # Ruhezustand-Höhe
-WAVE_BAR_MAX_HEIGHT = 48       # Maximale Höhe bei voller Animation
+WAVE_BAR_COUNT = 10  # Anzahl der animierten Balken
+WAVE_BAR_WIDTH = 3  # Schlankere Balkenbreite in Pixel
+WAVE_BAR_GAP = 4  # Etwas mehr Abstand zwischen Balken
+WAVE_BAR_MIN_HEIGHT = 8  # Ruhezustand-Höhe
+WAVE_BAR_MAX_HEIGHT = 48  # Maximale Höhe bei voller Animation
 WAVE_AREA_WIDTH = WAVE_BAR_COUNT * WAVE_BAR_WIDTH + (WAVE_BAR_COUNT - 1) * WAVE_BAR_GAP
 
 # Glättung für direkte Level-Updates:
@@ -50,9 +50,9 @@ WAVE_LEVEL_SMOOTHING_FALL = 0.10
 # Adaptive Gain Control (AGC):
 # Hält die Visualisierung bei leisen/lauteren Mics dynamisch.
 # Wir tracken einen rollenden Peak und normalisieren mit etwas Headroom.
-WAVE_AGC_DECAY = 0.97        # Peak-Falloff pro Level-Update (~1s Zeitkonstante bei ~15Hz)
-WAVE_AGC_MIN_PEAK = 0.01     # Untergrenze gegen Überverstärkung von Stille
-WAVE_AGC_HEADROOM = 2.0      # Mehr Headroom = weniger Sensitivität/Clipping
+WAVE_AGC_DECAY = 0.97  # Peak-Falloff pro Level-Update (~1s Zeitkonstante bei ~15Hz)
+WAVE_AGC_MIN_PEAK = 0.01  # Untergrenze gegen Überverstärkung von Stille
+WAVE_AGC_HEADROOM = 2.0  # Mehr Headroom = weniger Sensitivität/Clipping
 
 # Rendering/Animation:
 # Wir rendern die Welle unabhängig von Audio-Level-Updates, damit sie auch bei ~15Hz
@@ -60,22 +60,22 @@ WAVE_AGC_HEADROOM = 2.0      # Mehr Headroom = weniger Sensitivität/Clipping
 WAVE_ANIMATION_FPS = 60.0
 
 # Sanfte, deterministische "Wander"-Modulation (traveling wave) statt Random-Jitter.
-WAVE_WANDER_AMOUNT = 0.22         # Relative Modulation (0..~0.35 sinnvoll)
-WAVE_WANDER_HZ_PRIMARY = 0.55     # Hz (langsam, organisch)
-WAVE_WANDER_HZ_SECONDARY = 0.95   # Hz (leicht schneller, bricht Monotonie)
-WAVE_WANDER_PHASE_STEP_PRIMARY = 0.85    # rad/bar (spatial frequency)
+WAVE_WANDER_AMOUNT = 0.22  # Relative Modulation (0..~0.35 sinnvoll)
+WAVE_WANDER_HZ_PRIMARY = 0.55  # Hz (langsam, organisch)
+WAVE_WANDER_HZ_SECONDARY = 0.95  # Hz (leicht schneller, bricht Monotonie)
+WAVE_WANDER_PHASE_STEP_PRIMARY = 0.85  # rad/bar (spatial frequency)
 WAVE_WANDER_PHASE_STEP_SECONDARY = 1.65  # rad/bar (spatial frequency)
-WAVE_WANDER_BLEND = 0.65         # 0..1 mix primary/secondary
+WAVE_WANDER_BLEND = 0.65  # 0..1 mix primary/secondary
 
 # Zusätzlich: "Energie"-Envelope, die als Paket nach links/rechts wandert.
 # Ohne das sind die höchsten Balken oft immer in der Mitte (statisch wirkend).
-WAVE_ENVELOPE_STRENGTH = 0.85   # 0..1 (1 = nur Envelope, 0 = nur Basisfaktoren)
-WAVE_ENVELOPE_BASE = 0.38       # Mindest-Faktor (verhindert zu flache Ränder)
-WAVE_ENVELOPE_SIGMA = 1.15      # Breite des Pakets in Balken (kleiner = stärkerer Fokus)
+WAVE_ENVELOPE_STRENGTH = 0.85  # 0..1 (1 = nur Envelope, 0 = nur Basisfaktoren)
+WAVE_ENVELOPE_BASE = 0.38  # Mindest-Faktor (verhindert zu flache Ränder)
+WAVE_ENVELOPE_SIGMA = 1.15  # Breite des Pakets in Balken (kleiner = stärkerer Fokus)
 WAVE_ENVELOPE_RANGE_FRACTION = 1.25  # Max. Verschiebung relativ zur halben Balkenanzahl
-WAVE_ENVELOPE_HZ_PRIMARY = 0.15      # Drift (öfter links/rechts)
-WAVE_ENVELOPE_HZ_SECONDARY = 0.24    # Zweite Frequenz für weniger Periodizität
-WAVE_ENVELOPE_BLEND = 0.62           # 0..1 mix primary/secondary
+WAVE_ENVELOPE_HZ_PRIMARY = 0.15  # Drift (öfter links/rechts)
+WAVE_ENVELOPE_HZ_SECONDARY = 0.24  # Zweite Frequenz für weniger Periodizität
+WAVE_ENVELOPE_BLEND = 0.62  # 0..1 mix primary/secondary
 
 # Feedback-Anzeigedauer
 FEEDBACK_DISPLAY_DURATION = 0.8  # Sekunden für Done/Error-Anzeige
@@ -169,6 +169,7 @@ class SoundWaveView:
         self._color_refining = _get_overlay_color(156, 39, 176)
         self._color_success = _get_overlay_color(51, 217, 178)
         self._color_error = _get_overlay_color(255, 71, 87)
+        self._color_loading = _get_overlay_color(66, 165, 245)  # Material Blue 400
 
         self._height_factors = _build_height_factors()
         self._recording_durations = _build_recording_durations()
@@ -342,6 +343,20 @@ class SoundWaveView:
             anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.6, 0.8)
             bar.addAnimation_forKey_(anim, f"refineAnim{i}")
 
+    def start_loading_animation(self) -> None:
+        """Startet Loading-Animation (langsames Pulsieren in Blau)."""
+        if self.current_animation == "loading":
+            return
+        self.stop_animating()
+        self.current_animation = "loading"
+        self.animations_running = True
+        self.set_bar_color(self._color_loading)
+
+        # Langsames, synchrones Pulsieren (Download-Gefühl)
+        for i, bar in enumerate(self.bars):
+            anim = self._create_height_animation(WAVE_BAR_MAX_HEIGHT * 0.5, 1.5)
+            bar.addAnimation_forKey_(anim, f"loadingAnim{i}")
+
     def start_success_animation(self) -> None:
         """Einmaliges Hüpfen in Grün."""
         self.stop_animating()
@@ -439,7 +454,8 @@ class SoundWaveView:
             2 * math.pi * WAVE_ENVELOPE_HZ_PRIMARY * now + self._envelope_phase_primary
         )
         env_secondary = math.sin(
-            2 * math.pi * WAVE_ENVELOPE_HZ_SECONDARY * now + self._envelope_phase_secondary
+            2 * math.pi * WAVE_ENVELOPE_HZ_SECONDARY * now
+            + self._envelope_phase_secondary
         )
         env_mix = _lerp(env_secondary, env_primary, WAVE_ENVELOPE_BLEND)
         envelope_center = self._bar_center + shift_strength * env_mix
@@ -457,7 +473,9 @@ class SoundWaveView:
 
         for i, bar in enumerate(self.bars):
             travel_primary = math.sin(phase_primary + self._wander_offset_primary[i])
-            travel_secondary = math.sin(phase_secondary + self._wander_offset_secondary[i])
+            travel_secondary = math.sin(
+                phase_secondary + self._wander_offset_secondary[i]
+            )
             travel = _lerp(travel_secondary, travel_primary, WAVE_WANDER_BLEND)
             wiggle = 1.0 + wander_strength * travel
 
@@ -608,9 +626,7 @@ class OverlayController:
             self._wave_view.start_listening_animation()
             self._text_field.setStringValue_("Listening ...")
             self._text_field.setFont_(
-                NSFont.systemFontOfSize_weight_(
-                    OVERLAY_FONT_SIZE, NSFontWeightMedium
-                )
+                NSFont.systemFontOfSize_weight_(OVERLAY_FONT_SIZE, NSFontWeightMedium)
             )
             self._text_field.setTextColor_(
                 NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
@@ -626,8 +642,10 @@ class OverlayController:
                 font = NSFont.systemFontOfSize_weight_(
                     OVERLAY_FONT_SIZE, NSFontWeightLight
                 )
-                italic_font = NSFontManager.sharedFontManager().convertFont_toHaveTrait_(
-                    font, NSFontItalicTrait
+                italic_font = (
+                    NSFontManager.sharedFontManager().convertFont_toHaveTrait_(
+                        font, NSFontItalicTrait
+                    )
                 )
                 self._text_field.setFont_(italic_font)
 
@@ -665,15 +683,24 @@ class OverlayController:
             )
             self._fade_in()
 
+        elif state == AppState.LOADING:
+            self._wave_view.start_loading_animation()
+            loading_text = text or "Loading model..."
+            self._text_field.setStringValue_(loading_text)
+            self._text_field.setTextColor_(
+                NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.6)
+            )
+            self._fade_in()
+
         elif state == AppState.DONE:
             self._wave_view.start_success_animation()
-            
+
             # Show actual text if available
             if text:
                 display_text = text.replace("\n", " ").strip()
             else:
                 display_text = "Done"
-                
+
             self._text_field.setStringValue_(display_text)
             self._text_field.setTextColor_(
                 NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.95)
