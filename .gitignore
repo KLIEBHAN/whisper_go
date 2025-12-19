@@ -39,3 +39,4 @@ logs/
 .coverage
 coverage.xml
 htmlcov/
+mlx_models/

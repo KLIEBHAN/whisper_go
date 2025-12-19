@@ -12,10 +12,11 @@ import os
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
-from config import DEFAULT_LOCAL_MODEL, WHISPER_SAMPLE_RATE
+from config import DEFAULT_LOCAL_MODEL, USER_CONFIG_DIR, WHISPER_SAMPLE_RATE
 from utils.env import get_env_bool, get_env_int
 from utils.logging import log
 from utils.vocabulary import load_vocabulary
@@ -66,6 +67,30 @@ def _import_lightning_whisper():
             f"lightning-whisper-mlx konnte nicht geladen werden. Ursache: {e}"
         ) from e
     return LightningWhisperMLX
+
+
+@contextmanager
+def _lightning_workdir() -> Generator[Path, None, None]:
+    """Context-Manager für schreibbares Lightning-Arbeitsverzeichnis.
+
+    Lightning-whisper-mlx verwendet hardcodierte relative Pfade (./mlx_models/)
+    für Model-Download und -Zugriff. Bei App-Bundles oder DMGs ist das CWD
+    oft read-only, was zu "[Errno 30] Read-only file system" führt.
+
+    Dieser Context-Manager:
+    1. Erstellt ~/.pulsescribe/lightning_models falls nötig
+    2. Wechselt temporär dorthin
+    3. Stellt das ursprüngliche CWD nach Abschluss wieder her
+    """
+    lightning_dir = USER_CONFIG_DIR / "lightning_models"
+    lightning_dir.mkdir(parents=True, exist_ok=True)
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(lightning_dir)
+        yield lightning_dir
+    finally:
+        os.chdir(old_cwd)
 
 
 def _select_device() -> str:
@@ -350,6 +375,9 @@ class LocalProvider:
 
         Lightning Whisper MLX lädt das Modell bei Instanziierung, daher
         cachen wir die Instanz analog zu faster-whisper.
+
+        WICHTIG: Lightning verwendet hardcodierte relative Pfade (./mlx_models/).
+        Wir nutzen _lightning_workdir() um in ein schreibbares Verzeichnis zu wechseln.
         """
         self._ensure_runtime_config()
         LightningWhisperMLX = _import_lightning_whisper()
@@ -373,11 +401,13 @@ class LocalProvider:
                 f"Lade lightning-whisper-mlx '{lightning_name}' "
                 f"(batch_size={batch_size}, quant={quant})..."
             )
-            self._model_cache[cache_key] = LightningWhisperMLX(
-                model=lightning_name,
-                batch_size=batch_size,
-                quant=quant,
-            )
+            # Model-Download in schreibbarem Verzeichnis
+            with _lightning_workdir():
+                self._model_cache[cache_key] = LightningWhisperMLX(
+                    model=lightning_name,
+                    batch_size=batch_size,
+                    quant=quant,
+                )
             return self._model_cache[cache_key]
 
     def _build_options(self, language: str | None) -> dict:
@@ -534,7 +564,9 @@ class LocalProvider:
                     warmup_language = "en"
 
                 t1 = time.perf_counter()
-                model.transcribe(warmup_audio, language=warmup_language)  # type: ignore[union-attr]
+                # Warmup im selben Verzeichnis wie Model-Download
+                with _lightning_workdir():
+                    model.transcribe(warmup_audio, language=warmup_language)  # type: ignore[union-attr]
                 t_warmup = time.perf_counter() - t1
 
                 logger.debug(
@@ -640,7 +672,11 @@ class LocalProvider:
             return self._transcribe_mlx(audio, model_name, options)
 
     def _transcribe_lightning_core(self, audio, model_name: str, options: dict) -> str:
-        """Kern-Transkription via lightning-whisper-mlx (ohne Fallback)."""
+        """Kern-Transkription via lightning-whisper-mlx (ohne Fallback).
+
+        WICHTIG: Lightning verwendet hardcodierte relative Pfade (./mlx_models/).
+        Sowohl Model-Loading als auch Transcribe müssen im selben Verzeichnis erfolgen.
+        """
         t0 = time.perf_counter()
         model = self._get_lightning_model(model_name)
         t_load = time.perf_counter() - t0
@@ -659,7 +695,9 @@ class LocalProvider:
         )
 
         t1 = time.perf_counter()
-        result = model.transcribe(audio, language=language)
+        # Transcribe im selben Verzeichnis wie Model-Download
+        with _lightning_workdir():
+            result = model.transcribe(audio, language=language)
         t_transcribe = time.perf_counter() - t1
 
         # Performance-Breakdown

@@ -454,6 +454,8 @@ class PulseScribeDaemon:
 
         def _preload():
             t0 = time.perf_counter()
+            # Zeige Loading-Status in der Menubar
+            self._update_state(AppState.LOADING)
             try:
                 provider.preload(self.model)  # type: ignore[attr-defined]
                 t_preload = time.perf_counter() - t0
@@ -488,9 +490,13 @@ class PulseScribeDaemon:
                     except Exception as e:
                         logger.debug(f"Lokales Modell warmup fehlgeschlagen: {e}")
                 self._local_preload_complete.set()
+                # Zurück zu IDLE nach erfolgreichem Preload
+                self._update_state(AppState.IDLE)
             except Exception as e:
                 logger.warning(f"Preload lokales Modell fehlgeschlagen: {e}")
                 self._local_preload_complete.set()  # Setze trotzdem um Deadlock zu vermeiden
+                # Zurück zu IDLE auch bei Fehler (Fallback auf On-Demand-Loading)
+                self._update_state(AppState.IDLE)
 
         threading.Thread(target=_preload, daemon=True, name="LocalPreload").start()
 

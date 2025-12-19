@@ -11,6 +11,7 @@ from utils.state import AppState
 # Status-Icons für Menübar
 MENUBAR_ICONS = {
     AppState.IDLE: "🎤",
+    AppState.LOADING: "⬇️",  # Model is being loaded/downloaded
     AppState.RECORDING: "🔴",
     AppState.TRANSCRIBING: "⏳",
     AppState.REFINING: "⏳",  # Refining uses same icon as transcribing for now
