@@ -5,8 +5,6 @@ mit sounddevice.
 """
 
 import logging
-import os
-import signal
 import tempfile
 import threading
 import time
@@ -17,7 +15,6 @@ from config import (
     WHISPER_SAMPLE_RATE,
     WHISPER_CHANNELS,
     WHISPER_BLOCKSIZE,
-    PID_FILE,
     TEMP_RECORDING_FILENAME,
 )
 from utils.logging import get_session_id
@@ -44,7 +41,7 @@ def _play_sound(name: str) -> None:
 class AudioRecorder:
     """Wiederverwendbare Audio-Aufnahme Klasse.
 
-    Kann für CLI und Daemon verwendet werden.
+    Kann für CLI verwendet werden.
 
     Usage:
         recorder = AudioRecorder()
@@ -201,71 +198,4 @@ def record_audio() -> Path:
     output_path = Path(tempfile.gettempdir()) / TEMP_RECORDING_FILENAME
     sf.write(output_path, audio_data, WHISPER_SAMPLE_RATE)
 
-    return output_path
-
-
-def record_audio_daemon() -> Path:
-    """Daemon-Modus: Nimmt Audio auf bis SIGUSR1 empfangen wird.
-
-    Schreibt PID-File für externe Steuerung (Raycast).
-    Kein globaler State – verwendet Closure für Signal-Flag.
-    """
-    import numpy as np
-    import sounddevice as sd
-    import soundfile as sf
-
-    recorded_chunks: list = []
-    recording_start = time.perf_counter()
-    should_stop = False
-    session_id = get_session_id()
-
-    def on_audio_chunk(indata, _frames, _time_info, _status):
-        """Callback: Sammelt Audio-Chunks während der Aufnahme."""
-        recorded_chunks.append(indata.copy())
-
-    def handle_stop_signal(_signum: int, _frame) -> None:
-        """Signal-Handler: Setzt Stop-Flag bei SIGUSR1."""
-        nonlocal should_stop
-        logger.debug(f"[{session_id}] SIGUSR1 empfangen")
-        should_stop = True
-
-    pid = os.getpid()
-    logger.info(f"[{session_id}] Daemon gestartet (PID: {pid})")
-
-    # PID-File schreiben für Raycast
-    PID_FILE.write_text(str(pid))
-
-    # Signal-Handler registrieren
-    signal.signal(signal.SIGUSR1, handle_stop_signal)
-
-    _play_sound("ready")
-    _log("🎤 Daemon: Aufnahme gestartet (warte auf SIGUSR1)...")
-    logger.info(f"[{session_id}] Aufnahme gestartet")
-
-    try:
-        with sd.InputStream(
-            samplerate=WHISPER_SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            callback=on_audio_chunk,
-        ):
-            while not should_stop:
-                sd.sleep(100)  # 100ms warten, dann Signal prüfen
-    finally:
-        # PID-File aufräumen
-        if PID_FILE.exists():
-            PID_FILE.unlink()
-
-    recording_duration = time.perf_counter() - recording_start
-    logger.info(f"[{session_id}] Aufnahme: {recording_duration:.1f}s")
-    _log("✅ Daemon: Aufnahme beendet.")
-    _play_sound("stop")
-
-    if not recorded_chunks:
-        logger.error(f"[{session_id}] Keine Audiodaten aufgenommen")
-        raise ValueError("Keine Audiodaten aufgenommen.")
-
-    audio_data = np.concatenate(recorded_chunks)
-    output_path = Path(tempfile.gettempdir()) / TEMP_RECORDING_FILENAME
-    sf.write(output_path, audio_data, WHISPER_SAMPLE_RATE)
     return output_path

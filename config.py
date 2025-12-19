@@ -60,15 +60,9 @@ VISUAL_GAIN = 2.0  # Visual scaling factor (post-AGC, boosts quiet speech)
 # IPC-Dateipfade
 # =============================================================================
 
-# IPC-Dateien für Kommunikation zwischen Prozessen (Raycast, Hotkey-Daemon, Menübar)
+# Temporäre Dateien/IPC
 # Alle Dateien liegen in /tmp für schnellen Zugriff und automatische Bereinigung
 TEMP_RECORDING_FILENAME = "pulsescribe_recording.wav"
-PID_FILE = Path("/tmp/pulsescribe.pid")  # Aktive Aufnahme-PID → für SIGUSR1 Stop
-TRANSCRIPT_FILE = Path("/tmp/pulsescribe.transcript")  # Fertiges Transkript
-ERROR_FILE = Path("/tmp/pulsescribe.error")  # Fehlermeldungen für UI-Feedback
-STATE_FILE = Path(
-    "/tmp/pulsescribe.state"
-)  # Aktueller Status (recording/transcribing/done/error)
 INTERIM_FILE = Path("/tmp/pulsescribe.interim")  # Live-Transkript während Aufnahme
 
 # =============================================================================
@@ -126,10 +120,6 @@ __all__ = [
     "DEFAULT_REFINE_MODEL",
     # IPC
     "TEMP_RECORDING_FILENAME",
-    "PID_FILE",
-    "TRANSCRIPT_FILE",
-    "ERROR_FILE",
-    "STATE_FILE",
     "INTERIM_FILE",
     # API
     "OPENROUTER_BASE_URL",

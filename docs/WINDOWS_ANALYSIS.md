@@ -28,10 +28,10 @@
 │ Audio-Aufnahme   │ 🟡 sounddevice (PortAudio-Backend)       │
 │ Sound-Playback   │ 🔴 CoreAudio / AudioToolbox              │
 │ App-Detection    │ 🔴 NSWorkspace (PyObjC)                  │
-│ Daemon/IPC       │ 🔴 os.fork + SIGUSR1                     │
+│ Daemon/IPC       │ ✅ Threading/Queues (kein OS-IPC)         │
 │ Overlay UI       │ 🔴 PyObjC (NSWindow, CALayer)            │
 │ Menübar          │ 🔴 rumps (macOS-only)                    │
-│ Hotkey-Trigger   │ 🔴 Raycast (macOS-only)                  │
+│ Hotkey-Trigger   │ 🔴 QuickMacHotKey / Quartz (macOS-only)  │
 └──────────────────┴──────────────────────────────────────────┘
 ```
 
@@ -155,53 +155,15 @@ def _get_frontmost_app_windows():
 
 ---
 
-### 2.5 Daemon & IPC (🔴 Grundlegend anders)
+### 2.5 Daemon & IPC (🟡 Anpassung)
 
-**Aktuell (macOS):** `transcribe.py:428-517`
+**Aktuell (macOS):** Unified Daemon (`pulsescribe_daemon.py`) laeuft als normaler Prozess
+mit Threads/Queues, ohne `fork()`/`SIGUSR1`-IPC.
 
-```python
-def _daemonize():
-    pid = os.fork()  # Unix only!
-    os.setsid()       # Unix only!
-    pid = os.fork()   # Double-fork
+**Windows-Implikation:** Eigener Tray-/Service-Prozess mit normalem Lifecycle.
+Optionale Stop-Events (Named Events) nur falls externe Steuerung benoetigt wird.
 
-# Signal-basiertes Stoppen
-signal.signal(signal.SIGUSR1, handle_stop)
-```
-
-**Windows-Probleme:**
-
-1. `os.fork()` existiert nicht auf Windows
-2. `SIGUSR1` existiert nicht auf Windows
-3. `os.setsid()` existiert nicht auf Windows
-
-**Windows-Alternativen:**
-
-| Aspekt       | macOS        | Windows                               |
-| ------------ | ------------ | ------------------------------------- |
-| Daemon       | Double-Fork  | `subprocess.CREATE_NEW_PROCESS_GROUP` |
-| Signal       | SIGUSR1      | Named Pipe / Event                    |
-| PID-Tracking | `/tmp/*.pid` | `%TEMP%\*.pid`                        |
-
-**Empfohlene Architektur:**
-
-```python
-if sys.platform == "win32":
-    import win32event
-    import win32api
-
-    # Stop-Event statt Signal
-    STOP_EVENT_NAME = "Global\\PulseScribeStop"
-    stop_event = win32event.CreateEvent(None, True, False, STOP_EVENT_NAME)
-
-    # Daemon starten
-    subprocess.Popen(
-        [sys.executable, "transcribe.py", "--daemon"],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    )
-```
-
-**Aufwand:** 12–20 Stunden (inkl. Tests)
+**Aufwand:** 8–14 Stunden (inkl. Tests)
 
 ---
 
@@ -300,11 +262,11 @@ def create_tray():
 
 ### 2.8 Hotkey-Trigger (🔴 Komplett anders)
 
-**Aktuell (macOS):** Raycast Extension
+**Aktuell (macOS):** Native Hotkeys (QuickMacHotKey + Quartz)
 
-- TypeScript/React
-- Systemweiter Hotkey via Raycast
-- Keine eigene Hotkey-Implementierung
+- Carbon Hotkeys (QuickMacHotKey)
+- Quartz Event Taps (Hold Mode)
+- Eigene Hotkey-Implementierung
 
 **Windows-Optionen:**
 
@@ -509,25 +471,11 @@ Entwickler D: 2.4 Clipboard
   - [ ] Alle hardcodierten `/tmp/pulsescribe.*` Pfade ersetzen
   - [ ] Tests: Pfade auf beiden Plattformen verifizieren
 
-#### 1.2 Daemon & IPC (12–16h) 🔴 _Kritischer Pfad_
+#### 1.2 Background-Prozess (8–12h) 🟡 _Kritischer Pfad_
 
-- [ ] **1.2.1 Prozess-Start abstrahieren** ← _benötigt 1.1.2_
-  - [ ] macOS: Bestehenden Double-Fork extrahieren
-  - [ ] Windows: `subprocess.CREATE_NEW_PROCESS_GROUP`
-  - [ ] Windows: `subprocess.DETACHED_PROCESS` Flag
-  - [ ] Tests: Daemon startet und läuft unabhängig
-
-- [ ] **1.2.2 Stop-Signal abstrahieren** ← _benötigt 1.2.1_ | 🔴 _blockiert 2.2_
-  - [ ] Interface: `send_stop_signal(pid: int) -> bool`
-  - [ ] macOS: `os.kill(pid, signal.SIGUSR1)`
-  - [ ] Windows: Named Event (`Global\\PulseScribeStop_{pid}`)
-  - [ ] Polling-Mechanismus als Fallback
-  - [ ] Tests: Daemon stoppt zuverlässig
-
-- [ ] **1.2.3 PID-Management anpassen** ← _benötigt 1.2.1_ | _parallel zu 1.2.2_
-  - [ ] `_cleanup_stale_pid_file()` für Windows
-  - [ ] Prozess-Validierung via `psutil` (cross-platform)
-  - [ ] Tests: Zombie-Prozess-Handling
+- [ ] Prozess-Start für Tray-/Daemon-App (kein `fork`, normaler Prozess)
+- [ ] Sauberer Shutdown (optional via Event/IPC)
+- [ ] Tests: Start/Stop verifizieren
 
 #### 1.3 Audio-Aufnahme verifizieren (2–4h)
 

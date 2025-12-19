@@ -26,7 +26,7 @@ PID_FILE = TEMP_DIR / "pulsescribe.pid"
 class MacOSDaemonController:
     """macOS Daemon-Controller mit Double-Fork und SIGUSR1.
 
-    Double-Fork verhindert Zombie-Prozesse wenn der Parent (z.B. Raycast)
+    Double-Fork verhindert Zombie-Prozesse wenn der Parent
     den Prozess nicht ordnungsgemäß mit wait() aufräumt.
     """
 

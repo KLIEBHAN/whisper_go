@@ -27,12 +27,6 @@ class TestParseArgs:
         assert args.record is True
         assert args.audio is None
 
-    def test_record_daemon_flag(self, clean_env):
-        """--record-daemon Flag wird erkannt."""
-        with patch.object(sys, "argv", ["transcribe.py", "--record-daemon"]):
-            args = parse_args()
-
-        assert args.record_daemon is True
 
     def test_no_audio_source_error(self, clean_env):
         """Fehler wenn keine Audio-Quelle angegeben."""
@@ -43,14 +37,6 @@ class TestParseArgs:
     def test_audio_and_record_conflict(self, clean_env):
         """Audio-Datei und --record schließen sich aus."""
         with patch.object(sys, "argv", ["transcribe.py", "audio.mp3", "--record"]):
-            with pytest.raises(SystemExit):
-                parse_args()
-
-    def test_record_and_daemon_conflict(self, clean_env):
-        """--record und --record-daemon schließen sich aus."""
-        with patch.object(
-            sys, "argv", ["transcribe.py", "--record", "--record-daemon"]
-        ):
             with pytest.raises(SystemExit):
                 parse_args()
 
@@ -136,13 +122,6 @@ class TestParseArgs:
             ):
                 args = parse_args()
                 assert args.context == ctx
-
-    def test_no_streaming_flag(self, clean_env):
-        """--no-streaming Flag wird erkannt."""
-        with patch.object(sys, "argv", ["transcribe.py", "--record", "--no-streaming"]):
-            args = parse_args()
-
-        assert args.no_streaming is True
 
     def test_short_flags(self, clean_env):
         """-r und -c Kurzformen funktionieren."""

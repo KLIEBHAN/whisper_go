@@ -17,7 +17,6 @@ Usage:
 
 from .recording import (
     record_audio,
-    record_audio_daemon,
     AudioRecorder,
     WHISPER_SAMPLE_RATE,
     WHISPER_CHANNELS,
@@ -26,7 +25,6 @@ from .recording import (
 
 __all__ = [
     "record_audio",
-    "record_audio_daemon",
     "AudioRecorder",
     "WHISPER_SAMPLE_RATE",
     "WHISPER_CHANNELS",

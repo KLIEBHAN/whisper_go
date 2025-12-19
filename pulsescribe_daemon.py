@@ -4,7 +4,7 @@ pulsescribe_daemon.py – Unified Daemon für PulseScribe.
 
 Konsolidiert in einem Prozess:
 - Hotkey-Listener (QuickMacHotKey, keine Accessibility nötig)
-- Mikrofon-Aufnahme + Deepgram Streaming (wie run_daemon_mode_streaming)
+- Mikrofon-Aufnahme + Deepgram Streaming
 - Menübar-Status (NSStatusBar)
 - Overlay mit Animationen (NSWindow)
 - LLM-Nachbearbeitung (optional)

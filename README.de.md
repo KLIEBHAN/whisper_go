@@ -7,7 +7,7 @@
 
 Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). Transkribiert Audio mit OpenAI Whisper über API, Deepgram, Groq oder lokal.
 
-**Features:** Echtzeit-Streaming (Deepgram) · Mehrere Provider (OpenAI, Deepgram, Groq, lokal inkl. MLX/Metal auf Apple Silicon) · LLM-Nachbearbeitung · Kontext-Awareness · Custom Vocabulary · Raycast-Hotkeys · Live-Preview Overlay · Menübar-Feedback
+**Features:** Echtzeit-Streaming (Deepgram) · Mehrere Provider (OpenAI, Deepgram, Groq, lokal inkl. MLX/Metal auf Apple Silicon) · LLM-Nachbearbeitung · Kontext-Awareness · Custom Vocabulary · Live-Preview Overlay · Menübar-Feedback
 
 > **Performance:** Ultra-Fast-Startup mit ~170ms bis Ready-Sound dank parallelem Mikrofon- und WebSocket-Init. Audio wird während der Aufnahme transkribiert – Ergebnis erscheint sofort nach dem Stoppen.
 
@@ -112,7 +112,6 @@ python transcribe.py --record --refine                # Mit LLM-Nachbearbeitung
 | `--copy`, `-c`                         | Ergebnis in Zwischenablage                                                    |
 | `--language CODE`                      | Sprachcode z.B. `de`, `en`                                                    |
 | `--format FORMAT`                      | Output: `text`, `json`, `srt`, `vtt` (nur API-Modus)                          |
-| `--no-streaming`                       | WebSocket-Streaming deaktivieren (nur Deepgram)                               |
 | `--refine`                             | LLM-Nachbearbeitung aktivieren                                                |
 | `--no-refine`                          | LLM-Nachbearbeitung deaktivieren (überschreibt env)                           |
 | `--refine-model`                       | Modell für Nachbearbeitung (default: `openai/gpt-oss-120b`)                   |
@@ -437,12 +436,8 @@ Deepgram nutzt standardmäßig **WebSocket-Streaming** für minimale Latenz:
 - Ideal für die Hotkey-Integration
 
 ```bash
-# Streaming (Standard)
-python transcribe.py --record --mode deepgram
-
-# REST-Fallback (falls Streaming Probleme macht)
-python transcribe.py --record --mode deepgram --no-streaming
-# oder via ENV:
+# Unified Daemon nutzt Streaming standardmäßig.
+# REST-Fallback (nur Daemon):
 PULSESCRIBE_STREAMING=false
 ```
 

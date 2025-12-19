@@ -43,9 +43,8 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 
 ### Aktueller Fokus: Phase 5 (Multi-Platform)
 
-- [x] **Native Hotkeys (macOS)** – Raycast-Unabhängigkeit ✅
+- [x] **Native Hotkeys (macOS)** ✅
   - Hotkey-Registrierung via [QuickMacHotKey](https://github.com/glyph/QuickMacHotKey) (Carbon API)
-  - Raycast ist optional
 - [ ] **Windows Support** – Priorisiert (siehe [WINDOWS_ANALYSIS.md](./WINDOWS_ANALYSIS.md))
 - [ ] **Linux Support**
 - [ ] **CLI Modernisierung** (Migration auf `typer`)
@@ -67,7 +66,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 ┌───────────────────────────────────────────────────────────┐
 │                      pulsescribe                          │
 ├──────────────┬────────────────────────────────────────────┤
-│ Trigger      │ Hotkey (Global) / Raycast / CLI            │
+│ Trigger      │ Hotkey (Global) / CLI                      │
 ├──────────────┼────────────────────────────────────────────┤
 │ Audio        │ sounddevice → WAV                          │
 ├──────────────┼────────────────────────────────────────────┤

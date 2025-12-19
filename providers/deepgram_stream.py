@@ -258,7 +258,7 @@ async def deepgram_stream_core(
         stop_watcher.start()
         logger.debug(f"[{session_id}] External stop event watcher gestartet")
     elif threading.current_thread() is threading.main_thread():
-        # CLI/Raycast-Mode: SIGUSR1 Signal-Handler
+        # CLI/Signal-Mode: SIGUSR1 Signal-Handler
         loop.add_signal_handler(signal.SIGUSR1, stop_event.set)
 
     audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -280,8 +280,8 @@ async def deepgram_stream_core(
             if status:
                 logger.warning(f"[{session_id}] Audio-Status: {status}")
             if not stop_event.is_set():
-                # float32 [-1,1] → int16 für Deepgram
-                audio_bytes = (indata * INT16_MAX).astype(np.int16).tobytes()
+                # int16 PCM direkt senden (Deepgram erwartet linear16)
+                audio_bytes = indata.tobytes()
                 loop.call_soon_threadsafe(audio_queue.put_nowait, audio_bytes)
 
         buffer_lock = None
@@ -300,13 +300,15 @@ async def deepgram_stream_core(
 
             # RMS Berechnung für Visualisierung
             if audio_level_callback:
-                rms = float(np.sqrt(np.mean(indata**2)))
+                rms = float(
+                    np.sqrt(np.mean(indata.astype(np.float32) ** 2)) / INT16_MAX
+                )
                 audio_level_callback(rms)
 
             if stop_event.is_set():
                 return
-            # float32 [-1,1] → int16 für Deepgram
-            audio_bytes = (indata * INT16_MAX).astype(np.int16).tobytes()
+            # int16 PCM direkt senden (Deepgram erwartet linear16)
+            audio_bytes = indata.tobytes()
             with buffer_lock:
                 if buffering_active:
                     audio_buffer.append(audio_bytes)
@@ -318,7 +320,7 @@ async def deepgram_stream_core(
         samplerate=WHISPER_SAMPLE_RATE,
         channels=WHISPER_CHANNELS,
         blocksize=WHISPER_BLOCKSIZE,
-        dtype=np.float32,
+        dtype=np.int16,
         callback=audio_callback,
     )
     mic_stream.start()
@@ -393,7 +395,7 @@ async def deepgram_stream_core(
             send_task = asyncio.create_task(send_audio())
             listen_task = asyncio.create_task(listen_for_messages())
 
-            # --- Warten auf Stop (SIGUSR1 von Raycast oder CTRL+C) ---
+            # --- Warten auf Stop (SIGUSR1 oder CTRL+C) ---
             await stop_event.wait()
             logger.info(f"[{session_id}] Stop-Signal empfangen")
 
@@ -552,7 +554,7 @@ def transcribe_with_deepgram_stream(
     """Sync Wrapper für async Deepgram Streaming.
 
     Verwendet asyncio.run() um die async Implementierung auszuführen.
-    Für Raycast-Integration: SIGUSR1 stoppt die Aufnahme sauber.
+    Für CLI/Signal-Integrationen: SIGUSR1 stoppt die Aufnahme sauber.
     """
     return asyncio.run(_transcribe_with_deepgram_stream_async(model, language))
 

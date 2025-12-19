@@ -25,7 +25,6 @@ source = ["."]
 omit = [
     "tests/*",
     "menubar.py",           # GUI-Code (rumps) - schwer testbar
-    "whisper-go-raycast/*", # Raycast Extension (TypeScript)
 ]
 
 [tool.coverage.report]

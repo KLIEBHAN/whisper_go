@@ -57,7 +57,6 @@ def mock_args():
     def _create(**kwargs):
         defaults = {
             "mode": "openai",
-            "no_streaming": False,
             "refine": False,
             "no_refine": False,
             "refine_model": None,
@@ -85,20 +84,6 @@ def mock_env(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "test-key-groq")
 
 
-@pytest.fixture(autouse=True)
-def mock_pid_file(monkeypatch, tmp_path):
-    """
-    Mockt PID_FILE für alle Tests, damit keine echten Dateien angefasst werden.
-    """
-    import transcribe
-    import utils.daemon
-
-    mock_file = tmp_path / "test.pid"
-    monkeypatch.setattr(transcribe, "PID_FILE", mock_file)
-    monkeypatch.setattr(utils.daemon, "PID_FILE", mock_file)
-    return mock_file
-
-
 @pytest.fixture
 def temp_files(tmp_path, monkeypatch):
     """
@@ -109,9 +94,6 @@ def temp_files(tmp_path, monkeypatch):
     """
     import transcribe
 
-    monkeypatch.setattr(transcribe, "STATE_FILE", tmp_path / "test.state")
-    monkeypatch.setattr(transcribe, "TRANSCRIPT_FILE", tmp_path / "test.transcript")
-    monkeypatch.setattr(transcribe, "ERROR_FILE", tmp_path / "test.error")
     monkeypatch.setattr(transcribe, "VOCABULARY_FILE", tmp_path / "vocab.json")
 
     return tmp_path

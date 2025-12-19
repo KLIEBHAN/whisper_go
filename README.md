@@ -7,18 +7,18 @@
 
 Voice input for macOS – inspired by [Wispr Flow](https://wisprflow.ai). Transcribes audio using OpenAI Whisper via API, Deepgram, Groq, or locally.
 
-**Features:** Real-time Streaming (Deepgram) · Multiple Providers (OpenAI, Deepgram, Groq, Local incl. MLX/Metal on Apple Silicon) · LLM Post-processing · Context Awareness · Custom Vocabulary · Raycast Hotkeys · Live Preview Overlay · Menu Bar Feedback
+**Features:** Real-time Streaming (Deepgram) · Multiple Providers (OpenAI, Deepgram, Groq, Local incl. MLX/Metal on Apple Silicon) · LLM Post-processing · Context Awareness · Custom Vocabulary · Live Preview Overlay · Menu Bar Feedback
 
 > **Performance:** Ultra-fast startup with ~170ms to "Ready-Sound" thanks to parallel microphone and WebSocket initialization. Audio is transcribed during recording – results appear immediately after stopping.
 
 ### Provider Overview
 
-| Provider     | Latency   | Method    | Special Feature                                    |
-| ------------ | --------- | --------- | -------------------------------------------------- |
-| **Deepgram** | ~300ms ⚡ | WebSocket | Real-time streaming, recommended                   |
-| **Groq**     | ~1s       | REST      | Whisper on LPU, very fast                          |
-| **OpenAI**   | ~2-3s     | REST      | GPT-4o, highest quality                            |
-| **Local**    | varies    | Whisper   | Offline, no API costs (MLX/Metal on Apple Silicon) |
+| Provider     | Latency   | Method    | Special Feature                                        |
+| ------------ | --------- | --------- | ------------------------------------------------------ |
+| **Deepgram** | ~300ms ⚡ | WebSocket | Real-time streaming, recommended                       |
+| **Groq**     | ~1s       | REST      | Whisper on LPU, very fast                              |
+| **OpenAI**   | ~2-3s     | REST      | GPT-4o, highest quality                                |
+| **Local**    | varies    | Whisper   | Offline, no API costs (MLX/Lightning on Apple Silicon) |
 
 ## Quick Start
 
@@ -112,7 +112,6 @@ python transcribe.py --record --refine                # With LLM post-processing
 | `--copy`, `-c`                         | Copy result to clipboard                                                      |
 | `--language CODE`                      | Language code e.g., `de`, `en`                                                |
 | `--format FORMAT`                      | Output: `text`, `json`, `srt`, `vtt` (only API mode)                          |
-| `--no-streaming`                       | Disable WebSocket streaming (Deepgram only)                                   |
 | `--refine`                             | Enable LLM post-processing                                                    |
 | `--no-refine`                          | Disable LLM post-processing (overrides env)                                   |
 | `--refine-model`                       | Model for post-processing (default: `openai/gpt-oss-120b`)                    |
@@ -400,14 +399,30 @@ Both are integrated and start automatically with the daemon.
 
 ## Provider Comparison
 
-| Mode       | Provider | Method    | Latency   | Special Feature                                |
-| ---------- | -------- | --------- | --------- | ---------------------------------------------- |
-| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Real-time streaming (recommended)              |
-| `groq`     | Groq     | REST      | ~1s       | Whisper on LPU, very fast                      |
-| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, highest quality             |
-| `local`    | Whisper  | Local     | varies    | Offline, no API costs (Whisper / Faster / MLX) |
+| Mode       | Provider | Method    | Latency   | Special Feature                                            |
+| ---------- | -------- | --------- | --------- | ---------------------------------------------------------- |
+| `deepgram` | Deepgram | WebSocket | ~300ms ⚡ | Real-time streaming (recommended)                          |
+| `groq`     | Groq     | REST      | ~1s       | Whisper on LPU, very fast                                  |
+| `openai`   | OpenAI   | REST      | ~2-3s     | GPT-4o Transcribe, highest quality                         |
+| `local`    | Whisper  | Local     | varies    | Offline, no API costs (Whisper / Faster / MLX / Lightning) |
 
 > **Recommendation:** `--mode deepgram` for daily use. The streaming architecture ensures minimal waiting time between recording stop and text insertion.
+
+### Local Backend Options
+
+| Backend     | Description                                            | Best For            |
+| ----------- | ------------------------------------------------------ | ------------------- |
+| `whisper`   | OpenAI Whisper (PyTorch), works on all platforms       | Compatibility       |
+| `faster`    | faster-whisper (CTranslate2), 4x faster on CPU         | CPU-only systems    |
+| `mlx`       | mlx-whisper (Metal), optimized for Apple Silicon       | macOS stability     |
+| `lightning` | lightning-whisper-mlx, ~4x faster via Batched Decoding | Maximum speed (M1+) |
+
+Set via: `PULSESCRIBE_LOCAL_BACKEND=lightning`
+
+**Lightning-specific options:**
+
+- `PULSESCRIBE_LIGHTNING_BATCH_SIZE`: Batch size (default: 12, higher = faster, more RAM)
+- `PULSESCRIBE_LIGHTNING_QUANT`: Quantization (`None`, `4bit`, `8bit`)
 
 ## Model Reference
 
@@ -437,12 +452,8 @@ Deepgram uses **WebSocket streaming** by default for minimal latency:
 - Ideal for hotkey integration
 
 ```bash
-# Streaming (Default)
-python transcribe.py --record --mode deepgram
-
-# REST Fallback (if streaming causes issues)
-python transcribe.py --record --mode deepgram --no-streaming
-# or via ENV:
+# Unified daemon uses streaming by default.
+# REST fallback (daemon only):
 PULSESCRIBE_STREAMING=false
 ```
 
@@ -487,12 +498,22 @@ python pulsescribe_daemon.py --debug
 
 With `PULSESCRIBE_LOCAL_BACKEND=mlx`, `PULSESCRIBE_LOCAL_MODEL` supports both short names and full Hugging Face repo IDs:
 
-- `large` → `mlx-community/whisper-large-v3-mlx`
-- `turbo` → `mlx-community/whisper-large-v3-turbo`
+**Multilingual models (German, English, etc.):**
+
+- `turbo` → `mlx-community/whisper-large-v3-turbo` ⭐ (recommended for speed + quality)
+- `large` → `mlx-community/whisper-large-v3-mlx` (highest quality, slower)
 - `medium` → `mlx-community/whisper-medium`
 - `small` → `mlx-community/whisper-small-mlx`
 - `base` → `mlx-community/whisper-base-mlx`
 - `tiny` → `mlx-community/whisper-tiny`
+
+**English-only (distilled, 30-40% faster, ⚠️ ONLY English!):**
+
+- `large-en` → `mlx-community/distil-whisper-large-v3`
+- `medium-en` → `mlx-community/distil-whisper-medium.en`
+- `small-en` → `mlx-community/distil-whisper-small.en`
+
+> **Note:** The `-en` models are distilled and only support English. For German or other languages, use `turbo` (best speed/quality) or `large` (best quality).
 
 If you previously tried `whisper-large-v3` and hit a 404, use `large`/`large-v3` or the full repo ID `mlx-community/whisper-large-v3-mlx`.
 

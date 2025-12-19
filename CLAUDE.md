@@ -26,7 +26,7 @@ pulsescribe/
 ├── ui/                    # User Interface Components
 │   ├── menubar.py         # MenuBar Controller (mit Quit-Menü)
 │   └── overlay.py         # Overlay Controller & SoundWave
-├── utils/                 # Utilities (Daemon, Logging, Hotkey)
+├── utils/                 # Utilities (Logging, Hotkey, etc.)
 │   ├── paths.py           # Pfad-Helper für PyInstaller Bundle
 │   └── permissions.py     # macOS Berechtigungs-Checks (Mikrofon)
 └── tests/                 # Unit & Integration Tests
@@ -39,7 +39,6 @@ pulsescribe/
 | Funktion            | Zweck                                      |
 | ------------------- | ------------------------------------------ |
 | `transcribe()`      | Zentrale API – orchestriert Provider       |
-| `run_daemon_mode()` | Raycast-Modus: Aufnahme → Transkript-Datei |
 | `parse_args()`      | CLI-Argument-Handling                      |
 
 **Design-Entscheidungen:**
@@ -49,7 +48,6 @@ pulsescribe/
 - **Kompatibel:** Alle bestehenden CLI-Flags funktionieren weiter
 - **Entry-Point:** Bleibt die zentrale Anlaufstelle für Skripte
 - **Lazy Imports:** `openai`, `whisper`, `sounddevice` werden erst bei Bedarf importiert
-- **Double-Fork:** Daemonisierung für saubere Prozess-Trennung
 
 ## Unified Daemon: `pulsescribe_daemon.py`
 
@@ -138,7 +136,7 @@ python transcribe.py --record --copy --language de
 | ------------------------- | -------- | --------- | ------ | ---------------------------------------- |
 | `openai`                  | OpenAI   | REST      | ~2-3s  | GPT-4o Transcribe, höchste Qualität      |
 | `deepgram`                | Deepgram | WebSocket | ~300ms | **Streaming** (Default), minimale Latenz |
-| `deepgram --no-streaming` | Deepgram | REST      | ~2-3s  | Fallback ohne Streaming                  |
+| `deepgram (streaming off)` | Deepgram | REST      | ~2-3s  | Fallback via `PULSESCRIBE_STREAMING=false` |
 | `groq`                    | Groq     | REST      | ~1s    | Whisper auf LPU, sehr schnell            |
 | `local`                   | Whisper  | Lokal     | ~5-10s | Offline, keine API-Kosten                |
 
