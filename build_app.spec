@@ -126,6 +126,17 @@ except Exception:
 datas += mlxw_datas + mlx_datas + scipy_datas
 binaries += mlxw_binaries + mlx_binaries + scipy_binaries
 hiddenimports += mlxw_hidden + mlx_hidden + scipy_hidden
+
+# === Local backend (lightning-whisper-mlx) ===
+# Optional: ~4x faster than mlx-whisper via batched decoding (Apple Silicon only).
+try:
+    lw_datas, lw_binaries, lw_hidden = collect_all("lightning_whisper_mlx")
+except Exception:
+    lw_datas, lw_binaries, lw_hidden = [], [], []
+
+datas += lw_datas
+binaries += lw_binaries
+hiddenimports += lw_hidden
 hiddenimports = _dedupe(hiddenimports)
 
 # Nicht benötigte Module ausschließen (reduziert App-Größe)
