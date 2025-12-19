@@ -389,7 +389,8 @@ class LocalProvider:
         self._ensure_runtime_config()
 
         options: dict = {}
-        if language:
+        # "auto" bedeutet Auto-Detection → nicht setzen (None/leer = Auto)
+        if language and language.strip().lower() != "auto":
             options["language"] = language
 
         # Custom Vocabulary als initial_prompt für bessere Erkennung
@@ -429,19 +430,18 @@ class LocalProvider:
         # Fast-Mode: schnellere Decoding Defaults (kann via ENV überschrieben werden)
         if self._fast_mode:
             options.setdefault("temperature", 0.0)
-            # mlx-whisper hat (Stand heute) keinen Beam-Search Decoder.
-            # Deshalb darf beam_size nicht gesetzt werden, sonst crasht es mit
-            # "Beam search decoder is not yet implemented".
-            if self._backend != "mlx":
+            # mlx-whisper und lightning-whisper-mlx haben keinen Beam-Search Decoder.
+            # Deshalb darf beam_size nicht gesetzt werden.
+            if self._backend not in ("mlx", "lightning"):
                 options.setdefault("beam_size", 1)
                 options.setdefault("best_of", 1)
             options.setdefault("condition_on_previous_text", False)
 
         # Explizite Decode-Overrides
         beam_size = get_env_int("PULSESCRIBE_LOCAL_BEAM_SIZE")
-        if beam_size is not None and self._backend == "mlx":
+        if beam_size is not None and self._backend in ("mlx", "lightning"):
             logger.warning(
-                "PULSESCRIBE_LOCAL_BEAM_SIZE wird ignoriert (mlx backend unterstützt kein Beam Search)."
+                f"PULSESCRIBE_LOCAL_BEAM_SIZE wird ignoriert ({self._backend} backend unterstützt kein Beam Search)."
             )
         elif beam_size is not None:
             options["beam_size"] = beam_size
