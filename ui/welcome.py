@@ -77,6 +77,16 @@ def _create_card(x: int, y: int, width: int, height: int):
     return card
 
 
+def _is_env_enabled_default_true(key: str) -> bool:
+    """Check if an env flag is enabled, defaulting to True if not set."""
+    from utils.preferences import get_env_setting
+
+    value = get_env_setting(key)
+    if value is None:
+        return True
+    return value.lower() not in ("false", "0", "no", "off")
+
+
 class WelcomeController:
     """Welcome/Setup Window für PulseScribe."""
 
@@ -1113,14 +1123,7 @@ class WelcomeController:
         streaming_checkbox.setButtonType_(NSButtonTypeSwitch)
         streaming_checkbox.setTitle_("WebSocket (low latency)")
         streaming_checkbox.setFont_(NSFont.systemFontOfSize_(11))
-        streaming_env = get_env_setting("PULSESCRIBE_STREAMING")
-        # Default is True if not set
-        streaming_enabled = streaming_env is None or streaming_env.lower() not in (
-            "false",
-            "0",
-            "no",
-            "off",
-        )
+        streaming_enabled = _is_env_enabled_default_true("PULSESCRIBE_STREAMING")
         streaming_checkbox.setState_(1 if streaming_enabled else 0)
         self._streaming_checkbox = streaming_checkbox
         parent_view.addSubview_(streaming_checkbox)
@@ -1418,7 +1421,11 @@ class WelcomeController:
         batch_slider.setMinValue_(4)
         batch_slider.setMaxValue_(24)
         current_batch = get_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE")
-        batch_slider.setIntValue_(int(current_batch) if current_batch else 12)
+        try:
+            batch_val = int(current_batch) if current_batch else 12
+        except ValueError:
+            batch_val = 12  # Fallback to default if invalid
+        batch_slider.setIntValue_(batch_val)
         batch_slider.setNumberOfTickMarks_(6)  # 4, 8, 12, 16, 20, 24
         batch_slider.setAllowsTickMarkValuesOnly_(True)
         self._lightning_batch_slider = batch_slider
@@ -1469,6 +1476,9 @@ class WelcomeController:
             quant_popup.selectItemAtIndex_(0)
         self._lightning_quant_popup = quant_popup
         parent_view.addSubview_(quant_popup)
+
+        # Set initial visibility based on current mode/backend
+        self._update_all_visibility()
 
         return card_y - CARD_SPACING
 
@@ -1594,14 +1604,7 @@ class WelcomeController:
         overlay_checkbox.setButtonType_(NSButtonTypeSwitch)
         overlay_checkbox.setTitle_("Show subtitle overlay")
         overlay_checkbox.setFont_(NSFont.systemFontOfSize_(11))
-        overlay_env = get_env_setting("PULSESCRIBE_OVERLAY")
-        # Default is True if not set
-        overlay_enabled = overlay_env is None or overlay_env.lower() not in (
-            "false",
-            "0",
-            "no",
-            "off",
-        )
+        overlay_enabled = _is_env_enabled_default_true("PULSESCRIBE_OVERLAY")
         overlay_checkbox.setState_(1 if overlay_enabled else 0)
         self._overlay_checkbox = overlay_checkbox
         parent_view.addSubview_(overlay_checkbox)
@@ -1615,14 +1618,7 @@ class WelcomeController:
         dock_checkbox.setButtonType_(NSButtonTypeSwitch)
         dock_checkbox.setTitle_("Show in Dock (restart required)")
         dock_checkbox.setFont_(NSFont.systemFontOfSize_(11))
-        dock_env = get_env_setting("PULSESCRIBE_DOCK_ICON")
-        # Default is True if not set
-        dock_enabled = dock_env is None or dock_env.lower() not in (
-            "false",
-            "0",
-            "no",
-            "off",
-        )
+        dock_enabled = _is_env_enabled_default_true("PULSESCRIBE_DOCK_ICON")
         dock_checkbox.setState_(1 if dock_enabled else 0)
         self._dock_icon_checkbox = dock_checkbox
         parent_view.addSubview_(dock_checkbox)
@@ -2935,13 +2931,15 @@ class WelcomeController:
             else:
                 save_env_setting("PULSESCRIBE_LIGHTNING_QUANT", "4bit")
 
-        # Streaming (Deepgram)
-        if self._streaming_checkbox:
-            enabled = self._streaming_checkbox.state() == 1
-            if enabled:  # Default is true
-                remove_env_setting("PULSESCRIBE_STREAMING")
-            else:
-                save_env_setting("PULSESCRIBE_STREAMING", "false")
+        # Streaming (only relevant for Deepgram mode)
+        if self._streaming_checkbox and self._mode_popup:
+            is_deepgram = self._mode_popup.titleOfSelectedItem() == "deepgram"
+            if is_deepgram:
+                enabled = self._streaming_checkbox.state() == 1
+                if enabled:  # Default is true
+                    remove_env_setting("PULSESCRIBE_STREAMING")
+                else:
+                    save_env_setting("PULSESCRIBE_STREAMING", "false")
 
         # Refine
         if self._refine_checkbox:
