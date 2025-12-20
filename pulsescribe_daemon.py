@@ -1516,16 +1516,22 @@ class PulseScribeDaemon:
 
                 t0 = time.perf_counter()
                 try:
+                    # self.model ist für lokale Modelle (turbo, large-v3, etc.)
+                    # Andere Provider haben eigene Defaults und sollten None bekommen
+                    model_for_provider = self.model if mode_for_run == "local" else None
+
                     if mode_for_run == "local" and hasattr(
                         provider, "transcribe_audio"
                     ):
                         transcript = provider.transcribe_audio(  # type: ignore[attr-defined]
-                            audio_data, model=self.model, language=self.language
+                            audio_data, model=model_for_provider, language=self.language
                         )
                     else:
                         sf.write(temp_path, audio_data, WHISPER_SAMPLE_RATE)
                         transcript = provider.transcribe(
-                            Path(temp_path), model=self.model, language=self.language
+                            Path(temp_path),
+                            model=model_for_provider,
+                            language=self.language,
                         )
                 except Exception as e:
                     # Best-effort fallback to local transcription for non-streaming modes

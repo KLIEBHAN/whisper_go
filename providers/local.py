@@ -9,6 +9,7 @@ Standardmäßig nutzt er openai-whisper (PyTorch). Optional kann über
 
 import logging
 import os
+import platform
 import sys
 import threading
 import time
@@ -22,6 +23,11 @@ from utils.logging import log
 from utils.vocabulary import load_vocabulary
 
 logger = logging.getLogger("pulsescribe.providers.local")
+
+
+def _is_apple_silicon() -> bool:
+    """Prüft ob wir auf Apple Silicon (arm64 macOS) laufen."""
+    return sys.platform == "darwin" and platform.machine() == "arm64"
 
 
 def _mlx_whisper_import_hint() -> str:
@@ -162,8 +168,13 @@ class LocalProvider:
 
     def _ensure_runtime_config(self) -> None:
         if self._backend is None:
+            # Default: "lightning" auf Apple Silicon (schnellstes Backend)
+            # Fallback: "auto" versucht faster-whisper, dann openai-whisper
+            default_backend = "lightning" if _is_apple_silicon() else "auto"
             backend_env = (
-                (os.getenv("PULSESCRIBE_LOCAL_BACKEND") or "whisper").strip().lower()
+                (os.getenv("PULSESCRIBE_LOCAL_BACKEND") or default_backend)
+                .strip()
+                .lower()
             )
             if backend_env in {"faster", "faster-whisper"}:
                 self._backend = "faster"
