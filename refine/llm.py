@@ -4,7 +4,6 @@ Enthält Funktionen für die Nachbearbeitung von Transkripten mit LLMs
 (OpenAI, OpenRouter, Groq).
 """
 
-import argparse
 import logging
 import os
 
@@ -198,27 +197,39 @@ def refine_transcript(
     return result
 
 
-def maybe_refine_transcript(transcript: str, args: argparse.Namespace) -> str:
+def maybe_refine_transcript(
+    transcript: str,
+    *,
+    refine: bool = False,
+    no_refine: bool = False,
+    refine_model: str | None = None,
+    refine_provider: str | None = None,
+    context: str | None = None,
+) -> str:
     """Wendet LLM-Nachbearbeitung an, falls aktiviert. Gibt Rohtext bei Fehler zurück.
 
     Args:
         transcript: Das zu verfeinernde Transkript
-        args: CLI-Argumente mit refine, no_refine, refine_model, refine_provider, context
+        refine: LLM-Nachbearbeitung aktivieren
+        no_refine: LLM-Nachbearbeitung deaktivieren (ueberschreibt refine)
+        refine_model: Modell fuer Nachbearbeitung
+        refine_provider: Provider (openai, openrouter, groq)
+        context: Kontext-Typ (email, chat, code, default)
 
     Returns:
         Das nachbearbeitete Transkript oder Original bei Fehler/Deaktivierung
     """
     from openai import APIError, APIConnectionError, APITimeoutError, RateLimitError
 
-    if not args.refine or args.no_refine:
+    if not refine or no_refine:
         return transcript
 
     try:
         return refine_transcript(
             transcript,
-            model=args.refine_model,
-            provider=args.refine_provider,
-            context=getattr(args, "context", None),
+            model=refine_model,
+            provider=refine_provider,
+            context=context,
         )
     except ValueError as e:
         # Fehlende API-Keys (z.B. OPENROUTER_API_KEY)
