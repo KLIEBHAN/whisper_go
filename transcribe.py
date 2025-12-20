@@ -24,11 +24,9 @@ import time as _time_module  # noqa: E402 - muss vor anderen Imports sein
 
 _PROCESS_START = _time_module.perf_counter()
 
-import argparse  # noqa: E402
+import typer  # noqa: E402
+from typing import Annotated, TYPE_CHECKING  # noqa: E402
 import logging  # noqa: E402
-import os  # noqa: E402
-import sys  # noqa: E402
-from typing import TYPE_CHECKING  # noqa: E402
 
 from pathlib import Path  # noqa: E402
 
@@ -54,6 +52,19 @@ from config import (  # noqa: E402
     VOCABULARY_FILE,
 )
 
+from cli.types import (  # noqa: E402
+    TranscriptionMode,
+    Context,
+    RefineProvider,
+    ResponseFormat,
+)
+
+# Typer-App
+app = typer.Typer(
+    help="Audio transkribieren mit Whisper, Deepgram oder Groq",
+    add_completion=False,
+)
+
 # =============================================================================
 # Laufzeit-State (modulglobal)
 # =============================================================================
@@ -72,7 +83,6 @@ from utils.logging import (  # noqa: E402
     error,
     get_session_id as _get_session_id,
 )
-from utils.env import get_env_bool_default  # noqa: E402
 from utils.environment import load_environment  # noqa: E402
 from utils.timing import (  # noqa: E402
     format_duration as _format_duration,
@@ -130,9 +140,6 @@ def _log_preview(text: str, max_length: int = 100) -> str:
     Wrapper um utils.timing.log_preview für vereinheitlichte Log-Formatierung.
     """
     return _shared_log_preview(text, max_length)
-
-
- 
 
 
 # =============================================================================
@@ -233,137 +240,134 @@ def transcribe(
     )
 
 
-def parse_args() -> argparse.Namespace:
-    """Parst und validiert CLI-Argumente."""
-    parser = argparse.ArgumentParser(
-        description="Audio transkribieren mit Whisper, Deepgram oder Groq",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Beispiele:
-  %(prog)s audio.mp3
-  %(prog)s audio.mp3 --mode local --model large
-  %(prog)s audio.mp3 --mode deepgram --language de
-  %(prog)s audio.mp3 --mode groq --language de
-  %(prog)s --record --copy --language de
-        """,
-    )
+@app.command()
+def main(
+    audio: Annotated[
+        Path | None,
+        typer.Argument(help="Pfad zur Audiodatei"),
+    ] = None,
+    record: Annotated[
+        bool,
+        typer.Option("-r", "--record", help="Vom Mikrofon aufnehmen"),
+    ] = False,
+    copy: Annotated[
+        bool,
+        typer.Option("-c", "--copy", help="Ergebnis in Zwischenablage"),
+    ] = False,
+    mode: Annotated[
+        TranscriptionMode,
+        typer.Option(
+            help="Transkriptions-Modus",
+            envvar="PULSESCRIBE_MODE",
+        ),
+    ] = TranscriptionMode.openai,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            help="Modellname (CLI > ENV > Provider-Default)",
+            envvar="PULSESCRIBE_MODEL",
+        ),
+    ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            help="Sprachcode z.B. 'de', 'en'",
+            envvar="PULSESCRIBE_LANGUAGE",
+        ),
+    ] = None,
+    response_format: Annotated[
+        ResponseFormat,
+        typer.Option("--format", help="Ausgabeformat (nur OpenAI)"),
+    ] = ResponseFormat.text,
+    debug: Annotated[
+        bool,
+        typer.Option(help="Debug-Logging aktivieren"),
+    ] = False,
+    refine: Annotated[
+        bool,
+        typer.Option(
+            help="LLM-Nachbearbeitung aktivieren",
+            envvar="PULSESCRIBE_REFINE",
+        ),
+    ] = False,
+    no_refine: Annotated[
+        bool,
+        typer.Option(help="LLM-Nachbearbeitung deaktivieren"),
+    ] = False,
+    refine_model: Annotated[
+        str | None,
+        typer.Option(
+            help=f"Modell fuer LLM-Nachbearbeitung (default: {DEFAULT_REFINE_MODEL})",
+            envvar="PULSESCRIBE_REFINE_MODEL",
+        ),
+    ] = None,
+    refine_provider: Annotated[
+        RefineProvider | None,
+        typer.Option(
+            help="LLM-Provider fuer Nachbearbeitung",
+            envvar="PULSESCRIBE_REFINE_PROVIDER",
+        ),
+    ] = None,
+    context: Annotated[
+        Context | None,
+        typer.Option(help="Kontext fuer LLM-Nachbearbeitung"),
+    ] = None,
+) -> None:
+    """Audio transkribieren mit Whisper, Deepgram oder Groq.
 
-    parser.add_argument("audio", type=Path, nargs="?", help="Pfad zur Audiodatei")
-    parser.add_argument(
-        "-r", "--record", action="store_true", help="Vom Mikrofon aufnehmen"
-    )
-    parser.add_argument(
-        "-c", "--copy", action="store_true", help="Ergebnis in Zwischenablage"
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["openai", "local", "deepgram", "groq"],
-        default=os.getenv("PULSESCRIBE_MODE", "openai"),
-        help="Transkriptions-Modus (auch via PULSESCRIBE_MODE env)",
-    )
-    parser.add_argument(
-        "--model",
-        default=os.getenv("PULSESCRIBE_MODEL"),
-        help="Modellname (CLI > PULSESCRIBE_MODEL env > Provider-Default). Defaults: API=gpt-4o-transcribe, Deepgram=nova-3, Groq=whisper-large-v3, Lokal=turbo",
-    )
-    parser.add_argument(
-        "--language",
-        default=os.getenv("PULSESCRIBE_LANGUAGE"),
-        help="Sprachcode z.B. 'de', 'en' (auch via PULSESCRIBE_LANGUAGE env)",
-    )
-    parser.add_argument(
-        "--format",
-        dest="response_format",
-        choices=["text", "json", "srt", "vtt"],
-        default="text",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Debug-Logging aktivieren (auch auf stderr)",
-    )
-    parser.add_argument(
-        "--refine",
-        action="store_true",
-        default=get_env_bool_default("PULSESCRIBE_REFINE", False),
-        help="LLM-Nachbearbeitung aktivieren (auch via PULSESCRIBE_REFINE env)",
-    )
-    parser.add_argument(
-        "--no-refine",
-        action="store_true",
-        help="LLM-Nachbearbeitung deaktivieren (überschreibt env)",
-    )
-    parser.add_argument(
-        "--refine-model",
-        default=None,
-        help=f"Modell für LLM-Nachbearbeitung (default: {DEFAULT_REFINE_MODEL}, auch via PULSESCRIBE_REFINE_MODEL env)",
-    )
-    parser.add_argument(
-        "--refine-provider",
-        choices=["openai", "openrouter", "groq"],
-        default=None,
-        help="LLM-Provider für Nachbearbeitung (auch via PULSESCRIBE_REFINE_PROVIDER env)",
-    )
-    parser.add_argument(
-        "--context",
-        choices=["email", "chat", "code", "default"],
-        default=None,
-        help="Kontext für LLM-Nachbearbeitung (auto-detect wenn nicht gesetzt)",
-    )
-
-    args = parser.parse_args()
+    Beispiele:
+        transcribe.py audio.mp3
+        transcribe.py audio.mp3 --mode local --model large
+        transcribe.py --record --copy --language de
+    """
+    load_environment()
+    setup_logging(debug=debug)
 
     # Validierung: genau eine Audio-Quelle erforderlich
-    has_audio_source = args.record or args.audio is not None
-    if not has_audio_source:
-        parser.error("Entweder Audiodatei oder --record verwenden")
-
-    # Gegenseitiger Ausschluss
-    if args.audio and args.record:
-        parser.error("Audiodatei und Aufnahme-Modi schließen sich aus")
-
-    return args
-
-
-def main() -> int:
-    """CLI-Einstiegspunkt."""
-    load_environment()
-    args = parse_args()
-    setup_logging(debug=args.debug)
+    if not record and audio is None:
+        raise typer.BadParameter("Entweder Audiodatei oder --record verwenden")
+    if record and audio is not None:
+        raise typer.BadParameter("Audiodatei und --record schliessen sich aus")
 
     # Startup-Timing loggen (seit Prozessstart)
     startup_ms = (time.perf_counter() - _PROCESS_START) * 1000
     logger.info(f"[{_get_session_id()}] Startup: {_format_duration(startup_ms)}")
 
-    logger.debug(f"[{_get_session_id()}] Args: {args}")
+    logger.debug(
+        f"[{_get_session_id()}] Args: mode={mode.value}, model={model}, "
+        f"record={record}, refine={refine}"
+    )
 
     # Audio-Quelle bestimmen
     temp_file: Path | None = None
 
-    if args.record:
+    if record:
         try:
             audio_path = record_audio()
             temp_file = audio_path
         except ImportError:
             error("Für Aufnahme: pip install sounddevice soundfile")
-            return 1
+            raise typer.Exit(1)
         except ValueError as e:
             error(str(e))
-            return 1
+            raise typer.Exit(1)
     else:
-        audio_path = args.audio
+        assert (
+            audio is not None
+        )  # Validated above: either record=True or audio provided
+        audio_path = audio
         if not audio_path.exists():
             error(f"Datei nicht gefunden: {audio_path}")
-            return 1
+            raise typer.Exit(1)
 
     # Transkription durchführen
     try:
         transcript = transcribe(
             audio_path,
-            mode=args.mode,
-            model=args.model,
-            language=args.language,
-            response_format=args.response_format,
+            mode=mode.value,
+            model=model,
+            language=language,
+            response_format=response_format.value,
         )
     except ImportError as e:
         err_str = str(e).lower()
@@ -374,21 +378,28 @@ def main() -> int:
         else:
             package = "openai-whisper"
         error(f"Modul nicht installiert: pip install {package}")
-        return 1
+        raise typer.Exit(1)
     except Exception as e:
         error(str(e))
-        return 1
+        raise typer.Exit(1)
     finally:
         if temp_file and temp_file.exists():
             temp_file.unlink()
 
     # LLM-Nachbearbeitung (optional)
-    transcript = maybe_refine_transcript(transcript, args)
+    transcript = maybe_refine_transcript(
+        transcript,
+        refine=refine,
+        no_refine=no_refine,
+        refine_model=refine_model,
+        refine_provider=refine_provider.value if refine_provider else None,
+        context=context.value if context else None,
+    )
 
     # Ausgabe
     print(transcript)
 
-    if args.copy:
+    if copy:
         if copy_to_clipboard(transcript):
             log("📋 In Zwischenablage kopiert!")
         else:
@@ -400,8 +411,7 @@ def main() -> int:
         f"[{_get_session_id()}] ✓ Pipeline: {_format_duration(total_ms)}, "
         f"{len(transcript)} Zeichen"
     )
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

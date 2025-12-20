@@ -4,8 +4,12 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
-from pulsescribe_daemon import PulseScribeDaemon
+from typer.testing import CliRunner
+
+from pulsescribe_daemon import PulseScribeDaemon, app
 from utils.state import AppState, DaemonMessage, MessageType
+
+runner = CliRunner()
 
 
 class TestDaemonMode(unittest.TestCase):
@@ -81,14 +85,11 @@ class TestDaemonMode(unittest.TestCase):
     @patch("pulsescribe_daemon.PulseScribeDaemon")
     def test_main_uses_env_mode_for_deepgram(self, mock_daemon_cls):
         """pulsescribe_daemon.main() uses PULSESCRIBE_MODE when set (e.g., deepgram)."""
-        import pulsescribe_daemon
-
         with (
             patch.dict(os.environ, {"PULSESCRIBE_MODE": "deepgram"}),
-            patch.object(sys, "argv", ["whisper-daemon"]),
             patch("pulsescribe_daemon.PulseScribeDaemon.run"),
         ):
-            pulsescribe_daemon.main()
+            runner.invoke(app, [])
 
         mock_daemon_cls.assert_called_once()
         _, kwargs = mock_daemon_cls.call_args
@@ -97,14 +98,11 @@ class TestDaemonMode(unittest.TestCase):
     @patch("pulsescribe_daemon.PulseScribeDaemon")
     def test_main_uses_cli_mode_over_env(self, mock_daemon_cls):
         """CLI --mode should override PULSESCRIBE_MODE env variable."""
-        import pulsescribe_daemon
-
         with (
             patch.dict(os.environ, {"PULSESCRIBE_MODE": "openai"}),
-            patch.object(sys, "argv", ["whisper-daemon", "--mode", "deepgram"]),
             patch("pulsescribe_daemon.PulseScribeDaemon.run"),
         ):
-            pulsescribe_daemon.main()
+            runner.invoke(app, ["--mode", "deepgram"])
 
         mock_daemon_cls.assert_called_once()
         _, kwargs = mock_daemon_cls.call_args

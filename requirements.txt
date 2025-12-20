@@ -17,3 +17,4 @@ numpy
 pynput
 pyobjc-framework-Cocoa
 pyobjc-framework-AVFoundation
+typer>=0.9.0

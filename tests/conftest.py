@@ -115,9 +115,17 @@ def reset_caches(monkeypatch):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Entfernt alle PULSESCRIBE_* Umgebungsvariablen für saubere Tests."""
+    """Entfernt alle PULSESCRIBE_* Umgebungsvariablen für saubere Tests.
+
+    Mockt auch load_environment() um zu verhindern, dass .env-Dateien
+    während der Tests geladen werden (was sonst ENV-Pollution verursacht).
+    """
     import os
 
     for key in list(os.environ.keys()):
         if key.startswith("PULSESCRIBE_"):
             monkeypatch.delenv(key, raising=False)
+
+    # Verhindere dass load_environment() die .env lädt und ENV polluted
+    monkeypatch.setattr("transcribe.load_environment", lambda: None)
+    monkeypatch.setattr("pulsescribe_daemon.load_environment", lambda: None)

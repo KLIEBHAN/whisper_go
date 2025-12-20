@@ -29,6 +29,11 @@ import threading
 import time
 import weakref
 from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from cli.types import TranscriptionMode, Context, RefineProvider, HotkeyMode
 
 
 # --- Emergency Logging (Before everything else) ---
@@ -2518,9 +2523,71 @@ class PulseScribeDaemon:
 # =============================================================================
 
 
-def main() -> int:
-    """CLI-Einstiegspunkt."""
-    import argparse
+app = typer.Typer(
+    help="pulsescribe_daemon – Unified Daemon fuer PulseScribe",
+    add_completion=False,
+)
+
+
+@app.command()
+def main(
+    hotkey: Annotated[
+        str | None,
+        typer.Option(help="Hotkey (default: PULSESCRIBE_HOTKEY oder 'fn')"),
+    ] = None,
+    toggle_hotkey: Annotated[
+        str | None,
+        typer.Option(help="Toggle-Hotkey"),
+    ] = None,
+    hold_hotkey: Annotated[
+        str | None,
+        typer.Option(help="Hold-Hotkey"),
+    ] = None,
+    hotkey_mode: Annotated[
+        HotkeyMode | None,
+        typer.Option(help="Hotkey-Modus: toggle oder hold"),
+    ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(help="Sprachcode z.B. 'de', 'en'"),
+    ] = None,
+    mode: Annotated[
+        TranscriptionMode | None,
+        typer.Option(help="Transkriptions-Modus"),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(help="Modell (default: nova-3)"),
+    ] = None,
+    refine: Annotated[
+        bool,
+        typer.Option(help="LLM-Nachbearbeitung aktivieren"),
+    ] = False,
+    refine_model: Annotated[
+        str | None,
+        typer.Option(help="Modell fuer LLM-Nachbearbeitung"),
+    ] = None,
+    refine_provider: Annotated[
+        RefineProvider | None,
+        typer.Option(help="LLM-Provider fuer Nachbearbeitung"),
+    ] = None,
+    context: Annotated[
+        Context | None,
+        typer.Option(help="Kontext fuer LLM-Nachbearbeitung"),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option(help="Debug-Logging aktivieren"),
+    ] = False,
+) -> None:
+    """Unified Daemon fuer PulseScribe.
+
+    Beispiele:
+        pulsescribe_daemon.py                      # Mit Defaults aus .env
+        pulsescribe_daemon.py --hotkey fn          # Fn/Globe als Hotkey
+        pulsescribe_daemon.py --hotkey cmd+shift+r # Tastenkombination
+        pulsescribe_daemon.py --refine             # Mit LLM-Nachbearbeitung
+    """
 
     # Globaler Exception Handler für Crashes
     def handle_exception(exc_type, exc_value, exc_traceback):
@@ -2535,124 +2602,51 @@ def main() -> int:
 
     emergency_log("=== PulseScribe Daemon gestartet ===")
 
-    # Environment laden bevor Argumente definiert werden (für Defaults)
+    # Environment laden
     load_environment()
 
-    parser = argparse.ArgumentParser(
-        description="pulsescribe_daemon – Unified Daemon für PulseScribe",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Beispiele:
-  %(prog)s                          # Mit Defaults aus .env
-  %(prog)s --hotkey fn              # Fn/Globe als Hotkey
-  %(prog)s --hotkey cmd+shift+r     # Tastenkombination
-  %(prog)s --refine                 # Mit LLM-Nachbearbeitung
-        """,
-    )
+    setup_logging(debug=debug)
 
-    parser.add_argument(
-        "--hotkey",
-        default=None,
-        help="Hotkey (default: PULSESCRIBE_HOTKEY oder 'fn')",
-    )
-    parser.add_argument(
-        "--toggle-hotkey",
-        default=None,
-        help="Toggle-Hotkey (default: PULSESCRIBE_TOGGLE_HOTKEY)",
-    )
-    parser.add_argument(
-        "--hold-hotkey",
-        default=None,
-        help="Hold-Hotkey (default: PULSESCRIBE_HOLD_HOTKEY)",
-    )
-    parser.add_argument(
-        "--hotkey-mode",
-        choices=["toggle", "hold"],
-        default=None,
-        help="Hotkey-Modus: toggle oder hold (default: PULSESCRIBE_HOTKEY_MODE)",
-    )
-    parser.add_argument(
-        "--language",
-        default=None,
-        help="Sprachcode z.B. 'de', 'en'",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["openai", "deepgram", "groq", "local"],
-        default=None,
-        help="Transkriptions-Modus (default: PULSESCRIBE_MODE)",
-    )
-    parser.add_argument(
-        "--model",
-        default=None,
-        help="Deepgram-Modell (default: nova-3)",
-    )
-    parser.add_argument(
-        "--refine",
-        action="store_true",
-        default=get_env_bool_default("PULSESCRIBE_REFINE", False),
-        help="LLM-Nachbearbeitung aktivieren",
-    )
-    parser.add_argument(
-        "--refine-model",
-        default=None,
-        help="Modell für LLM-Nachbearbeitung",
-    )
-    parser.add_argument(
-        "--refine-provider",
-        choices=["openai", "openrouter", "groq"],
-        default=None,
-        help="LLM-Provider für Nachbearbeitung",
-    )
-    parser.add_argument(
-        "--context",
-        choices=["email", "chat", "code", "default"],
-        default=None,
-        help="Kontext für LLM-Nachbearbeitung",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Debug-Logging aktivieren",
-    )
-
-    args = parser.parse_args()
-
-    setup_logging(debug=args.debug)
+    # ENV-basiertes refine (CLI überschreibt)
+    effective_refine = refine or get_env_bool_default("PULSESCRIBE_REFINE", False)
 
     # Konfiguration: CLI > ENV > Default
     env_hotkey = os.getenv("PULSESCRIBE_HOTKEY")
-    hotkey = args.hotkey or env_hotkey or "fn"
-    hotkey_mode = args.hotkey_mode or os.getenv("PULSESCRIBE_HOTKEY_MODE", "toggle")
-    toggle_hotkey = args.toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
-    hold_hotkey = args.hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
+    effective_hotkey = hotkey or env_hotkey or "fn"
+    effective_hotkey_mode = (
+        hotkey_mode.value
+        if hotkey_mode
+        else os.getenv("PULSESCRIBE_HOTKEY_MODE", "toggle")
+    )
+    effective_toggle_hotkey = toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
+    effective_hold_hotkey = hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
 
     # New default for fresh installs: Fn/Globe as hold hotkey
     if (
-        toggle_hotkey is None
-        and hold_hotkey is None
-        and args.hotkey is None
+        effective_toggle_hotkey is None
+        and effective_hold_hotkey is None
+        and hotkey is None
         and env_hotkey is None
     ):
-        hold_hotkey = "fn"
-    language = args.language or os.getenv("PULSESCRIBE_LANGUAGE")
-    model = args.model or os.getenv("PULSESCRIBE_MODEL")
+        effective_hold_hotkey = "fn"
+    effective_language = language or os.getenv("PULSESCRIBE_LANGUAGE")
+    effective_model = model or os.getenv("PULSESCRIBE_MODEL")
     mode_env = os.getenv("PULSESCRIBE_MODE")
-    mode = args.mode or mode_env or "deepgram"
+    effective_mode = mode.value if mode else (mode_env or "deepgram")
 
     # Demo/first-success default: if no mode is configured and no API keys are present,
     # start in local mode so the app works immediately without setup.
-    if args.mode is None and mode_env is None:
+    if mode is None and mode_env is None:
         has_any_api_key = bool(
             os.getenv("DEEPGRAM_API_KEY")
             or os.getenv("OPENAI_API_KEY")
             or os.getenv("GROQ_API_KEY")
         )
         if not has_any_api_key:
-            mode = "local"
+            effective_mode = "local"
             # Avoid passing provider-specific model names (e.g. Deepgram model) into local mode.
-            if args.model is None:
-                model = None
+            if model is None:
+                effective_model = None
             os.environ.setdefault("PULSESCRIBE_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
             if os.getenv("PULSESCRIBE_LOCAL_BACKEND") is None:
                 try:
@@ -2672,32 +2666,29 @@ Beispiele:
     # Daemon starten
     try:
         daemon = PulseScribeDaemon(
-            hotkey=hotkey,
-            language=language,
-            model=model,
-            refine=args.refine,
-            refine_model=args.refine_model,
-            refine_provider=args.refine_provider,
-            context=args.context,
-            mode=mode,
-            hotkey_mode=hotkey_mode,
-            toggle_hotkey=toggle_hotkey,
-            hold_hotkey=hold_hotkey,
+            hotkey=effective_hotkey,
+            language=effective_language,
+            model=effective_model,
+            refine=effective_refine,
+            refine_model=refine_model,
+            refine_provider=refine_provider.value if refine_provider else None,
+            context=context.value if context else None,
+            mode=effective_mode,
+            hotkey_mode=effective_hotkey_mode,
+            toggle_hotkey=effective_toggle_hotkey,
+            hold_hotkey=effective_hold_hotkey,
         )
         daemon.run()
     except ValueError as e:
         print(f"Konfigurationsfehler: {e}", file=sys.stderr)
-        return 1
+        raise typer.Exit(1)
     except KeyboardInterrupt:
         print("\n👋 Daemon beendet", file=sys.stderr)
-        return 0
     except Exception as e:
         logger.exception(f"Unerwarteter Fehler: {e}")
         print(f"Fehler: {e}", file=sys.stderr)
-        return 1
-
-    return 0
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()
