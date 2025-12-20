@@ -47,7 +47,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
   - Hotkey-Registrierung via [QuickMacHotKey](https://github.com/glyph/QuickMacHotKey) (Carbon API)
 - [ ] **Windows Support** – Priorisiert (siehe [WINDOWS_ANALYSIS.md](./WINDOWS_ANALYSIS.md))
 - [ ] **Linux Support**
-- [ ] **CLI Modernisierung** (Migration auf `typer`)
+- [x] **CLI Modernisierung** (Migration auf `typer`) ✅
 
 ### Abgeschlossene Meilensteine (Phases 1-4) ✅
 
