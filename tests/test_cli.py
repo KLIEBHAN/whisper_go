@@ -1,10 +1,16 @@
 """Tests für CLI-Argument-Parsing mit Typer."""
 
+import re
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from transcribe import app
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 runner = CliRunner()
@@ -96,23 +102,23 @@ class TestCLI:
     def test_language_option(self, clean_env):
         """--language Option wird geparst."""
         result = runner.invoke(app, ["--help"])
-        assert "--language" in result.output
+        assert "--language" in strip_ansi(result.output)
 
     def test_refine_flag(self, clean_env):
         """--refine Flag wird erkannt."""
         result = runner.invoke(app, ["--help"])
-        assert "--refine" in result.output
+        assert "--refine" in strip_ansi(result.output)
 
     def test_no_refine_flag(self, clean_env):
         """--no-refine Flag wird erkannt."""
         result = runner.invoke(app, ["--help"])
-        assert "--no-refine" in result.output
+        assert "--no-refine" in strip_ansi(result.output)
 
     def test_refine_env_default(self, monkeypatch, clean_env):
         """PULSESCRIBE_REFINE env variable ist dokumentiert."""
         result = runner.invoke(app, ["--help"])
         # Typer trunkiert lange env var Namen - prüfe Präfix
-        assert "PULSESCRIBE_REFI" in result.output
+        assert "PULSESCRIBE_REFI" in strip_ansi(result.output)
 
     def test_context_choices(self, clean_env):
         """--context akzeptiert nur gültige Werte und reicht sie korrekt durch."""
@@ -139,13 +145,15 @@ class TestCLI:
     def test_short_flags(self, clean_env):
         """-r und -c Kurzformen funktionieren."""
         result = runner.invoke(app, ["--help"])
-        assert "-r" in result.output
-        assert "-c" in result.output
+        output = strip_ansi(result.output)
+        assert "-r" in output
+        assert "-c" in output
 
     def test_help_output(self, clean_env):
         """--help zeigt formatierte Hilfe."""
         result = runner.invoke(app, ["--help"])
+        output = strip_ansi(result.output)
         assert result.exit_code == 0
-        assert "Audio transkribieren" in result.output
-        assert "--mode" in result.output
-        assert "--record" in result.output
+        assert "Audio transkribieren" in output
+        assert "--mode" in output
+        assert "--record" in output
