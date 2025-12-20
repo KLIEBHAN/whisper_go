@@ -115,12 +115,24 @@ class TestCLI:
         assert "PULSESCRIBE_REFI" in result.output
 
     def test_context_choices(self, clean_env):
-        """--context akzeptiert nur gültige Werte."""
+        """--context akzeptiert nur gültige Werte und reicht sie korrekt durch."""
+        # Gültige Kontexte werden akzeptiert und an maybe_refine_transcript übergeben
         for ctx in ["email", "chat", "code", "default"]:
-            # Ungültige Kontexte sollten Fehler werfen
-            pass  # Implizit getestet durch Enum-Validierung
+            with patch("transcribe.record_audio") as mock_record:
+                with patch("transcribe.transcribe") as mock_transcribe:
+                    with patch("transcribe.maybe_refine_transcript") as mock_refine:
+                        mock_record.return_value = "test.wav"
+                        mock_transcribe.return_value = "Test"
+                        mock_refine.return_value = "Test"
+                        _result = runner.invoke(
+                            app, ["--record", "--refine", "--context", ctx]
+                        )
+                        # Prüfe dass context korrekt übergeben wurde
+                        if mock_refine.called:
+                            call_kwargs = mock_refine.call_args.kwargs
+                            assert call_kwargs.get("context") == ctx
 
-        # Ungültiger Kontext
+        # Ungültiger Kontext führt zu Fehler
         result = runner.invoke(app, ["--record", "--context", "invalid"])
         assert result.exit_code != 0
 

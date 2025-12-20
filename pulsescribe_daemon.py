@@ -2563,6 +2563,10 @@ def main(
         bool,
         typer.Option(help="LLM-Nachbearbeitung aktivieren"),
     ] = False,
+    no_refine: Annotated[
+        bool,
+        typer.Option(help="LLM-Nachbearbeitung deaktivieren (ueberschreibt ENV)"),
+    ] = False,
     refine_model: Annotated[
         str | None,
         typer.Option(help="Modell fuer LLM-Nachbearbeitung"),
@@ -2607,8 +2611,14 @@ def main(
 
     setup_logging(debug=debug)
 
-    # ENV-basiertes refine (CLI überschreibt)
-    effective_refine = refine or get_env_bool_default("PULSESCRIBE_REFINE", False)
+    # Refine: CLI (--refine/--no-refine) > ENV > Default
+    # --no-refine hat höchste Priorität um ENV zu überschreiben
+    if no_refine:
+        effective_refine = False
+    elif refine:
+        effective_refine = True
+    else:
+        effective_refine = get_env_bool_default("PULSESCRIBE_REFINE", False)
 
     # Konfiguration: CLI > ENV > Default
     env_hotkey = os.getenv("PULSESCRIBE_HOTKEY")

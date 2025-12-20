@@ -127,5 +127,9 @@ def clean_env(monkeypatch):
             monkeypatch.delenv(key, raising=False)
 
     # Verhindere dass load_environment() die .env lädt und ENV polluted
-    monkeypatch.setattr("transcribe.load_environment", lambda: None)
-    monkeypatch.setattr("pulsescribe_daemon.load_environment", lambda: None)
+    # Module müssen importiert werden bevor setattr funktioniert
+    import transcribe
+    import pulsescribe_daemon
+
+    monkeypatch.setattr(transcribe, "load_environment", lambda: None)
+    monkeypatch.setattr(pulsescribe_daemon, "load_environment", lambda: None)
