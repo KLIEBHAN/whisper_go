@@ -1276,7 +1276,9 @@ class PulseScribeDaemon:
         transcript = ""
 
         try:
-            model = self.model or DEFAULT_DEEPGRAM_MODEL
+            # Deepgram nutzt eigene Modellnamen (nova-3, etc.)
+            # self.model ist für lokale Modelle (turbo, large-v3)
+            model = DEFAULT_DEEPGRAM_MODEL
 
             # Eigener Event-Loop, da wir nicht im Main-Thread sind
             loop = asyncio.new_event_loop()
