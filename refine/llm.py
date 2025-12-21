@@ -22,15 +22,14 @@ from config import (
 
 logger = logging.getLogger("pulsescribe")
 
-# Groq-Client Singleton
+# Client Singletons (Lazy Init, spart ~30-50ms pro Aufruf durch Connection-Reuse)
 _groq_client = None
+_openai_client = None
+_openrouter_client = None
 
 
 def _get_groq_client():
-    """Gibt Groq-Client Singleton zurück (Lazy Init).
-
-    Spart ~30-50ms pro Aufruf durch Connection-Reuse.
-    """
+    """Gibt Groq-Client Singleton zurück (Lazy Init)."""
     global _groq_client
     if _groq_client is None:
         from groq import Groq
@@ -43,21 +42,38 @@ def _get_groq_client():
     return _groq_client
 
 
-def _get_refine_client(provider: str):
-    """Erstellt Client für Nachbearbeitung (OpenAI, OpenRouter oder Groq)."""
-    if provider == "groq":
-        return _get_groq_client()
+def _get_openai_client():
+    """Gibt OpenAI-Client Singleton zurück (Lazy Init)."""
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
 
-    from openai import OpenAI
+        _openai_client = OpenAI()  # Nutzt OPENAI_API_KEY automatisch
+        logger.debug(f"[{get_session_id()}] OpenAI-Client initialisiert")
+    return _openai_client
 
-    if provider == "openrouter":
+
+def _get_openrouter_client():
+    """Gibt OpenRouter-Client Singleton zurück (Lazy Init)."""
+    global _openrouter_client
+    if _openrouter_client is None:
+        from openai import OpenAI
+
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY nicht gesetzt")
-        return OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
+        _openrouter_client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
+        logger.debug(f"[{get_session_id()}] OpenRouter-Client initialisiert")
+    return _openrouter_client
 
-    # Default: OpenAI (nutzt OPENAI_API_KEY automatisch)
-    return OpenAI()
+
+def _get_refine_client(provider: str):
+    """Gibt gecachten Client für Nachbearbeitung zurück (OpenAI, OpenRouter oder Groq)."""
+    if provider == "groq":
+        return _get_groq_client()
+    if provider == "openrouter":
+        return _get_openrouter_client()
+    return _get_openai_client()
 
 
 def _extract_message_content(content) -> str:

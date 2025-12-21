@@ -64,6 +64,20 @@ class TestCopyToClipboard:
 class TestGetRefineClient:
     """Tests für _get_refine_client() – Client-Erstellung pro Provider."""
 
+    @pytest.fixture(autouse=True)
+    def reset_client_singletons(self):
+        """Setzt Client-Singletons vor jedem Test zurück."""
+        import refine.llm
+
+        refine.llm._groq_client = None
+        refine.llm._openai_client = None
+        refine.llm._openrouter_client = None
+        yield
+        # Cleanup nach Test
+        refine.llm._groq_client = None
+        refine.llm._openai_client = None
+        refine.llm._openrouter_client = None
+
     def test_openai_default(self):
         """OpenAI-Provider nutzt OpenAI-Client."""
         mock_openai_class = Mock()
