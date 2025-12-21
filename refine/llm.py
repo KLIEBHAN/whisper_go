@@ -6,6 +6,7 @@ Enthält Funktionen für die Nachbearbeitung von Transkripten mit LLMs
 
 import logging
 import os
+import threading
 
 from .prompts import get_prompt_for_context
 from .context import detect_context
@@ -23,47 +24,56 @@ from config import (
 logger = logging.getLogger("pulsescribe")
 
 # Client Singletons (Lazy Init, spart ~30-50ms pro Aufruf durch Connection-Reuse)
+_client_lock = threading.Lock()
 _groq_client = None
 _openai_client = None
 _openrouter_client = None
 
 
 def _get_groq_client():
-    """Gibt Groq-Client Singleton zurück (Lazy Init)."""
+    """Gibt Groq-Client Singleton zurück (Lazy Init, Thread-Safe)."""
     global _groq_client
     if _groq_client is None:
-        from groq import Groq
+        with _client_lock:
+            if _groq_client is None:  # Double-check nach Lock
+                from groq import Groq
 
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY nicht gesetzt")
-        _groq_client = Groq(api_key=api_key)
-        logger.debug(f"[{get_session_id()}] Groq-Client initialisiert")
+                api_key = os.getenv("GROQ_API_KEY")
+                if not api_key:
+                    raise ValueError("GROQ_API_KEY nicht gesetzt")
+                _groq_client = Groq(api_key=api_key)
+                logger.debug(f"[{get_session_id()}] Groq-Client initialisiert")
     return _groq_client
 
 
 def _get_openai_client():
-    """Gibt OpenAI-Client Singleton zurück (Lazy Init)."""
+    """Gibt OpenAI-Client Singleton zurück (Lazy Init, Thread-Safe)."""
     global _openai_client
     if _openai_client is None:
-        from openai import OpenAI
+        with _client_lock:
+            if _openai_client is None:  # Double-check nach Lock
+                from openai import OpenAI
 
-        _openai_client = OpenAI()  # Nutzt OPENAI_API_KEY automatisch
-        logger.debug(f"[{get_session_id()}] OpenAI-Client initialisiert")
+                _openai_client = OpenAI()  # Nutzt OPENAI_API_KEY automatisch
+                logger.debug(f"[{get_session_id()}] OpenAI-Client initialisiert")
     return _openai_client
 
 
 def _get_openrouter_client():
-    """Gibt OpenRouter-Client Singleton zurück (Lazy Init)."""
+    """Gibt OpenRouter-Client Singleton zurück (Lazy Init, Thread-Safe)."""
     global _openrouter_client
     if _openrouter_client is None:
-        from openai import OpenAI
+        with _client_lock:
+            if _openrouter_client is None:  # Double-check nach Lock
+                from openai import OpenAI
 
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY nicht gesetzt")
-        _openrouter_client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
-        logger.debug(f"[{get_session_id()}] OpenRouter-Client initialisiert")
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                if not api_key:
+                    raise ValueError("OPENROUTER_API_KEY nicht gesetzt")
+                _openrouter_client = OpenAI(
+                    base_url=OPENROUTER_BASE_URL, api_key=api_key
+                )
+                logger.debug(f"[{get_session_id()}] OpenRouter-Client initialisiert")
     return _openrouter_client
 
 
