@@ -408,3 +408,174 @@ class TestGetDefaults:
         assert "app_contexts" in defaults
         assert defaults["app_contexts"]["Mail"] == "email"
         assert defaults["app_contexts"]["Slack"] == "chat"
+
+
+# =============================================================================
+# Edge Cases und Error Handling
+# =============================================================================
+
+
+class TestErrorHandling:
+    """Tests für Fehlerbehandlung und Edge Cases."""
+
+    def test_file_permission_denied(self, prompts_file, monkeypatch):
+        """Datei nicht lesbar → graceful fallback zu Defaults."""
+        from utils.custom_prompts import load_custom_prompts, _clear_cache
+        import os
+
+        # Datei erstellen
+        prompts_file.write_text('[prompts.email]\nprompt = """Test"""')
+        _clear_cache()
+
+        # os.stat wirft OSError (Permission denied simulieren)
+        original_stat = os.stat
+
+        def mock_stat(path, *args, **kwargs):
+            if str(path) == str(prompts_file):
+                raise OSError("Permission denied")
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "stat", mock_stat)
+
+        # Sollte graceful zu Defaults zurückfallen
+        result = load_custom_prompts(path=prompts_file)
+        assert result["prompts"]["default"]["prompt"] == CONTEXT_PROMPTS["default"]
+
+    def test_toml_decode_error_logs_warning(self, prompts_file, caplog):
+        """TOML Parse-Fehler loggt Warning und fällt zu Defaults."""
+        from utils.custom_prompts import load_custom_prompts, _clear_cache
+        import logging
+
+        # Ungültiges TOML schreiben
+        prompts_file.write_text("invalid = [unclosed bracket")
+        _clear_cache()
+
+        with caplog.at_level(logging.WARNING):
+            result = load_custom_prompts(path=prompts_file)
+
+        # Defaults zurückgegeben
+        assert result["prompts"]["default"]["prompt"] == CONTEXT_PROMPTS["default"]
+        # Warning wurde geloggt
+        assert any("fehlerhaft" in record.message for record in caplog.records)
+
+    def test_empty_toml_file(self, prompts_file):
+        """Leere TOML-Datei → alle Defaults."""
+        from utils.custom_prompts import load_custom_prompts
+
+        prompts_file.write_text("")
+        result = load_custom_prompts(path=prompts_file)
+
+        # Alle Defaults müssen vorhanden sein
+        assert result["prompts"]["default"]["prompt"] == CONTEXT_PROMPTS["default"]
+        assert result["prompts"]["email"]["prompt"] == CONTEXT_PROMPTS["email"]
+        assert result["voice_commands"]["instruction"] == VOICE_COMMANDS_INSTRUCTION
+        assert result["app_contexts"] == DEFAULT_APP_CONTEXTS
+
+
+class TestCacheBehavior:
+    """Tests für Cache-Invalidation und mtime."""
+
+    def test_cache_hits_with_same_mtime(self, prompts_file):
+        """Cache wird bei gleicher mtime nicht neu geladen (identisches Objekt)."""
+        from utils.custom_prompts import load_custom_prompts
+
+        prompts_file.write_text('[prompts.default]\nprompt = """Cached"""')
+
+        # Erstes Laden
+        result1 = load_custom_prompts(path=prompts_file)
+        # Zweites Laden (ohne Dateiänderung)
+        result2 = load_custom_prompts(path=prompts_file)
+
+        # Muss dasselbe Objekt sein (nicht nur gleich, sondern identisch)
+        assert result1 is result2
+
+    def test_save_invalidates_cache(self, prompts_file):
+        """Nach save() gibt load() frische Daten."""
+        from utils.custom_prompts import save_custom_prompts, load_custom_prompts
+
+        # Erst speichern
+        save_custom_prompts(
+            {"prompts": {"default": {"prompt": "Version 1"}}},
+            path=prompts_file,
+        )
+        result1 = load_custom_prompts(path=prompts_file)
+        assert "Version 1" in result1["prompts"]["default"]["prompt"]
+
+        # Neu speichern (sollte Cache invalidieren)
+        save_custom_prompts(
+            {"prompts": {"default": {"prompt": "Version 2"}}},
+            path=prompts_file,
+        )
+        result2 = load_custom_prompts(path=prompts_file)
+        assert "Version 2" in result2["prompts"]["default"]["prompt"]
+
+
+class TestMergeBehavior:
+    """Tests für Merge-Logik mit Defaults."""
+
+    def test_merge_empty_prompts_section(self, prompts_file):
+        """Leere [prompts] Sektion → alle Defaults."""
+        from utils.custom_prompts import load_custom_prompts
+
+        # [prompts] vorhanden aber leer
+        prompts_file.write_text("[prompts]\n")
+        result = load_custom_prompts(path=prompts_file)
+
+        # Alle Prompt-Defaults müssen vorhanden sein
+        assert result["prompts"]["default"]["prompt"] == CONTEXT_PROMPTS["default"]
+        assert result["prompts"]["email"]["prompt"] == CONTEXT_PROMPTS["email"]
+        assert result["prompts"]["chat"]["prompt"] == CONTEXT_PROMPTS["chat"]
+        assert result["prompts"]["code"]["prompt"] == CONTEXT_PROMPTS["code"]
+
+
+class TestParseAppMappings:
+    """Tests für parse_app_mappings() Edge Cases."""
+
+    def test_parse_app_mappings_malformed_lines(self):
+        """Zeilen ohne '=' werden ignoriert."""
+        from utils.custom_prompts import parse_app_mappings
+
+        text = """# Comment
+Mail = email
+invalid line without equals
+Slack = chat
+"""
+        result = parse_app_mappings(text)
+
+        assert result == {"Mail": "email", "Slack": "chat"}
+        assert "invalid" not in str(result)
+
+    def test_parse_app_mappings_empty_string(self):
+        """Leerer String → leeres Dict."""
+        from utils.custom_prompts import parse_app_mappings
+
+        assert parse_app_mappings("") == {}
+
+    def test_parse_app_mappings_only_comments(self):
+        """Nur Kommentare → leeres Dict."""
+        from utils.custom_prompts import parse_app_mappings
+
+        text = """# Comment 1
+# Comment 2
+# Another comment
+"""
+        assert parse_app_mappings(text) == {}
+
+
+class TestSerializationEdgeCases:
+    """Tests für Serialisierung mit schwierigen Zeichen."""
+
+    def test_serialize_combined_escapes(self, prompts_file):
+        """Text mit Backslash UND Triple-Quotes korrekt escaped."""
+        from utils.custom_prompts import save_custom_prompts, load_custom_prompts
+
+        # Kombinierter Edge Case: Backslash + Triple-Quotes
+        tricky_prompt = 'Pfad: C:\\Users\\Test und """quoted""" text'
+
+        save_custom_prompts(
+            {"prompts": {"default": {"prompt": tricky_prompt}}},
+            path=prompts_file,
+        )
+
+        loaded = load_custom_prompts(path=prompts_file)
+        assert loaded["prompts"]["default"]["prompt"] == tricky_prompt

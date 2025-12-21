@@ -83,7 +83,7 @@ from utils.logging import (  # noqa: E402
     error,
     get_session_id as _get_session_id,
 )
-from utils.environment import load_environment  # noqa: E402
+from utils.env import load_environment  # noqa: E402
 from utils.timing import (  # noqa: E402
     format_duration as _format_duration,
     log_preview as _shared_log_preview,

@@ -1,13 +1,19 @@
-"""Helpers for reading environment variables.
+"""Helpers for reading and loading environment variables.
 
 We use `.env` files (python-dotenv) plus runtime `os.environ` overrides.
 These helpers standardize parsing and avoid duplicated ad-hoc logic across modules.
+
+Precedence for load_environment (default `override_existing=False`):
+1) Process environment (`os.environ`)
+2) User config `.env` (`~/.pulsescribe/.env`)
+3) Local project `.env` (current working directory)
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger("pulsescribe")
 
@@ -61,9 +67,42 @@ def get_env_int(name: str) -> int | None:
         return None
 
 
+def load_environment(*, override_existing: bool = False) -> None:
+    """Loads `.env` values into `os.environ` if python-dotenv is available.
+
+    On reload (`override_existing=True`), `.env` values override existing env vars,
+    while user config still overrides the local project `.env`.
+    """
+    try:
+        from dotenv import dotenv_values  # type: ignore[import-not-found]
+    except Exception:
+        return
+
+    from config import USER_CONFIG_DIR
+
+    local_env = Path(".env")
+    user_env = USER_CONFIG_DIR / ".env"
+
+    merged: dict[str, str] = {}
+    # Local first, then user (user wins).
+    env_paths = [local_env, user_env]
+    for env_path in env_paths:
+        if not env_path.exists():
+            continue
+        for key, value in dotenv_values(env_path).items():
+            if value is None:
+                continue
+            merged[str(key)] = str(value)
+
+    for key, value in merged.items():
+        if override_existing or key not in os.environ:
+            os.environ[key] = value
+
+
 __all__ = [
     "get_env_bool",
     "get_env_bool_default",
     "get_env_int",
+    "load_environment",
     "parse_bool",
 ]

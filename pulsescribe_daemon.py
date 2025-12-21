@@ -56,8 +56,12 @@ try:
     from config import TRANSCRIBING_TIMEOUT
     from utils import setup_logging, show_error_alert
     from config import DEFAULT_DEEPGRAM_MODEL, DEFAULT_LOCAL_MODEL
-    from utils.env import get_env_bool, get_env_bool_default, parse_bool
-    from utils.environment import load_environment
+    from utils.env import (
+        get_env_bool,
+        get_env_bool_default,
+        parse_bool,
+        load_environment,
+    )
     from providers.deepgram_stream import deepgram_stream_core
     from providers import get_provider
     from whisper_platform import get_sound_player
