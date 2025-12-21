@@ -17,12 +17,16 @@ class TestTranscribeFunction:
 
     def test_uses_provider_module(self, audio_file):
         """transcribe() nutzt providers.get_provider()."""
+        from providers.openai import OpenAIProvider
+
         with patch("providers.get_provider") as mock_get_provider:
-            mock_provider = Mock()
+            # Mock muss spec=OpenAIProvider haben für isinstance()-Check
+            mock_provider = Mock(spec=OpenAIProvider)
             mock_provider.transcribe.return_value = "transcribed text"
             mock_get_provider.return_value = mock_provider
 
             from transcribe import transcribe
+
             result = transcribe(audio_file, mode="openai", model="test-model")
 
         mock_get_provider.assert_called_once_with("openai")
@@ -38,27 +42,36 @@ class TestTranscribeFunction:
 
     def test_valid_modes(self, audio_file):
         """Alle gültigen Modi werden akzeptiert."""
+        from providers.openai import OpenAIProvider
         from transcribe import DEFAULT_MODELS
 
         for mode in DEFAULT_MODELS.keys():
             with patch("providers.get_provider") as mock_get_provider:
-                mock_provider = Mock()
+                # OpenAI braucht spec für isinstance()-Check
+                if mode == "openai":
+                    mock_provider = Mock(spec=OpenAIProvider)
+                else:
+                    mock_provider = Mock()
                 mock_provider.transcribe.return_value = "text"
                 mock_get_provider.return_value = mock_provider
 
                 from transcribe import transcribe
+
                 transcribe(audio_file, mode=mode)
 
             mock_get_provider.assert_called_with(mode)
 
     def test_openai_passes_response_format(self, audio_file):
         """OpenAI-Provider erhält response_format Parameter."""
+        from providers.openai import OpenAIProvider
+
         with patch("providers.get_provider") as mock_get_provider:
-            mock_provider = Mock()
+            mock_provider = Mock(spec=OpenAIProvider)
             mock_provider.transcribe.return_value = "text"
             mock_get_provider.return_value = mock_provider
 
             from transcribe import transcribe
+
             transcribe(audio_file, mode="openai", response_format="json")
 
         # OpenAI sollte response_format bekommen
@@ -73,6 +86,7 @@ class TestTranscribeFunction:
             mock_get_provider.return_value = mock_provider
 
             from transcribe import transcribe
+
             transcribe(audio_file, mode="deepgram", response_format="json")
 
         # Deepgram sollte KEIN response_format bekommen
@@ -87,6 +101,7 @@ class TestTranscribeFunction:
             mock_get_provider.return_value = mock_provider
 
             from transcribe import transcribe
+
             transcribe(audio_file, mode="groq", language="de")
 
         call_kwargs = mock_provider.transcribe.call_args[1]
@@ -100,6 +115,7 @@ class TestTranscribeFunction:
             mock_get_provider.return_value = mock_provider
 
             from transcribe import transcribe
+
             transcribe(audio_file, mode="local", model="turbo")
 
         call_kwargs = mock_provider.transcribe.call_args[1]

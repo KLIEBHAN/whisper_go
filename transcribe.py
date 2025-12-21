@@ -221,11 +221,13 @@ def transcribe(
 
     # OpenAI unterstützt response_format
     if mode == "openai":
-        from typing import cast
         from providers.openai import OpenAIProvider
 
-        openai_provider = cast(OpenAIProvider, provider)
-        return openai_provider.transcribe(
+        if not isinstance(provider, OpenAIProvider):
+            raise TypeError(
+                f"Expected OpenAIProvider for mode='openai', got {type(provider).__name__}"
+            )
+        return provider.transcribe(
             audio_path,
             model=model,
             language=language,
