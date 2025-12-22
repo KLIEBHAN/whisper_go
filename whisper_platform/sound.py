@@ -23,7 +23,7 @@ MACOS_SYSTEM_SOUNDS = {
 WINDOWS_SYSTEM_SOUNDS = {
     "ready": "DeviceConnect",  # Aufnahme startet
     "stop": "DeviceDisconnect",  # Aufnahme stoppt
-    "done": "Notification.Default",  # Transkription fertig
+    "done": "Notification.SMS",  # Text eingefügt
     "error": "SystemHand",  # Fehler (kritischer Ton)
 }
 
