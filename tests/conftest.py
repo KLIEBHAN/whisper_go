@@ -92,9 +92,11 @@ def temp_files(tmp_path, monkeypatch):
     Verhindert Konflikte mit laufenden pulsescribe Instanzen
     und ermöglicht parallele Test-Ausführung.
     """
-    import transcribe
+    # Auf Windows: Skip transcribe Import (benötigt typer)
+    if sys.platform == "darwin":
+        import transcribe
 
-    monkeypatch.setattr(transcribe, "VOCABULARY_FILE", tmp_path / "vocab.json")
+        monkeypatch.setattr(transcribe, "VOCABULARY_FILE", tmp_path / "vocab.json")
 
     return tmp_path
 
@@ -126,8 +128,10 @@ def clean_env(monkeypatch):
 
     # Verhindere dass load_environment() die .env lädt und ENV polluted
     # Module müssen importiert werden bevor setattr funktioniert
-    import transcribe
-    import pulsescribe_daemon
+    # Auf Windows: Skip, da transcribe/pulsescribe_daemon typer benötigen
+    if sys.platform == "darwin":
+        import transcribe
+        import pulsescribe_daemon
 
-    monkeypatch.setattr(transcribe, "load_environment", lambda: None)
-    monkeypatch.setattr(pulsescribe_daemon, "load_environment", lambda: None)
+        monkeypatch.setattr(transcribe, "load_environment", lambda: None)
+        monkeypatch.setattr(pulsescribe_daemon, "load_environment", lambda: None)

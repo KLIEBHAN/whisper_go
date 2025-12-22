@@ -1,5 +1,7 @@
 """Tests für utils/hotkey.py – Hotkey-Parsing und Auto-Paste."""
 
+import sys
+
 import pytest
 from unittest.mock import patch
 import subprocess
@@ -170,6 +172,7 @@ class TestParseHotkeyWithModifiers:
 # =============================================================================
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only: requires pulsescribe_daemon")
 class TestParsePynputHotkey:
     """Tests für Hold-Mode Hotkey-Parsing via pynput."""
 
@@ -201,6 +204,7 @@ class TestParsePynputHotkey:
             PulseScribeDaemon._parse_pynput_hotkey("f99")
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only: tests Quartz hotkey listener")
 class TestMacOSHotkeyListenerSelection:
     def test_toggle_uses_quartz_on_macos(self, monkeypatch):
         from pulsescribe_daemon import PulseScribeDaemon
@@ -258,6 +262,7 @@ class TestMacOSHotkeyListenerSelection:
 # =============================================================================
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only: tests macOS paste logic")
 class TestPasteTranscript:
     """Tests für paste_transcript() – Clipboard und Auto-Paste."""
 
@@ -414,6 +419,7 @@ class TestPasteTranscript:
 # =============================================================================
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only: tests osascript")
 class TestPasteViaOsascript:
     """Tests für _paste_via_osascript() – Fallback-Mechanismus."""
 
