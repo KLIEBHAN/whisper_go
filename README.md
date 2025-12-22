@@ -622,34 +622,57 @@ pytest --cov=. --cov-report=term-missing
 
 Tests run automatically via GitHub Actions on Push and Pull Requests.
 
-### Windows Support (Experimental)
+### Windows Support
 
-PulseScribe includes experimental Windows support with a dedicated daemon:
+PulseScribe includes Windows support with a dedicated daemon:
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-pip install pystray pillow
+pip install pystray pillow pynput pywin32 psutil
 
 # Run the Windows daemon
 python pulsescribe_windows.py
 
 # With options
 python pulsescribe_windows.py --hotkey "ctrl+alt+r" --debug
+
+# With LLM post-processing
+python pulsescribe_windows.py --refine --refine-provider groq
 ```
 
 **Features:**
-- System Tray icon with color-coded status (gray/orange/red/yellow/green)
+- System Tray icon with color-coded status (gray/orange/red/yellow/cyan/green)
 - Global hotkey via pynput (default: `Ctrl+Alt+R`)
 - Audio recording via sounddevice
 - Deepgram REST API transcription
 - Auto-Paste via `Ctrl+V` simulation
+- LLM post-processing (Groq, OpenAI, OpenRouter)
+- App context detection (Outlook → email, VS Code → code, Discord → chat)
+- Windows system sounds (DeviceConnect, DeviceDisconnect, Notification.SMS)
+
+**CLI Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--hotkey` | Global hotkey (default: `ctrl+alt+r`) |
+| `--no-paste` | Disable auto-paste, copy to clipboard only |
+| `--refine` | Enable LLM post-processing |
+| `--refine-provider` | LLM provider: `groq`, `openai`, `openrouter` |
+| `--refine-model` | LLM model override |
+| `--context` | Force context: `email`, `chat`, `code`, `default` |
+| `--debug` | Enable debug logging |
 
 **Configuration:** Same `.env` file as macOS (`~/.pulsescribe/.env` or project root):
 
 ```bash
 DEEPGRAM_API_KEY=your_key
-PULSESCRIBE_LANGUAGE=en
+PULSESCRIBE_LANGUAGE=de
+
+# Optional: LLM Refine
+PULSESCRIBE_REFINE=true
+PULSESCRIBE_REFINE_PROVIDER=groq
+GROQ_API_KEY=your_groq_key
 ```
 
 **Building Windows EXE:**
@@ -658,10 +681,10 @@ PULSESCRIBE_LANGUAGE=en
 pip install pyinstaller
 pyinstaller build_windows.spec --clean
 
-# Output: dist/PulseScribe/PulseScribe.exe (~80 MB)
+# Output: dist/PulseScribe/PulseScribe.exe
 ```
 
-> **Note:** Windows support is experimental. Features like WebSocket streaming, LLM post-processing, and context detection are not yet implemented.
+> **Note:** WebSocket streaming is not yet implemented on Windows (REST API only).
 
 ### Building the macOS App Bundle
 
