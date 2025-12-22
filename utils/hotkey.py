@@ -296,14 +296,38 @@ def _copy_to_clipboard_native(text: str) -> bool:
         return False
 
 
+def _paste_via_pynput_windows() -> bool:
+    """Paste via pynput auf Windows (Ctrl+V statt Cmd+V)."""
+    try:
+        from pynput.keyboard import Controller, Key
+
+        keyboard = Controller()
+        keyboard.press(Key.ctrl)
+        keyboard.press("v")
+        keyboard.release("v")
+        keyboard.release(Key.ctrl)
+
+        logger.info("Auto-Paste: Ctrl+V gesendet via pynput")
+        return True
+
+    except ImportError:
+        logger.warning("pynput nicht installiert")
+        return False
+    except Exception as e:
+        logger.warning(f"pynput fehlgeschlagen: {e}")
+        return False
+
+
 def paste_transcript(text: str) -> bool:
     """
-    Kopiert Text in Clipboard und fügt via Cmd+V ein.
+    Kopiert Text in Clipboard und fügt via Cmd+V (macOS) bzw. Ctrl+V (Windows) ein.
 
-    Strategie (in Prioritätsreihenfolge):
-    1. pynput - Cross-Platform, braucht Accessibility-Berechtigung
-    2. CGEventPost (Quartz) - Funktioniert wenn Python TCC-Rechte hat
-    3. osascript - Fallback (braucht Accessibility)
+    Strategie:
+    - Windows: pyperclip + pynput (Ctrl+V)
+    - macOS (in Prioritätsreihenfolge):
+      1. pynput - Cross-Platform, braucht Accessibility-Berechtigung
+      2. CGEventPost (Quartz) - Funktioniert wenn Python TCC-Rechte hat
+      3. osascript - Fallback (braucht Accessibility)
 
     Args:
         text: Text zum Einfügen
@@ -311,8 +335,33 @@ def paste_transcript(text: str) -> bool:
     Returns:
         True wenn erfolgreich, False bei Fehler
     """
+    import sys
+
     logger.info(f"Auto-Paste: '{text[:50]}{'...' if len(text) > 50 else ''}'")
 
+    # Windows: pyperclip + pynput direkt
+    if sys.platform == "win32":
+        try:
+            import pyperclip
+
+            pyperclip.copy(text)
+            logger.debug(f"pyperclip: {len(text)} Zeichen kopiert")
+        except ImportError:
+            logger.error("pyperclip nicht installiert")
+            return False
+        except Exception as e:
+            logger.error(f"Clipboard-Fehler: {e}")
+            return False
+
+        if not _paste_via_pynput_windows():
+            logger.error(
+                "Auto-Paste fehlgeschlagen. "
+                "Text wurde in Zwischenablage kopiert - manuell mit Ctrl+V einfügen."
+            )
+            return False
+        return True
+
+    # macOS: Bestehende komplexe Logik mit Fallbacks
     # Optional: Vorherigen Clipboard-Text merken für Re-Copy nach dem Paste
     # (ENV: PULSESCRIBE_CLIPBOARD_RESTORE=true)
     # Dies fügt den alten Text ERNEUT ins Clipboard ein, sodass Clipboard-History
