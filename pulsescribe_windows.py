@@ -267,10 +267,10 @@ class PulseScribeWindows:
                 with self._audio_lock:
                     self._audio_buffer.append(indata.copy())
 
-                # Audio-Level für Overlay
+                # Audio-Level für Overlay (AGC im Overlay normalisiert automatisch)
                 if self._overlay:
                     rms = float(np.sqrt(np.mean(indata ** 2)))
-                    self._overlay.update_audio_level(min(1.0, rms * 10))
+                    self._overlay.update_audio_level(rms)
 
                 # State auf RECORDING setzen wenn Audio erkannt
                 if self.state == AppState.LISTENING:

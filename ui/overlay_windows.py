@@ -51,9 +51,17 @@ SMOOTHING_ALPHA_RISE = 0.55
 SMOOTHING_ALPHA_FALL = 0.12
 
 # Audio-Visual Mapping
-VISUAL_GAIN = 2.5  # Verstärkung für leise Signale
+VISUAL_GAIN = 2.0  # Finale Verstärkung nach AGC
 VISUAL_NOISE_GATE = 0.002  # Unter diesem Level = Stille
-VISUAL_EXPONENT = 1.2  # Kompression für natürlicheren Look
+VISUAL_EXPONENT = 1.3  # Kompression für natürlicheren Look
+
+# Adaptive Gain Control (AGC) - wie macOS
+# Hält die Visualisierung bei leisen/lauteren Mics dynamisch
+# macOS: 0.97 bei ~15Hz Audio-Updates. Windows: 60Hz Animation.
+# Gleiche Zeitkonstante: 0.97^15 ≈ 0.63/s → bei 60Hz: 0.63^(1/60) ≈ 0.9923
+AGC_DECAY = 0.9923  # Peak-Falloff pro Frame (~1s Zeitkonstante bei 60Hz)
+AGC_MIN_PEAK = 0.01  # Untergrenze gegen Überverstärkung (wie macOS)
+AGC_HEADROOM = 2.0  # Mehr Headroom = weniger Sensitivität/Clipping
 
 # Traveling Wave (sanfte Modulation)
 WAVE_WANDER_AMOUNT = 0.25
@@ -149,6 +157,8 @@ class WindowsOverlayController:
         self._state = "IDLE"
         self._audio_level = 0.0
         self._smoothed_level = 0.0
+        self._agc_peak = AGC_MIN_PEAK  # Adaptive Gain Control
+        self._normalized_level = 0.0  # AGC-normalisierter Level (einmal pro Frame)
         self._bar_heights = [BAR_MIN_HEIGHT] * BAR_COUNT
 
         # Animation timing
@@ -333,6 +343,8 @@ class WindowsOverlayController:
             self._root.withdraw()
             self._last_interim_text = ""
             self._smoothed_level = 0.0
+            self._agc_peak = AGC_MIN_PEAK  # AGC reset
+            self._normalized_level = 0.0
         else:
             self._root.deiconify()
             display_text = text or STATE_TEXTS.get(state, "")
@@ -381,8 +393,31 @@ class WindowsOverlayController:
             alpha = SMOOTHING_ALPHA_FALL
         self._smoothed_level += alpha * (target_level - self._smoothed_level)
 
+        # AGC: Einmal pro Frame berechnen (nicht pro Bar)
+        if self._state == "RECORDING":
+            self._update_agc()
+
         self._render_bars(t)
         self._root.after(FRAME_MS, self._animate)
+
+    def _update_agc(self) -> None:
+        """Berechnet AGC-normalisierten Level (einmal pro Frame)."""
+        # Noise Gate
+        gated = max(self._smoothed_level - VISUAL_NOISE_GATE, 0.0)
+
+        # AGC: Peak-Tracking (schneller Attack, langsamer Release)
+        if gated > self._agc_peak:
+            self._agc_peak = gated
+        else:
+            self._agc_peak = max(self._agc_peak * AGC_DECAY, AGC_MIN_PEAK)
+
+        # Normalisieren auf Peak mit Headroom
+        reference_peak = max(self._agc_peak * AGC_HEADROOM, AGC_MIN_PEAK)
+        normalized = gated / reference_peak if reference_peak > 0 else 0.0
+
+        # Visuelle Kurve + Gain
+        shaped = (min(1.0, normalized) ** VISUAL_EXPONENT) * VISUAL_GAIN
+        self._normalized_level = min(1.0, shaped)
 
     def _render_bars(self, t: float) -> None:
         if not self._canvas:
@@ -465,13 +500,8 @@ class WindowsOverlayController:
 
     def _calc_recording_height(self, i: int, t: float, center: float) -> float:
         """Recording: Audio-responsive mit Traveling Wave und Envelope."""
-        # Basis-Level mit Gain und Noise Gate
-        level = self._smoothed_level
-        if level < VISUAL_NOISE_GATE:
-            level = 0.0
-        else:
-            level = min(1.0, level * VISUAL_GAIN)
-            level = level ** VISUAL_EXPONENT
+        # AGC-normalisierter Level (wird einmal pro Frame in _update_agc berechnet)
+        level = self._normalized_level
 
         # Traveling Wave Modulation
         phase1 = 2 * math.pi * WAVE_WANDER_HZ_PRIMARY * t + i * WAVE_WANDER_PHASE_STEP_PRIMARY
