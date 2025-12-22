@@ -64,6 +64,7 @@ def get_context_for_app(app_name: str) -> str:
     """Mappt App-Name auf Kontext-Typ.
 
     Priorität: ENV (PULSESCRIBE_APP_CONTEXTS) > TOML (~/.pulsescribe/prompts.toml) > Defaults
+    Lookup ist case-insensitive (Windows gibt z.B. "OUTLOOK" statt "Outlook").
 
     Args:
         app_name: Name der Anwendung
@@ -71,16 +72,23 @@ def get_context_for_app(app_name: str) -> str:
     Returns:
         Kontext-Typ: 'email', 'chat', 'code' oder 'default'
     """
-    # 1. ENV-Override hat höchste Priorität
-    env_map = _get_custom_app_contexts()
-    if app_name in env_map:
-        return env_map[app_name]
+    app_lower = app_name.lower()
 
-    # 2. Custom TOML (merged mit Defaults)
+    # 1. ENV-Override hat höchste Priorität (case-insensitive)
+    env_map = _get_custom_app_contexts()
+    for key, value in env_map.items():
+        if key.lower() == app_lower:
+            return value
+
+    # 2. Custom TOML (merged mit Defaults, case-insensitive)
     from utils.custom_prompts import get_custom_app_contexts
 
     toml_map = get_custom_app_contexts()
-    return toml_map.get(app_name, "default")
+    for key, value in toml_map.items():
+        if key.lower() == app_lower:
+            return value
+
+    return "default"
 
 
 # Alias für Rückwärtskompatibilität

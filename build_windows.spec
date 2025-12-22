@@ -70,6 +70,13 @@ hiddenimports = [
     'deepgram',
     'httpx',
     'websockets',
+    'openai',
+    'groq',
+
+    # === App Detection ===
+    'win32gui',
+    'win32process',
+    'psutil',
 
     # === Utils ===
     'pyperclip',

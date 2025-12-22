@@ -296,6 +296,7 @@ class PulseScribeWindows:
                     # LLM-Nachbearbeitung (optional)
                     if self.refine:
                         self._set_state(AppState.REFINING)
+                        original = transcript
                         try:
                             from refine.llm import refine_transcript
 
@@ -305,8 +306,13 @@ class PulseScribeWindows:
                                 provider=self.refine_provider,
                                 context=self.context,
                             )
+                            # Fallback auf Original wenn LLM leeren String zurückgibt
+                            if not transcript or not transcript.strip():
+                                logger.warning("Refine gab leeren String zurück, verwende Original")
+                                transcript = original
                         except Exception as e:
                             logger.warning(f"Refine fehlgeschlagen, verwende Original: {e}")
+                            transcript = original
 
                     self._handle_result(transcript)
                 else:
