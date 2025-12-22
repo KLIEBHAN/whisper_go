@@ -19,12 +19,12 @@ MACOS_SYSTEM_SOUNDS = {
     "error": "/System/Library/Sounds/Basso.aiff",
 }
 
-# Windows System-Sound Aliases
+# Windows System-Sound Aliases (Win10/11 optimiert)
 WINDOWS_SYSTEM_SOUNDS = {
-    "ready": "SystemAsterisk",
-    "stop": "SystemExclamation",
-    "done": "SystemAsterisk",  # Erfolgs-Feedback
-    "error": "SystemHand",
+    "ready": "DeviceConnect",  # Aufnahme startet
+    "stop": "DeviceDisconnect",  # Aufnahme stoppt
+    "done": "Notification.Default",  # Transkription fertig
+    "error": "SystemHand",  # Fehler (kritischer Ton)
 }
 
 

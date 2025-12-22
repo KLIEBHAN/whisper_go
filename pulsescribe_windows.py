@@ -4,8 +4,8 @@ PulseScribe Windows Daemon.
 Minimaler Windows Entry-Point für Spracheingabe mit:
 - Tray-Icon (pystray)
 - Globaler Hotkey (pynput)
-- Sound-Feedback (winsound)
-- Deepgram-Streaming Transkription
+- Sound-Feedback (Windows System-Sounds)
+- Deepgram REST-Transkription
 
 Usage:
     python pulsescribe_windows.py
@@ -23,7 +23,6 @@ import logging
 import os
 import threading
 import time
-import winsound
 from pathlib import Path
 
 # Projekt-Root zum Path hinzufügen
@@ -154,18 +153,10 @@ class PulseScribeWindows:
 
     def _play_sound(self, sound_type: str):
         """Spielt System-Sound ab."""
-        sounds = {
-            "ready": winsound.MB_OK,
-            "stop": winsound.MB_ICONEXCLAMATION,
-            "done": winsound.MB_ICONASTERISK,
-            "error": winsound.MB_ICONHAND,
-        }
-        sound = sounds.get(sound_type)
-        if sound:
-            try:
-                winsound.MessageBeep(sound)
-            except Exception as e:
-                logger.debug(f"Sound-Fehler: {e}")
+        try:
+            get_sound_player().play(sound_type)
+        except Exception as e:
+            logger.debug(f"Sound-Fehler: {e}")
 
     def _on_hotkey_press(self):
         """Callback wenn Hotkey gedrückt wird."""
