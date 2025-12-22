@@ -645,7 +645,7 @@ python pulsescribe_windows.py --refine --refine-provider groq
 - System Tray icon with color-coded status (gray/orange/red/yellow/cyan/green)
 - Global hotkey via pynput (default: `Ctrl+Alt+R`)
 - Audio recording via sounddevice
-- Deepgram REST API transcription
+- Deepgram WebSocket streaming (~300ms latency) or REST API fallback
 - Auto-Paste via `Ctrl+V` simulation
 - LLM post-processing (Groq, OpenAI, OpenRouter)
 - App context detection (Outlook → email, VS Code → code, Discord → chat)
@@ -657,6 +657,7 @@ python pulsescribe_windows.py --refine --refine-provider groq
 |------|-------------|
 | `--hotkey` | Global hotkey (default: `ctrl+alt+r`) |
 | `--no-paste` | Disable auto-paste, copy to clipboard only |
+| `--no-streaming` | Use REST API instead of WebSocket streaming |
 | `--refine` | Enable LLM post-processing |
 | `--refine-provider` | LLM provider: `groq`, `openai`, `openrouter` |
 | `--refine-model` | LLM model override |
@@ -668,6 +669,9 @@ python pulsescribe_windows.py --refine --refine-provider groq
 ```bash
 DEEPGRAM_API_KEY=your_key
 PULSESCRIBE_LANGUAGE=de
+
+# Optional: Disable streaming (default: true)
+# PULSESCRIBE_STREAMING=false
 
 # Optional: LLM Refine
 PULSESCRIBE_REFINE=true
@@ -684,7 +688,7 @@ pyinstaller build_windows.spec --clean
 # Output: dist/PulseScribe/PulseScribe.exe
 ```
 
-> **Note:** WebSocket streaming is not yet implemented on Windows (REST API only).
+> **Tip:** Streaming is enabled by default for lowest latency. Use `--no-streaming` for REST API fallback.
 
 ### Building the macOS App Bundle
 
