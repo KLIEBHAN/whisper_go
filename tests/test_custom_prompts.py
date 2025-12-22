@@ -70,7 +70,7 @@ class TestLoadCustomPrompts:
         """Gültiges TOML wird korrekt geparst."""
         from utils.custom_prompts import load_custom_prompts
 
-        prompts_file.write_text(valid_toml_content)
+        prompts_file.write_text(valid_toml_content, encoding="utf-8")
         result = load_custom_prompts(path=prompts_file)
 
         assert "Custom Default Prompt" in result["prompts"]["default"]["prompt"]
