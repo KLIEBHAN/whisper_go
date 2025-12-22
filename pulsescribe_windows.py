@@ -30,16 +30,16 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Logging Setup (vor anderen Imports)
+# .env ZUERST laden (vor Logging-Setup, damit PULSESCRIBE_DEBUG wirkt)
+from utils.env import load_environment
+
+load_environment()
+
+# Logging Setup (nach .env, damit PULSESCRIBE_DEBUG aus .env funktioniert)
 from utils.logging import setup_logging, get_logger
 
 setup_logging(debug=os.getenv("PULSESCRIBE_DEBUG", "").lower() == "true")
 logger = get_logger()
-
-# .env laden (aus ~/.pulsescribe/.env und/oder Projekt-Root)
-from utils.env import load_environment
-
-load_environment()
 
 # Imports nach Logging-Setup
 from utils.state import AppState
@@ -49,6 +49,17 @@ from whisper_platform import get_clipboard, get_sound_player
 # Lazy imports für optionale Features
 pystray = None
 PIL_Image = None
+
+# =============================================================================
+# Hotkey-Helpers (Modul-Level für Wiederverwendung und Testbarkeit)
+# =============================================================================
+
+# Virtual Key Codes für Buchstaben A-Z (Windows)
+# Mit Ctrl+Alt gedrückt wird 'r' als <82> erkannt, nicht als 'r'
+_VK_TO_CHAR = {vk: chr(vk + 32) for vk in range(65, 91)}  # 65='A' -> 'a', etc.
+
+# Debounce-Zeit in Sekunden (verhindert Doppel-Trigger)
+_HOTKEY_DEBOUNCE_SEC = 0.3
 
 
 def _load_tray_dependencies():
@@ -86,6 +97,7 @@ class PulseScribeWindows:
         # State
         self._state = AppState.IDLE
         self._state_lock = threading.Lock()
+        self._last_hotkey_time = 0.0  # Für Debouncing
 
         # Components
         self._tray = None
@@ -320,76 +332,50 @@ class PulseScribeWindows:
         try:
             from pynput import keyboard
 
-            # Mapping: Links/Rechts-Varianten -> generische Taste
-            # Windows gibt ctrl_l/ctrl_r zurück, nicht ctrl
+            # Parse Hotkey-String zu Set von erwarteten Keys
+            hotkey_keys = self._parse_hotkey_string(self.hotkey_str, keyboard)
+            if not hotkey_keys:
+                logger.error(f"Ungültiger Hotkey: {self.hotkey_str}")
+                return
+
+            # Aktuell gedrückte Tasten (normalisiert)
+            current_keys: set = set()
+
             def normalize_key(key):
-                """Normalisiert Modifier-Tasten (ctrl_l -> ctrl, etc.)."""
-                if not hasattr(key, "name"):
-                    return key
-                name = key.name
-                if name in ("ctrl_l", "ctrl_r"):
-                    return keyboard.Key.ctrl
-                if name in ("alt_l", "alt_r", "alt_gr"):
-                    return keyboard.Key.alt
-                if name in ("shift_l", "shift_r"):
-                    return keyboard.Key.shift
-                if name in ("cmd_l", "cmd_r"):
-                    return keyboard.Key.cmd
-                return key
+                """Normalisiert Key zu vergleichbarer Form."""
+                # Modifier: ctrl_l/ctrl_r -> ctrl, etc.
+                if hasattr(key, "name"):
+                    name = key.name
+                    if name in ("ctrl_l", "ctrl_r"):
+                        return keyboard.Key.ctrl
+                    if name in ("alt_l", "alt_r", "alt_gr"):
+                        return keyboard.Key.alt
+                    if name in ("shift_l", "shift_r"):
+                        return keyboard.Key.shift
+                    if name in ("cmd_l", "cmd_r"):
+                        return keyboard.Key.cmd
 
-            # Virtual Key Codes für Buchstaben (Windows)
-            # Mit Ctrl+Alt gedrückt wird 'r' als <82> erkannt, nicht als 'r'
-            VK_TO_CHAR = {
-                65: "a", 66: "b", 67: "c", 68: "d", 69: "e", 70: "f", 71: "g",
-                72: "h", 73: "i", 74: "j", 75: "k", 76: "l", 77: "m", 78: "n",
-                79: "o", 80: "p", 81: "q", 82: "r", 83: "s", 84: "t", 85: "u",
-                86: "v", 87: "w", 88: "x", 89: "y", 90: "z",
-            }
-
-            def normalize_vk(key):
-                """Konvertiert Virtual Key Code zu Buchstabe."""
-                if hasattr(key, "vk") and key.vk in VK_TO_CHAR:
-                    return keyboard.KeyCode.from_char(VK_TO_CHAR[key.vk])
+                # Buchstaben: VK-Code oder char -> lowercase KeyCode
+                if hasattr(key, "vk") and key.vk in _VK_TO_CHAR:
+                    return keyboard.KeyCode.from_char(_VK_TO_CHAR[key.vk])
                 if hasattr(key, "char") and key.char:
                     return keyboard.KeyCode.from_char(key.char.lower())
+
                 return key
 
-            # Parse Hotkey-String
-            parts = [p.strip().lower() for p in self.hotkey_str.split("+")]
-            hotkey_keys = set()
-
-            for part in parts:
-                if part in ("ctrl", "control"):
-                    hotkey_keys.add(keyboard.Key.ctrl)
-                elif part in ("alt", "option"):
-                    hotkey_keys.add(keyboard.Key.alt)
-                elif part in ("shift",):
-                    hotkey_keys.add(keyboard.Key.shift)
-                elif part in ("cmd", "command", "win"):
-                    hotkey_keys.add(keyboard.Key.cmd)
-                elif len(part) == 1:
-                    hotkey_keys.add(keyboard.KeyCode.from_char(part))
-                else:
-                    logger.warning(f"Unbekannte Taste: {part}")
-
-            current_keys = set()
-
             def on_press(key):
-                normalized = normalize_key(key)
-                current_keys.add(normalized)
-                # Buchstaben via VK-Code oder char normalisieren
-                char_key = normalize_vk(key)
-                if char_key != key:
-                    current_keys.add(char_key)
+                current_keys.add(normalize_key(key))
+
+                # Hotkey erkannt?
                 if hotkey_keys.issubset(current_keys):
-                    self._on_hotkey_press()
+                    # Debouncing: Verhindere Doppel-Trigger
+                    now = time.monotonic()
+                    if now - self._last_hotkey_time >= _HOTKEY_DEBOUNCE_SEC:
+                        self._last_hotkey_time = now
+                        self._on_hotkey_press()
 
             def on_release(key):
-                normalized = normalize_key(key)
-                current_keys.discard(normalized)
-                char_key = normalize_vk(key)
-                if char_key != key:
-                    current_keys.discard(char_key)
+                current_keys.discard(normalize_key(key))
 
             self._hotkey_listener = keyboard.Listener(
                 on_press=on_press, on_release=on_release
@@ -401,6 +387,28 @@ class PulseScribeWindows:
             logger.error("pynput nicht installiert")
         except Exception as e:
             logger.error(f"Hotkey-Fehler: {e}")
+
+    @staticmethod
+    def _parse_hotkey_string(hotkey_str: str, keyboard) -> set:
+        """Parst Hotkey-String zu Set von pynput Keys."""
+        parts = [p.strip().lower() for p in hotkey_str.split("+")]
+        hotkey_keys = set()
+
+        for part in parts:
+            if part in ("ctrl", "control"):
+                hotkey_keys.add(keyboard.Key.ctrl)
+            elif part in ("alt", "option"):
+                hotkey_keys.add(keyboard.Key.alt)
+            elif part in ("shift",):
+                hotkey_keys.add(keyboard.Key.shift)
+            elif part in ("cmd", "command", "win"):
+                hotkey_keys.add(keyboard.Key.cmd)
+            elif len(part) == 1:
+                hotkey_keys.add(keyboard.KeyCode.from_char(part))
+            else:
+                logger.warning(f"Unbekannte Taste ignoriert: {part}")
+
+        return hotkey_keys
 
     def _setup_tray(self):
         """Richtet Tray-Icon ein."""
