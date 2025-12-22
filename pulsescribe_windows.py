@@ -64,6 +64,7 @@ def _load_overlay():
         logger.debug(f"Overlay nicht verfügbar: {e}")
         return False
 
+
 # =============================================================================
 # Hotkey-Helpers (Modul-Level für Wiederverwendung und Testbarkeit)
 # =============================================================================
@@ -143,12 +144,15 @@ class PulseScribeWindows:
         self._audio_lock = threading.Lock()
 
         mode = "Streaming" if streaming else "REST"
-        logger.info(f"PulseScribeWindows initialisiert (Hotkey: {hotkey}, Mode: {mode}, Refine: {refine}, Overlay: {overlay})")
+        logger.info(
+            f"PulseScribeWindows initialisiert (Hotkey: {hotkey}, Mode: {mode}, Refine: {refine}, Overlay: {overlay})"
+        )
 
         # Event Loop Policy einmal setzen (nicht bei jedem Recording)
         # Windows: SelectorEventLoop für bessere Kompatibilität mit asyncio-Libs
         if streaming:
             import asyncio
+
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     @property
@@ -275,7 +279,7 @@ class PulseScribeWindows:
 
                 # Audio-Level für Overlay (AGC im Overlay normalisiert automatisch)
                 if self._overlay:
-                    rms = float(np.sqrt(np.mean(indata ** 2)))
+                    rms = float(np.sqrt(np.mean(indata**2)))
                     self._overlay.update_audio_level(rms)
 
                 # State auf RECORDING setzen wenn Audio erkannt
@@ -362,10 +366,14 @@ class PulseScribeWindows:
                                 context=self.context,
                             )
                             if not transcript or not transcript.strip():
-                                logger.warning("Refine gab leeren String zurück, verwende Original")
+                                logger.warning(
+                                    "Refine gab leeren String zurück, verwende Original"
+                                )
                                 transcript = original
                         except Exception as e:
-                            logger.warning(f"Refine fehlgeschlagen, verwende Original: {e}")
+                            logger.warning(
+                                f"Refine fehlgeschlagen, verwende Original: {e}"
+                            )
                             transcript = original
 
                     self._handle_result(transcript)
@@ -443,10 +451,14 @@ class PulseScribeWindows:
                             )
                             # Fallback auf Original wenn LLM leeren String zurückgibt
                             if not transcript or not transcript.strip():
-                                logger.warning("Refine gab leeren String zurück, verwende Original")
+                                logger.warning(
+                                    "Refine gab leeren String zurück, verwende Original"
+                                )
                                 transcript = original
                         except Exception as e:
-                            logger.warning(f"Refine fehlgeschlagen, verwende Original: {e}")
+                            logger.warning(
+                                f"Refine fehlgeschlagen, verwende Original: {e}"
+                            )
                             transcript = original
 
                     self._handle_result(transcript)
@@ -483,7 +495,9 @@ class PulseScribeWindows:
             if not success:
                 # Fallback: Nur in Clipboard kopieren
                 get_clipboard().copy(transcript)
-                logger.info("Text in Zwischenablage kopiert (Auto-Paste fehlgeschlagen)")
+                logger.info(
+                    "Text in Zwischenablage kopiert (Auto-Paste fehlgeschlagen)"
+                )
         else:
             get_clipboard().copy(transcript)
             logger.info("Text in Zwischenablage kopiert")
@@ -630,8 +644,7 @@ class PulseScribeWindows:
         Reduziert Latenz beim ersten Hotkey-Drücken um ~1.5-2s.
         Analog zu macOS _preload_local_model_async().
         """
-        import time as _time
-        start = _time.perf_counter()
+        start = time.perf_counter()
 
         try:
             # Phase 1: Core-Libraries (für Streaming und REST)
@@ -644,15 +657,15 @@ class PulseScribeWindows:
                 import httpx  # noqa: F401
                 import websockets  # noqa: F401
 
-            imports_ms = (_time.perf_counter() - start) * 1000
+            imports_ms = (time.perf_counter() - start) * 1000
 
             # Phase 3: Audio-Device erkennen (~250-500ms auf Windows)
-            # get_input_device() testet Geräte und cached das Ergebnis
-            device_start = _time.perf_counter()
+            # get_input_device() cached das Ergebnis in config._cached_input_device
+            device_start = time.perf_counter()
             device_idx, sample_rate = get_input_device()
-            device_ms = (_time.perf_counter() - device_start) * 1000
+            device_ms = (time.perf_counter() - device_start) * 1000
 
-            total_ms = (_time.perf_counter() - start) * 1000
+            total_ms = (time.perf_counter() - start) * 1000
             mode = "Streaming" if self.streaming else "REST"
             logger.info(
                 f"Pre-Warm abgeschlossen ({total_ms:.0f}ms, {mode}): "
@@ -668,7 +681,9 @@ class PulseScribeWindows:
         print("Drücke Ctrl+C oder nutze Tray-Menü zum Beenden")
 
         # Pre-Warm: Teure Imports im Hintergrund laden
-        threading.Thread(target=self._prewarm_imports, daemon=True, name="PreWarm").start()
+        threading.Thread(
+            target=self._prewarm_imports, daemon=True, name="PreWarm"
+        ).start()
 
         self._setup_overlay()
         self._setup_hotkey()
@@ -742,16 +757,26 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Refine: CLI > ENV > Default (False)
-    effective_refine = args.refine or os.getenv("PULSESCRIBE_REFINE", "").lower() == "true"
+    effective_refine = (
+        args.refine or os.getenv("PULSESCRIBE_REFINE", "").lower() == "true"
+    )
     effective_refine_model = args.refine_model or os.getenv("PULSESCRIBE_REFINE_MODEL")
-    effective_refine_provider = args.refine_provider or os.getenv("PULSESCRIBE_REFINE_PROVIDER")
+    effective_refine_provider = args.refine_provider or os.getenv(
+        "PULSESCRIBE_REFINE_PROVIDER"
+    )
     effective_context = args.context or os.getenv("PULSESCRIBE_CONTEXT")
 
     # Streaming: Default True, kann via --no-streaming oder ENV deaktiviert werden
-    effective_streaming = not args.no_streaming and os.getenv("PULSESCRIBE_STREAMING", "true").lower() != "false"
+    effective_streaming = (
+        not args.no_streaming
+        and os.getenv("PULSESCRIBE_STREAMING", "true").lower() != "false"
+    )
 
     # Overlay: Default True, kann via --no-overlay oder ENV deaktiviert werden
-    effective_overlay = not args.no_overlay and os.getenv("PULSESCRIBE_OVERLAY", "true").lower() != "false"
+    effective_overlay = (
+        not args.no_overlay
+        and os.getenv("PULSESCRIBE_OVERLAY", "true").lower() != "false"
+    )
 
     daemon = PulseScribeWindows(
         hotkey=args.hotkey,
