@@ -5,7 +5,7 @@
 
 [🇺🇸 English Version](README.md)
 
-Spracheingabe für macOS – inspiriert von [Wispr Flow](https://wisprflow.ai). Transkribiert Audio mit OpenAI Whisper über API, Deepgram, Groq oder lokal.
+Spracheingabe für macOS und Windows – inspiriert von [Wispr Flow](https://wisprflow.ai). Transkribiert Audio mit OpenAI Whisper über API, Deepgram, Groq oder lokal.
 
 **Features:** Echtzeit-Streaming (Deepgram) · Mehrere Provider (OpenAI, Deepgram, Groq, lokal inkl. MLX/Metal auf Apple Silicon) · LLM-Nachbearbeitung · Kontext-Awareness · Custom Vocabulary · Live-Preview Overlay · Menübar-Feedback
 
@@ -41,6 +41,9 @@ export DEEPGRAM_API_KEY="dein_key"
 # 4. Erste Aufnahme
 python transcribe.py --record --copy --mode deepgram
 ```
+
+**Windows-Support:**  
+Unter Windows starten Sie den Daemon via `python pulsescribe_windows.py`. Unterstützt Deepgram (Streaming), Groq, OpenAI und Local (REST).
 
 ### Empfohlene `.env` Konfiguration
 

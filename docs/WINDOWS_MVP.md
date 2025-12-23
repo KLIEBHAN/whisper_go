@@ -14,7 +14,7 @@
 | ------------------ | ----------------------------------------------------------- | ------ |
 | **Hotkey**         | Globaler Hotkey startet/stoppt Aufnahme (z.B. `Ctrl+Alt+R`) | ✅ Done |
 | **Recording**      | Mikrofon-Aufnahme via `sounddevice`                         | ✅ Done |
-| **Transcription**  | Deepgram REST API                                           | ✅ Done |
+| **Transcription**  | Deepgram (Stream), Groq (REST), OpenAI, Local               | ✅ Done |
 | **Clipboard**      | Ergebnis in Zwischenablage kopieren                         | ✅ Done |
 | **Auto-Paste**     | `Ctrl+V` simulieren via pynput                              | ✅ Done |
 | **Tray-Icon**      | Status-Feedback (Idle/Recording/Transcribing/Refining/Done) | ✅ Done |

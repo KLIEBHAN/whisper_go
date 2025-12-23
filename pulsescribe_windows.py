@@ -47,6 +47,7 @@ from utils.state import AppState
 from utils.hotkey import paste_transcript
 from whisper_platform import get_clipboard, get_sound_player
 from config import INTERIM_FILE, get_input_device
+from providers import get_provider
 
 # Lazy imports für optionale Features
 pystray = None
@@ -92,6 +93,9 @@ _VK_TO_CHAR = {vk: chr(vk + 32) for vk in range(65, 91)}  # 65='A' -> 'a', etc.
 # Debounce-Zeit in Sekunden (verhindert Doppel-Trigger)
 _HOTKEY_DEBOUNCE_SEC = 0.3
 
+# Timeout für "stale" Keys (Sekunden) - Keys älter als dies werden entfernt
+_KEY_STALE_TIMEOUT_SEC = 2.0
+
 # VAD Threshold: Audio-Level ab dem Sprache erkannt wird
 # REST-Modus verwendet Peak (max), Streaming verwendet RMS (niedriger)
 _VAD_THRESHOLD_PEAK = 0.01  # Für REST-Modus (float32 peak)
@@ -130,6 +134,7 @@ class PulseScribeWindows:
     def __init__(
         self,
         hotkey: str = "ctrl+alt+r",
+        mode: str = "deepgram",
         auto_paste: bool = True,
         refine: bool = False,
         refine_model: str | None = None,
@@ -139,6 +144,7 @@ class PulseScribeWindows:
         overlay: bool = True,
     ):
         self.hotkey_str = hotkey
+        self.mode = mode
         self.auto_paste = auto_paste
         self.refine = refine
         self.refine_model = refine_model
@@ -304,17 +310,19 @@ class PulseScribeWindows:
             if status:
                 logger.debug(f"Warm-Stream Status: {status}")
 
-            # Audio-Level für Overlay berechnen (immer, auch wenn nicht armed)
+            # RMS immer berechnen (für VAD, unabhängig von Overlay)
+            rms = float(np.sqrt(np.mean(indata.astype(np.float32) ** 2)) / INT16_MAX)
+
+            # Audio-Level für Overlay (optional)
             if self._overlay:
-                rms = float(np.sqrt(np.mean(indata.astype(np.float32) ** 2)) / INT16_MAX)
                 self._overlay.update_audio_level(rms)
 
-                # State-Transitions nur wenn armed
-                if self._warm_stream_armed.is_set():
-                    current_state = self.state
-                    if current_state == AppState.LISTENING and rms > _VAD_THRESHOLD_RMS:
-                        logger.debug(f"VAD triggered: level={rms:.4f}")
-                        self._set_state(AppState.RECORDING)
+            # VAD: State-Transition LISTENING → RECORDING (nur wenn armed)
+            if self._warm_stream_armed.is_set():
+                current_state = self.state
+                if current_state == AppState.LISTENING and rms > _VAD_THRESHOLD_RMS:
+                    logger.debug(f"VAD triggered: level={rms:.4f}")
+                    self._set_state(AppState.RECORDING)
 
             # Audio sammeln nur wenn armed
             if self._warm_stream_armed.is_set():
@@ -407,13 +415,35 @@ class PulseScribeWindows:
                     target=self._streaming_worker, daemon=True
                 )
         else:
-            # REST: Sound hier spielen, dann Recording starten
-            self._set_state(AppState.LISTENING)
-            self._play_sound("ready")
-            time.sleep(0.1)  # Sound abspielen lassen vor Audio-Stream
-            self._recording_thread = threading.Thread(
-                target=self._recording_loop, daemon=True
-            )
+            # REST-Mode (Groq, OpenAI, Local)
+            # Prüfe ob Warm-Stream verfügbar (instant-start)
+            if self._warm_stream is not None:
+                logger.info("REST-Mode mit Warm-Stream: instant-start")
+
+                # Queue leeren (alte Samples verwerfen)
+                while not self._warm_stream_queue.empty():
+                    try:
+                        self._warm_stream_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                # Sofort LISTENING setzen und Sound spielen
+                self._set_state(AppState.LISTENING)
+                self._play_sound("ready")
+
+                # Recording-Loop mit Warm-Stream
+                self._recording_thread = threading.Thread(
+                    target=self._recording_loop_warm, daemon=True
+                )
+            else:
+                # Fallback: Kein Warm-Stream, Cold-Start
+                logger.warning("Kein Warm-Stream - Fallback auf Cold-Start")
+                self._set_state(AppState.LISTENING)
+                self._play_sound("ready")
+                time.sleep(0.1)  # Sound abspielen lassen vor Audio-Stream
+                self._recording_thread = threading.Thread(
+                    target=self._recording_loop, daemon=True
+                )
         self._recording_thread.start()
 
     def _stop_recording(self):
@@ -491,6 +521,56 @@ class PulseScribeWindows:
             self._play_sound("error")
             time.sleep(1.0)
             self._set_state(AppState.IDLE)
+
+    def _recording_loop_warm(self):
+        """Audio-Aufnahme Loop mit Warm-Stream (instant-start für REST-Modi).
+
+        Nutzt den bereits laufenden Warm-Stream statt einen neuen zu öffnen.
+        Sammelt Audio in Buffer für spätere REST-Transkription.
+        """
+        import numpy as np
+        from config import INT16_MAX
+
+        logger.debug("Recording-Loop (Warm) gestartet")
+
+        try:
+            # Buffer vorbereiten
+            with self._audio_lock:
+                self._audio_buffer = []
+                self._audio_sample_rate = self._warm_stream_sample_rate
+
+            # Warm-Stream armen
+            self._warm_stream_armed.set()
+            logger.debug("Warm-Stream armed für REST-Recording")
+
+            # Audio sammeln bis Stop-Signal
+            # VAD wird im audio_callback des Warm-Streams gehandhabt (nicht hier)
+            while not self._recording_stop_event.is_set():
+                try:
+                    # Audio-Chunk aus Queue holen (mit Timeout für Stop-Check)
+                    chunk = self._warm_stream_queue.get(timeout=0.1)
+
+                    # Chunk zu Buffer hinzufügen (int16 -> float32 für Kompatibilität)
+                    audio_int16 = np.frombuffer(chunk, dtype=np.int16)
+                    audio_float32 = audio_int16.astype(np.float32) / INT16_MAX
+
+                    with self._audio_lock:
+                        self._audio_buffer.append(audio_float32)
+
+                except queue.Empty:
+                    continue
+
+            logger.debug("Recording-Loop (Warm) beendet")
+
+        except Exception as e:
+            logger.error(f"Recording-Fehler (Warm): {e}")
+            self._set_state(AppState.ERROR)
+            self._play_sound("error")
+            time.sleep(1.0)
+            self._set_state(AppState.IDLE)
+        finally:
+            # Warm-Stream disarmen
+            self._warm_stream_armed.clear()
 
     def _streaming_worker(self):
         """Streaming-Worker: Recording + Transcription via WebSocket."""
@@ -710,12 +790,11 @@ class PulseScribeWindows:
             try:
                 sf.write(temp_path, audio_data, sample_rate)
 
-                # Deepgram REST API nutzen
-                from providers.deepgram import DeepgramProvider
-
-                provider = DeepgramProvider()
+                # Transkription via Provider (Deepgram, Groq, OpenAI, Local)
+                provider = get_provider(self.mode)
                 transcript = provider.transcribe(
                     audio_path=temp_path,
+                    model=os.getenv("PULSESCRIBE_MODEL"),  # None = Provider-Default
                     language=os.getenv("PULSESCRIBE_LANGUAGE", "de"),
                 )
 
@@ -800,8 +879,9 @@ class PulseScribeWindows:
                 logger.error(f"Ungültiger Hotkey: {self.hotkey_str}")
                 return
 
-            # Aktuell gedrückte Tasten (normalisiert)
-            current_keys: set = set()
+            # Aktuell gedrückte Tasten mit Zeitstempel (für Stale-Detection)
+            # Format: {normalized_key: timestamp}
+            current_keys: dict = {}
 
             def normalize_key(key):
                 """Normalisiert Key zu vergleichbarer Form."""
@@ -825,19 +905,41 @@ class PulseScribeWindows:
 
                 return key
 
-            def on_press(key):
-                current_keys.add(normalize_key(key))
+            def cleanup_stale_keys(now: float):
+                """Entfernt Keys die länger als Timeout gedrückt sind (missed releases)."""
+                stale = [k for k, t in current_keys.items()
+                         if now - t > _KEY_STALE_TIMEOUT_SEC]
+                for k in stale:
+                    del current_keys[k]
+                    logger.debug(f"Stale Key entfernt: {k}")
 
-                # Hotkey erkannt?
-                if hotkey_keys.issubset(current_keys):
-                    # Debouncing: Verhindere Doppel-Trigger
-                    now = time.monotonic()
-                    if now - self._last_hotkey_time >= _HOTKEY_DEBOUNCE_SEC:
-                        self._last_hotkey_time = now
-                        self._on_hotkey_press()
+            def on_press(key):
+                now = time.monotonic()
+                normalized = normalize_key(key)
+
+                # Stale Keys aufräumen
+                cleanup_stale_keys(now)
+
+                # Key mit Zeitstempel speichern
+                current_keys[normalized] = now
+
+                # Hotkey erkannt? Prüfe ob alle erwarteten Keys gedrückt sind
+                active_keys = set(current_keys.keys())
+                if hotkey_keys.issubset(active_keys):
+                    # Zusätzliche Prüfung: Der gerade gedrückte Key muss Teil des Hotkeys sein
+                    # (verhindert Trigger durch irrelevante Keys wenn Modifier "kleben")
+                    if normalized in hotkey_keys:
+                        # Debouncing: Verhindere Doppel-Trigger
+                        if now - self._last_hotkey_time >= _HOTKEY_DEBOUNCE_SEC:
+                            self._last_hotkey_time = now
+                            logger.debug(f"Hotkey ausgelöst: {hotkey_keys} (active: {active_keys})")
+                            # Keys nach Trigger leeren (verhindert Re-Trigger)
+                            current_keys.clear()
+                            self._on_hotkey_press()
 
             def on_release(key):
-                current_keys.discard(normalize_key(key))
+                normalized = normalize_key(key)
+                current_keys.pop(normalized, None)
 
             self._hotkey_listener = keyboard.Listener(
                 on_press=on_press, on_release=on_release
@@ -984,24 +1086,10 @@ class PulseScribeWindows:
             device_start = time.perf_counter()
             device_idx, sample_rate = get_input_device()
 
-            # Phase 4: Warm-Stream starten (statt Dummy-Stream)
+            # Phase 4: Warm-Stream starten (für alle Modi!)
             # Der Warm-Stream bleibt offen und ermöglicht instant-start Recording
-            if self.streaming:
-                self._start_warm_stream()
-            else:
-                # REST-Mode: Nur kurzer Dummy-Stream für WASAPI-Init
-                try:
-                    dummy = sounddevice.InputStream(
-                        device=device_idx,
-                        samplerate=sample_rate,
-                        channels=1,
-                        blocksize=1024,
-                    )
-                    dummy.start()
-                    dummy.stop()
-                    dummy.close()
-                except Exception:
-                    pass
+            # Auch REST-Modi (Groq, OpenAI, Local) profitieren vom Warm-Stream
+            self._start_warm_stream()
 
             device_ms = (time.perf_counter() - device_start) * 1000
 
@@ -1014,9 +1102,9 @@ class PulseScribeWindows:
                     pass  # Ignorieren wenn es fehlschlägt
 
             total_ms = (time.perf_counter() - start) * 1000
-            mode = "Streaming + Warm-Stream" if self.streaming else "REST"
+            mode_desc = f"{self.mode} ({'Streaming' if self.streaming else 'REST'})"
             logger.info(
-                f"Pre-Warm abgeschlossen ({total_ms:.0f}ms, {mode}): "
+                f"Pre-Warm abgeschlossen ({total_ms:.0f}ms, {mode_desc}, Warm-Stream): "
                 f"Imports={imports_ms:.0f}ms, Device={device_ms:.0f}ms "
                 f"(idx={device_idx}, {sample_rate}Hz)"
             )
@@ -1037,10 +1125,9 @@ class PulseScribeWindows:
         # Overlay FRÜH starten, damit LOADING angezeigt werden kann
         self._setup_overlay()
 
-        # LOADING-State während Pre-Warm anzeigen
-        if self.streaming:
-            self._is_prewarm_loading = True
-            self._set_state(AppState.LOADING)
+        # LOADING-State während Pre-Warm anzeigen (für alle Modi mit Warm-Stream)
+        self._is_prewarm_loading = True
+        self._set_state(AppState.LOADING)
 
         # Pre-Warm: Teure Imports + Warm-Stream starten
         def _prewarm_and_ready():
@@ -1085,6 +1172,12 @@ def main():
         "--hotkey",
         default=os.getenv("PULSESCRIBE_HOTKEY", "ctrl+alt+r"),
         help="Globaler Hotkey (default: ctrl+alt+r)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["deepgram", "groq", "openai", "local"],
+        default=os.getenv("PULSESCRIBE_MODE", "deepgram"),
+        help="Transkriptions-Modus (deepgram, groq, openai, local)",
     )
     parser.add_argument(
         "--no-paste",
@@ -1143,12 +1236,20 @@ def main():
         "PULSESCRIBE_REFINE_PROVIDER"
     )
     effective_context = args.context or os.getenv("PULSESCRIBE_CONTEXT")
+    effective_mode = args.mode
 
     # Streaming: Default True, kann via --no-streaming oder ENV deaktiviert werden
     effective_streaming = (
         not args.no_streaming
         and os.getenv("PULSESCRIBE_STREAMING", "true").lower() != "false"
     )
+
+    # Nur Deepgram unterstützt aktuell Streaming im Daemon
+    if effective_mode != "deepgram" and effective_streaming:
+        logging.info(
+            f"Modus '{effective_mode}' unterstützt kein Streaming im Daemon -> Fallback auf REST"
+        )
+        effective_streaming = False
 
     # Overlay: Default True, kann via --no-overlay oder ENV deaktiviert werden
     effective_overlay = (
@@ -1158,6 +1259,7 @@ def main():
 
     daemon = PulseScribeWindows(
         hotkey=args.hotkey,
+        mode=effective_mode,
         auto_paste=not args.no_paste,
         refine=effective_refine,
         refine_model=effective_refine_model,
