@@ -6,6 +6,8 @@ GPU-beschleunigtes Overlay mit:
 - Signals/Slots für Thread-Safety
 - Optionaler Windows Acrylic Blur (Win10+)
 - Traveling Wave + Gaussian Envelope Animation
+- High-DPI Awareness (scharfe Darstellung auf 4K)
+- Multi-Monitor Support (Overlay auf aktivem Monitor)
 """
 
 import ctypes
@@ -26,10 +28,12 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QCursor,
     QFont,
     QPainter,
     QPainterPath,
     QPen,
+    QScreen,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -160,6 +164,56 @@ _HEIGHT_FACTORS = _build_height_factors()
 
 
 # =============================================================================
+# Multi-Monitor Helper
+# =============================================================================
+
+
+def _get_active_screen() -> QScreen | None:
+    """Ermittelt den Monitor des aktiven Fensters (Windows)."""
+    app = QApplication.instance()
+    if not app:
+        return None
+
+    # Methode 1: Versuche das aktive Fenster über Windows API zu finden
+    if sys.platform == "win32":
+        try:
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+
+            # Aktives Fenster holen
+            hwnd = user32.GetForegroundWindow()
+            if hwnd:
+                # Fenster-Rechteck holen
+                rect = wintypes.RECT()
+                if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                    # Mittelpunkt des aktiven Fensters
+                    center_x = (rect.left + rect.right) // 2
+                    center_y = (rect.top + rect.bottom) // 2
+
+                    # Screen an diesem Punkt finden
+                    from PySide6.QtCore import QPoint
+
+                    screen = app.screenAt(QPoint(center_x, center_y))
+                    if screen:
+                        return screen
+        except Exception as e:
+            logger.debug(f"Aktiver Monitor nicht ermittelbar: {e}")
+
+    # Methode 2: Fallback auf Cursor-Position
+    try:
+        cursor_pos = QCursor.pos()
+        screen = app.screenAt(cursor_pos)
+        if screen:
+            return screen
+    except Exception:
+        pass
+
+    # Methode 3: Primary Screen
+    return app.primaryScreen()
+
+
+# =============================================================================
 # Windows Blur Helper
 # =============================================================================
 
@@ -272,13 +326,22 @@ class PySide6OverlayWidget(QWidget):
         self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         self._center_on_screen()
 
-    def _center_on_screen(self):
-        """Positioniert das Fenster unten-mittig."""
-        screen = QApplication.primaryScreen()
+    def _center_on_screen(self, use_active_screen: bool = False):
+        """Positioniert das Fenster unten-mittig.
+
+        Args:
+            use_active_screen: Wenn True, wird der Monitor des aktiven Fensters verwendet.
+        """
+        if use_active_screen:
+            screen = _get_active_screen()
+        else:
+            screen = QApplication.primaryScreen()
+
         if screen:
             geometry = screen.availableGeometry()
-            x = (geometry.width() - WINDOW_WIDTH) // 2
-            y = geometry.height() - WINDOW_HEIGHT - WINDOW_MARGIN_BOTTOM
+            # Position relativ zum Screen berechnen
+            x = geometry.x() + (geometry.width() - WINDOW_WIDTH) // 2
+            y = geometry.y() + geometry.height() - WINDOW_HEIGHT - WINDOW_MARGIN_BOTTOM
             self.move(x, y)
 
     def _setup_label(self):
@@ -374,6 +437,7 @@ class PySide6OverlayWidget(QWidget):
 
     @Slot(str, str)
     def _on_state_changed(self, state: str, text: str):
+        prev_state = self._state
         self._state = state
         self._text = text
         self._animation_start = time.perf_counter()
@@ -381,6 +445,10 @@ class PySide6OverlayWidget(QWidget):
         if state == "IDLE":
             self._fade_out()
         else:
+            # Bei Übergang von IDLE: Auf aktivem Monitor positionieren
+            if prev_state == "IDLE":
+                self._center_on_screen(use_active_screen=True)
+
             # Label aktualisieren
             display_text = text or STATE_TEXTS.get(state, "")
             self._update_label(state, display_text)
@@ -653,6 +721,13 @@ class PySide6OverlayController:
 
     def run(self):
         """Start Qt Event Loop (call from dedicated thread)."""
+        # High-DPI Awareness konfigurieren (muss vor QApplication passieren)
+        if not QApplication.instance():
+            # Automatische High-DPI Skalierung aktivieren
+            QApplication.setHighDpiScaleFactorRoundingPolicy(
+                Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+            )
+
         # QApplication erstellen (oder existierende verwenden)
         self._app = QApplication.instance()
         if self._app is None:
@@ -667,7 +742,7 @@ class PySide6OverlayController:
             self._interim_timer.timeout.connect(self._poll_interim_file)
             self._interim_timer.start(200)  # 200ms wie macOS
 
-        logger.info("PySide6 Overlay gestartet")
+        logger.info("PySide6 Overlay gestartet (High-DPI: aktiv)")
         self._app.exec()
 
     def stop(self):
