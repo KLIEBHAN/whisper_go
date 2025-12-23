@@ -1,3 +1,5 @@
+# Windows: GPU-accelerated overlay (optional, falls back to Tkinter)
+PySide6>=6.6.0; sys_platform == "win32"
 openai>=1.0.0
 openai-whisper
 # Optional: faster local backend (CTranslate2)
