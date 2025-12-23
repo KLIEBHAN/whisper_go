@@ -21,6 +21,10 @@ if sys.platform == "darwin":
         "WelcomeController",
     ]
 elif sys.platform == "win32":
-    from .overlay_windows import WindowsOverlayController
+    # Prefer PySide6 overlay (GPU-accelerated), fallback to Tkinter
+    try:
+        from .overlay_pyside6 import PySide6OverlayController as WindowsOverlayController
+    except ImportError:
+        from .overlay_windows import WindowsOverlayController
 
     __all__ = ["WindowsOverlayController"]
