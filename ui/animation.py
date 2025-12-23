@@ -25,8 +25,8 @@ BAR_GAP = 5
 BAR_MIN_HEIGHT = 6
 BAR_MAX_HEIGHT = 42
 
-# Smoothing
-SMOOTHING_ALPHA_RISE = 0.55
+# Smoothing (tuned to match macOS feel)
+SMOOTHING_ALPHA_RISE = 0.65  # Faster attack for responsive feel
 SMOOTHING_ALPHA_FALL = 0.12
 LEVEL_SMOOTHING_RISE = 0.30
 LEVEL_SMOOTHING_FALL = 0.10
@@ -34,28 +34,28 @@ LEVEL_SMOOTHING_FALL = 0.10
 # Audio-Visual Mapping
 VISUAL_GAIN = 3.0
 VISUAL_NOISE_GATE = 0.001
-VISUAL_EXPONENT = 1.2
+VISUAL_EXPONENT = 1.3  # Slightly more compression
 
-# Adaptive Gain Control (AGC)
-AGC_DECAY = 0.9923
-AGC_MIN_PEAK = 0.005
-AGC_HEADROOM = 1.5
+# Adaptive Gain Control (AGC) - macOS tuning
+AGC_DECAY = 0.97  # Slower decay for smoother response
+AGC_MIN_PEAK = 0.01  # Higher floor prevents over-amplification
+AGC_HEADROOM = 2.0  # More headroom for dynamic range
 
-# Traveling Wave
-WAVE_WANDER_AMOUNT = 0.25
-WAVE_WANDER_HZ_PRIMARY = 0.5
-WAVE_WANDER_HZ_SECONDARY = 0.85
-WAVE_WANDER_PHASE_STEP_PRIMARY = 0.8
-WAVE_WANDER_PHASE_STEP_SECONDARY = 1.5
-WAVE_WANDER_BLEND = 0.6
+# Traveling Wave (macOS values)
+WAVE_WANDER_AMOUNT = 0.22
+WAVE_WANDER_HZ_PRIMARY = 0.55
+WAVE_WANDER_HZ_SECONDARY = 0.95
+WAVE_WANDER_PHASE_STEP_PRIMARY = 0.85
+WAVE_WANDER_PHASE_STEP_SECONDARY = 1.65
+WAVE_WANDER_BLEND = 0.65
 
-# Gaussian Envelope
-ENVELOPE_STRENGTH = 0.75
-ENVELOPE_BASE = 0.4
-ENVELOPE_SIGMA = 1.3
-ENVELOPE_HZ_PRIMARY = 0.18
-ENVELOPE_HZ_SECONDARY = 0.28
-ENVELOPE_BLEND = 0.55
+# Gaussian Envelope (macOS values - stronger, more focused)
+ENVELOPE_STRENGTH = 0.85
+ENVELOPE_BASE = 0.38
+ENVELOPE_SIGMA = 1.15  # Tighter focus
+ENVELOPE_HZ_PRIMARY = 0.15
+ENVELOPE_HZ_SECONDARY = 0.24
+ENVELOPE_BLEND = 0.62
 
 
 # =============================================================================
