@@ -379,25 +379,6 @@ class WindowsOverlayController:
         self._render_bars(t)
         self._root.after(FRAME_MS, self._animate)
 
-    def _update_agc(self) -> None:
-        """Berechnet AGC-normalisierten Level (einmal pro Frame)."""
-        # Noise Gate
-        gated = max(self._smoothed_level - VISUAL_NOISE_GATE, 0.0)
-
-        # AGC: Peak-Tracking (schneller Attack, langsamer Release)
-        if gated > self._agc_peak:
-            self._agc_peak = gated
-        else:
-            self._agc_peak = max(self._agc_peak * AGC_DECAY, AGC_MIN_PEAK)
-
-        # Normalisieren auf Peak mit Headroom
-        reference_peak = max(self._agc_peak * AGC_HEADROOM, AGC_MIN_PEAK)
-        normalized = gated / reference_peak if reference_peak > 0 else 0.0
-
-        # Visuelle Kurve + Gain
-        shaped = (min(1.0, normalized) ** VISUAL_EXPONENT) * VISUAL_GAIN
-        self._normalized_level = min(1.0, shaped)
-
     def _render_bars(self, t: float) -> None:
         if not self._canvas:
             return
