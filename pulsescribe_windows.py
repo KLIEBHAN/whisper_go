@@ -1026,12 +1026,25 @@ class PulseScribeWindows:
         # (Device-Erkennung läuft parallel im Pre-Warm)
         self._setup_hotkey()
 
-        # Pre-Warm: Teure Imports + Device-Erkennung im Hintergrund
+        # Overlay FRÜH starten, damit LOADING angezeigt werden kann
+        self._setup_overlay()
+
+        # LOADING-State während Pre-Warm anzeigen
+        if self.streaming:
+            self._set_state(AppState.LOADING)
+
+        # Pre-Warm: Teure Imports + Warm-Stream starten
+        def _prewarm_and_ready():
+            self._prewarm_imports()
+            # Nach Pre-Warm: Zurück zu IDLE (Ready)
+            if self.state == AppState.LOADING:
+                self._set_state(AppState.IDLE)
+                self._play_sound("ready")  # Signal: System bereit
+
         threading.Thread(
-            target=self._prewarm_imports, daemon=True, name="PreWarm"
+            target=_prewarm_and_ready, daemon=True, name="PreWarm"
         ).start()
 
-        self._setup_overlay()
         self._setup_tray()
 
         # Ctrl+C Handler: Signal wird an _quit weitergeleitet (nur einmal)
