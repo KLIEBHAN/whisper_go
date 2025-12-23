@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows support with dedicated daemon (`pulsescribe_windows.py`)
 - Centralized animation logic (`ui/animation.py`) for cross-platform consistency
 - PyInstaller spec for Windows EXE builds
+- **Inno Setup installer** for Windows (`installer_windows.iss`)
+  - Start Menu entries, optional Desktop shortcut
+  - Autostart option (adds to Windows startup)
+  - Clean uninstall with optional settings removal
+  - Per-user install (no admin rights required)
+- PowerShell build script (`build_windows.ps1`) for automated builds
 - Default hotkeys for Windows (Toggle: Ctrl+Alt+R, Hold: Ctrl+Win)
 
 ### Changed

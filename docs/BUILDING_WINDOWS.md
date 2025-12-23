@@ -1,14 +1,30 @@
 # Building PulseScribe on Windows
 
-PulseScribe ships as a standalone `.exe` (onedir mode). For distribution, the EXE can optionally be code-signed.
+PulseScribe ships as a standalone `.exe` (onedir mode) or as an installer. For distribution, both can optionally be code-signed.
 
 ## Prerequisites
 
 - **Python 3.10+** with pip
 - **PyInstaller** (`pip install pyinstaller`)
 - **PySide6** (optional, recommended for GPU-accelerated overlay)
+- **Inno Setup 6** (optional, for installer - [download](https://jrsoftware.org/isinfo.php))
 
 ## Quick Start
+
+### Using the Build Script (Recommended)
+
+```powershell
+# Standard build (EXE only)
+.\build_windows.ps1
+
+# Clean build with installer
+.\build_windows.ps1 -Clean -Installer
+
+# Create installer from existing EXE
+.\build_windows.ps1 -Installer -SkipExe
+```
+
+### Manual Build
 
 ```bash
 # Install dependencies
@@ -21,19 +37,32 @@ pip install PySide6
 pyinstaller build_windows.spec --clean
 
 # Output: dist/PulseScribe/PulseScribe.exe
+
+# Optional: Create installer (requires Inno Setup)
+iscc installer_windows.iss
+
+# Output: dist/PulseScribe-Setup-{version}.exe
 ```
 
 ## Build Output
 
-The build produces a **onedir** bundle:
+The build produces a **onedir** bundle and optionally an installer:
 
 ```
 dist/
-└── PulseScribe/
-    ├── PulseScribe.exe      # Main executable
-    ├── *.dll                # Python + dependency DLLs
-    └── ...                  # Supporting files
+├── PulseScribe/
+│   ├── PulseScribe.exe      # Main executable (portable)
+│   ├── *.dll                # Python + dependency DLLs
+│   └── ...                  # Supporting files
+└── PulseScribe-Setup-1.1.1.exe  # Installer (if built)
 ```
+
+### Distribution Options
+
+| Format | File | Use Case |
+|--------|------|----------|
+| **Portable** | `dist/PulseScribe/` folder | USB stick, no installation needed |
+| **Installer** | `PulseScribe-Setup-{ver}.exe` | Standard installation with Start Menu, Autostart option |
 
 ## Build Options
 
@@ -90,17 +119,55 @@ pulsescribe/
     └── icon.ico    # Windows icon (256x256 recommended)
 ```
 
+## Installer Features
+
+The Inno Setup installer (`installer_windows.iss`) provides:
+
+| Feature | Description |
+|---------|-------------|
+| **Installation wizard** | Language selection (English/German), license, destination |
+| **Start Menu entries** | PulseScribe + Uninstall shortcuts |
+| **Desktop shortcut** | Optional, user can choose during install |
+| **Autostart option** | Optional, adds to Windows startup |
+| **Clean uninstall** | Via Windows "Apps & Features", optionally removes settings |
+| **Per-user install** | No admin rights required (installs to `%LocalAppData%`) |
+
+### Customizing the Installer
+
+Edit `installer_windows.iss` to customize:
+
+```ini
+; Change app metadata
+#define MyAppVersion "1.1.1"
+#define MyAppPublisher "Your Name"
+#define MyAppURL "https://your-website.com"
+
+; Change install location (default: per-user)
+DefaultDirName={autopf}\{#MyAppName}  ; Program Files (requires admin)
+DefaultDirName={localappdata}\{#MyAppName}  ; Per-user (no admin)
+```
+
 ## Autostart Setup
 
-To run PulseScribe on Windows startup:
+### Via Installer
+
+The installer offers an "Autostart" checkbox during installation. This adds a registry entry to start PulseScribe with Windows.
+
+### Manual Setup (Portable)
+
+To run PulseScribe on Windows startup without the installer:
 
 1. Press `Win+R`, type `shell:startup`
 2. Create a shortcut to `dist/PulseScribe/PulseScribe.exe` in the opened folder
 
 Or use the included batch file:
 
-```bash
-# Create shortcut to start_daemon.bat in the startup folder
+```powershell
+# Create shortcut in startup folder
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\PulseScribe.lnk")
+$Shortcut.TargetPath = "$PWD\dist\PulseScribe\PulseScribe.exe"
+$Shortcut.Save()
 ```
 
 ## Code Signing (Optional)
