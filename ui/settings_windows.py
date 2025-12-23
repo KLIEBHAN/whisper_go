@@ -8,7 +8,7 @@ import logging
 import sys
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDoubleValidator, QFont, QIntValidator
 from PySide6.QtWidgets import (
     QApplication,
@@ -377,6 +377,9 @@ class SettingsWindow(QDialog):
         self._api_fields: dict[str, QLineEdit] = {}
         self._api_status: dict[str, QLabel] = {}
 
+        # Hotkey Recording State
+        self._recording_hotkey_for: str | None = None
+
         # Prompt Cache für Save & Apply
         self._prompts_cache: dict[str, str] = {}
         self._current_prompt_context: str = "default"
@@ -646,9 +649,6 @@ class SettingsWindow(QDialog):
         layout.addStretch()
 
         scroll.setWidget(content)
-
-        # Recording State
-        self._recording_hotkey_for: str | None = None
 
         return scroll
 
@@ -1305,15 +1305,13 @@ class SettingsWindow(QDialog):
     def keyPressEvent(self, event):
         """Fängt Tastendruck für Hotkey-Recording ab."""
         if self._recording_hotkey_for:
-            from PySide6.QtCore import Qt as QtCore
-
             # Escape = Abbrechen
-            if event.key() == QtCore.Key.Key_Escape:
+            if event.key() == Qt.Key.Key_Escape:
                 self._stop_hotkey_recording(None)
                 return
 
             # Enter = Bestätigen
-            if event.key() in (QtCore.Key.Key_Return, QtCore.Key.Key_Enter):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 # Aktuelles Feld auslesen
                 if self._recording_hotkey_for == "toggle" and self._toggle_hotkey_field:
                     hotkey = self._toggle_hotkey_field.text()
@@ -1327,13 +1325,13 @@ class SettingsWindow(QDialog):
             # Hotkey bauen
             parts = []
             modifiers = event.modifiers()
-            if modifiers & QtCore.KeyboardModifier.ControlModifier:
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
                 parts.append("ctrl")
-            if modifiers & QtCore.KeyboardModifier.AltModifier:
+            if modifiers & Qt.KeyboardModifier.AltModifier:
                 parts.append("alt")
-            if modifiers & QtCore.KeyboardModifier.ShiftModifier:
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
                 parts.append("shift")
-            if modifiers & QtCore.KeyboardModifier.MetaModifier:
+            if modifiers & Qt.KeyboardModifier.MetaModifier:
                 parts.append("win")
 
             # Key-Name
@@ -1357,41 +1355,39 @@ class SettingsWindow(QDialog):
 
     def _qt_key_to_string(self, key: int) -> str:
         """Konvertiert Qt Key zu String."""
-        from PySide6.QtCore import Qt as QtCore
-
         # Spezielle Tasten
         special_keys = {
-            QtCore.Key.Key_Space: "space",
-            QtCore.Key.Key_Tab: "tab",
-            QtCore.Key.Key_Backspace: "backspace",
-            QtCore.Key.Key_Delete: "delete",
-            QtCore.Key.Key_Home: "home",
-            QtCore.Key.Key_End: "end",
-            QtCore.Key.Key_PageUp: "pageup",
-            QtCore.Key.Key_PageDown: "pagedown",
-            QtCore.Key.Key_Up: "up",
-            QtCore.Key.Key_Down: "down",
-            QtCore.Key.Key_Left: "left",
-            QtCore.Key.Key_Right: "right",
-            QtCore.Key.Key_Control: "ctrl",
-            QtCore.Key.Key_Alt: "alt",
-            QtCore.Key.Key_Shift: "shift",
-            QtCore.Key.Key_Meta: "win",
+            Qt.Key.Key_Space: "space",
+            Qt.Key.Key_Tab: "tab",
+            Qt.Key.Key_Backspace: "backspace",
+            Qt.Key.Key_Delete: "delete",
+            Qt.Key.Key_Home: "home",
+            Qt.Key.Key_End: "end",
+            Qt.Key.Key_PageUp: "pageup",
+            Qt.Key.Key_PageDown: "pagedown",
+            Qt.Key.Key_Up: "up",
+            Qt.Key.Key_Down: "down",
+            Qt.Key.Key_Left: "left",
+            Qt.Key.Key_Right: "right",
+            Qt.Key.Key_Control: "ctrl",
+            Qt.Key.Key_Alt: "alt",
+            Qt.Key.Key_Shift: "shift",
+            Qt.Key.Key_Meta: "win",
         }
         if key in special_keys:
             return special_keys[key]
 
         # F-Tasten
-        if QtCore.Key.Key_F1 <= key <= QtCore.Key.Key_F24:
-            return f"f{key - QtCore.Key.Key_F1 + 1}"
+        if Qt.Key.Key_F1 <= key <= Qt.Key.Key_F24:
+            return f"f{key - Qt.Key.Key_F1 + 1}"
 
         # Buchstaben
-        if QtCore.Key.Key_A <= key <= QtCore.Key.Key_Z:
-            return chr(ord('a') + key - QtCore.Key.Key_A)
+        if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+            return chr(ord('a') + key - Qt.Key.Key_A)
 
         # Zahlen
-        if QtCore.Key.Key_0 <= key <= QtCore.Key.Key_9:
-            return chr(ord('0') + key - QtCore.Key.Key_0)
+        if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
+            return chr(ord('0') + key - Qt.Key.Key_0)
 
         return ""
 
