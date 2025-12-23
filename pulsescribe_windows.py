@@ -423,8 +423,7 @@ class PulseScribeWindows:
         """
         if self.state in (AppState.LISTENING, AppState.RECORDING):
             logger.debug("Hold-Release → Recording stoppen")
-            self._recording_started_by_hold = False
-            self._stop_recording()
+            self._stop_recording()  # setzt _recording_started_by_hold = False
 
     def _start_recording(self):
         """Startet Aufnahme (Streaming oder REST)."""
@@ -505,6 +504,9 @@ class PulseScribeWindows:
         """Stoppt Aufnahme und startet Transkription."""
         logger.info("Stoppe Aufnahme...")
         self._play_sound("stop")
+
+        # Hold-Flag zurücksetzen (wie macOS) - egal wie Recording gestoppt wurde
+        self._recording_started_by_hold = False
 
         # Signal zum Stoppen (nur Recording, nicht App)
         self._recording_stop_event.set()
