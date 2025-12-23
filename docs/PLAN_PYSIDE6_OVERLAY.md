@@ -6,7 +6,7 @@ Migration des Windows-Overlays (`ui/overlay_windows.py`) von Tkinter zu PySide6 
 - GPU-beschleunigte Animationen
 - Echten Blur-Hintergrund (Windows 10+)
 - Präzisere Timer
-- Smoothere Wellenanimation
+- Glattere Wellenanimation
 
 ---
 
@@ -358,7 +358,7 @@ Die bestehende Animations-Logik wird 1:1 übernommen:
 ### Neue Smoothing-Ebene (wie macOS)
 
 ```python
-# Zusätzliche Level-Smoothing (macOS hat das)
+# Zusätzliches Level-Smoothing (macOS hat das)
 LEVEL_SMOOTHING_RISE = 0.30
 LEVEL_SMOOTHING_FALL = 0.10
 

@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QPoint,
     QPropertyAnimation,
     QRectF,
     QTimer,
@@ -73,7 +74,7 @@ FRAME_MS = 1000 // FPS  # ~16ms
 SMOOTHING_ALPHA_RISE = 0.55
 SMOOTHING_ALPHA_FALL = 0.12
 
-# Zusätzliche Level-Smoothing (wie macOS)
+# Zusätzliches Level-Smoothing (wie macOS)
 LEVEL_SMOOTHING_RISE = 0.30
 LEVEL_SMOOTHING_FALL = 0.10
 
@@ -192,8 +193,6 @@ def _get_active_screen() -> QScreen | None:
                     center_y = (rect.top + rect.bottom) // 2
 
                     # Screen an diesem Punkt finden
-                    from PySide6.QtCore import QPoint
-
                     screen = app.screenAt(QPoint(center_x, center_y))
                     if screen:
                         return screen
@@ -712,7 +711,24 @@ class PySide6OverlayWidget(QWidget):
 
 
 class PySide6OverlayController:
-    """Drop-in Replacement für WindowsOverlayController."""
+    """Drop-in Replacement für WindowsOverlayController.
+
+    Threading Model:
+        The run() method starts the Qt event loop and blocks until stop() is called.
+        It should be called from a dedicated thread that will become the Qt GUI thread.
+        All Qt widgets and timers are created and managed within this thread.
+
+        Cross-thread communication is handled via Qt Signals, which are thread-safe.
+        The public methods (update_state, update_audio_level, update_interim_text)
+        can be safely called from any thread - they emit signals that are processed
+        in the Qt event loop thread.
+
+    Usage:
+        controller = PySide6OverlayController()
+        threading.Thread(target=controller.run, daemon=True).start()
+        # Now safe to call from main thread:
+        controller.update_state("RECORDING")
+    """
 
     def __init__(self, interim_file: Path | None = None):
         self._app: QApplication | None = None
@@ -723,7 +739,11 @@ class PySide6OverlayController:
         self._interim_timer: QTimer | None = None
 
     def run(self):
-        """Start Qt Event Loop (call from dedicated thread)."""
+        """Start Qt Event Loop.
+
+        This method blocks and runs the Qt event loop. Call from a dedicated thread.
+        The calling thread becomes the Qt GUI thread where all widgets are processed.
+        """
         # High-DPI Awareness konfigurieren (muss vor QApplication passieren)
         if not QApplication.instance():
             # Automatische High-DPI Skalierung aktivieren
@@ -787,8 +807,8 @@ class PySide6OverlayController:
             if text and text != self._last_interim_text:
                 self._last_interim_text = text
                 self._widget.update_interim_text(text)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Interim-File lesen fehlgeschlagen: {e}")
 
 
 __all__ = ["PySide6OverlayController", "PySide6OverlayWidget"]

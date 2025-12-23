@@ -1,5 +1,6 @@
-# Windows: GPU-accelerated overlay (optional, falls back to Tkinter)
-PySide6>=6.6.0; sys_platform == "win32"
+# Note: PySide6 is optional for Windows (GPU-accelerated overlay)
+# Install with: pip install pulsescribe[windows] or pip install PySide6
+# Falls back to Tkinter if not installed
 openai>=1.0.0
 openai-whisper
 # Optional: faster local backend (CTranslate2)
