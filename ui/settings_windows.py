@@ -60,6 +60,7 @@ LOCAL_MODEL_OPTIONS = [
     "default",
     "turbo",
     "large",
+    "large-v3",
     "medium",
     "small",
     "base",

@@ -1150,44 +1150,42 @@ class PulseScribeWindows:
             self._tray.stop()
 
     def _show_settings(self):
-        """Öffnet das Settings-Fenster."""
-        # Settings-Fenster in einem separaten Thread starten
-        # (pystray callbacks laufen nicht im Qt-Thread)
-        def _open_settings():
-            try:
-                from PySide6.QtWidgets import QApplication
-                from ui.settings_windows import SettingsWindow
+        """Öffnet das Settings-Fenster in einem separaten Prozess.
 
-                # Prüfen ob QApplication existiert (falls Overlay läuft)
-                app = QApplication.instance()
-                if app is None:
-                    app = QApplication([])
-                    owns_app = True
-                else:
-                    owns_app = False
+        Qt-Widgets müssen im Main-Thread laufen. Da pystray-Callbacks in einem
+        Thread-Pool ausgeführt werden, starten wir das Settings-Fenster als
+        separaten Prozess, um Threading-Probleme zu vermeiden.
+        """
+        import subprocess
 
-                # Settings-Fenster erstellen
-                window = SettingsWindow(config={
-                    "mode": self.mode,
-                    "toggle_hotkey": self.toggle_hotkey,
-                    "hold_hotkey": self.hold_hotkey,
-                })
-                window.set_on_settings_changed(self._reload_settings)
-                window.show()
+        # Settings-Fenster als separaten Prozess starten
+        try:
+            # Python-Executable und Pfad zum Settings-Modul
+            python_exe = sys.executable
+            settings_script = PROJECT_ROOT / "ui" / "settings_windows.py"
 
-                # Event-Loop starten (nur wenn wir die App besitzen)
-                if owns_app:
-                    app.exec()
+            if settings_script.exists():
+                # Starte Settings-Fenster als eigenständigen Prozess
+                subprocess.Popen(
+                    [python_exe, str(settings_script)],
+                    cwd=str(PROJECT_ROOT),
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                )
+                logger.info("Settings-Fenster gestartet (separater Prozess)")
+            else:
+                logger.error(f"Settings-Script nicht gefunden: {settings_script}")
 
-            except ImportError as e:
-                logger.error(f"Settings-Fenster nicht verfügbar: {e}")
-            except Exception as e:
-                logger.error(f"Settings-Fenster Fehler: {e}")
-
-        threading.Thread(target=_open_settings, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Settings-Fenster konnte nicht geöffnet werden: {e}")
 
     def _reload_settings(self):
-        """Lädt Settings aus .env neu und wendet sie an."""
+        """Lädt Settings aus .env neu und wendet sie an.
+
+        Note: Diese Methode kann manuell aufgerufen werden oder über einen
+        FileWatcher getriggert werden. Da das Settings-Fenster jetzt in einem
+        separaten Prozess läuft, wird der Callback nicht mehr automatisch ausgelöst.
+        Stattdessen werden Settings bei der nächsten Transkription neu geladen.
+        """
         logger.info("Settings neu laden...")
 
         # .env neu einlesen
