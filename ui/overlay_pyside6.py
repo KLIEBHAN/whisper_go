@@ -365,6 +365,8 @@ class PySide6OverlayWidget(QWidget):
         """Konfiguriert Fade-In/Out Animation."""
         self._fade_animation = QPropertyAnimation(self, b"windowOpacity")
         self._fade_animation.setDuration(150)  # 150ms
+        # Einmalig verbinden (nicht in _fade_out, um multiple connections zu vermeiden)
+        self._fade_animation.finished.connect(self._on_fade_out_finished)
 
     def _fade_in(self):
         """Blendet Overlay ein."""
@@ -380,16 +382,12 @@ class PySide6OverlayWidget(QWidget):
         self._fade_animation.stop()
         self._fade_animation.setStartValue(self.windowOpacity())
         self._fade_animation.setEndValue(0.0)
-        self._fade_animation.finished.connect(self._on_fade_out_finished)
         self._fade_animation.start()
 
     def _on_fade_out_finished(self):
-        """Versteckt das Fenster nach Fade-Out."""
-        try:
-            self._fade_animation.finished.disconnect(self._on_fade_out_finished)
-        except RuntimeError:
-            pass
-        if self.windowOpacity() < 0.1:
+        """Versteckt das Fenster nach Fade-Out (nur wenn wirklich ausgeblendet)."""
+        # Nur reagieren wenn wir wirklich am Ausblenden sind (nicht bei Fade-In)
+        if self._fade_animation.endValue() == 0.0 and self.windowOpacity() < 0.1:
             self.hide()
             self._stop_animation()
             self._reset_levels()
@@ -418,6 +416,11 @@ class PySide6OverlayWidget(QWidget):
     # =========================================================================
     # Public API (Thread-Safe via Signals)
     # =========================================================================
+
+    @property
+    def current_state(self) -> str:
+        """Gibt den aktuellen State zurück (read-only)."""
+        return self._state
 
     def update_state(self, state: str, text: str | None = None):
         """Thread-safe State-Update."""
@@ -773,7 +776,7 @@ class PySide6OverlayController:
         if not self._running or not self._interim_file or not self._widget:
             return
 
-        if self._widget._state != "RECORDING":
+        if self._widget.current_state != "RECORDING":
             return
 
         if not self._interim_file.exists():
