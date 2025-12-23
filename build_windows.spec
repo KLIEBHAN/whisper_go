@@ -2,11 +2,16 @@
 """
 PyInstaller spec for PulseScribe Windows.
 
-Build: pyinstaller build_windows.spec
+Build: pyinstaller build_windows.spec --clean
 Output: dist/PulseScribe/PulseScribe.exe
 
 Requirements:
-    pip install pyinstaller pystray pillow pynput sounddevice soundfile numpy deepgram-sdk pyperclip python-dotenv
+    pip install -r requirements.txt
+    pip install pyinstaller PySide6
+
+Core: pystray pillow pynput sounddevice soundfile numpy deepgram-sdk groq openai pyperclip python-dotenv
+Windows: pywin32 psutil
+Overlay: PySide6 (GPU-accelerated, recommended) or tkinter (fallback, built-in)
 """
 
 block_cipher = None
@@ -47,6 +52,8 @@ datas = [
     ('providers', 'providers'),
     ('refine', 'refine'),
     ('whisper_platform', 'whisper_platform'),
+    ('ui', 'ui'),      # Overlay modules (PySide6, Tkinter, animation)
+    ('audio', 'audio'), # Recording module
 ]
 
 # Hidden imports that PyInstaller doesn't detect automatically
@@ -81,18 +88,32 @@ hiddenimports = [
     # === Utils ===
     'pyperclip',
     'dotenv',
+
+    # === UI/Overlay ===
+    'ui',
+    'ui.overlay_pyside6',
+    'ui.overlay_windows',
+    'ui.animation',
+    'PySide6',
+    'PySide6.QtCore',
+    'PySide6.QtGui',
+    'PySide6.QtWidgets',
+    'tkinter',
+
+    # === Audio ===
+    'audio',
+    'audio.recording',
 ]
 
 hiddenimports = _dedupe(hiddenimports)
 
 # Exclude unnecessary modules (reduces size and build time)
 excludes = [
-    # GUI Frameworks (not needed)
-    'tkinter',
+    # GUI Frameworks (not needed - except PySide6/tkinter for overlay)
     'PyQt5',
     'PyQt6',
     'PySide2',
-    'PySide6',
+    # NOTE: PySide6 and tkinter are NOT excluded - used for overlay!
     'wx',
 
     # Data Science (not needed)
