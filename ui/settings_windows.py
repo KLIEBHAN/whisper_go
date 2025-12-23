@@ -371,6 +371,7 @@ class SettingsWindow(QDialog):
         self._refine_provider_combo: QComboBox | None = None
         self._refine_model_field: QLineEdit | None = None
         self._overlay_checkbox: QCheckBox | None = None
+        self._rtf_checkbox: QCheckBox | None = None
         self._clipboard_restore_checkbox: QCheckBox | None = None
         self._api_fields: dict[str, QLineEdit] = {}
         self._api_status: dict[str, QLabel] = {}
@@ -459,10 +460,10 @@ class SettingsWindow(QDialog):
 
         layout.addStretch()
 
-        save_btn = QPushButton("Save && Apply")
-        save_btn.setObjectName("primary")
-        save_btn.clicked.connect(self._save_settings)
-        layout.addWidget(save_btn)
+        self._save_btn = QPushButton("Save && Apply")
+        self._save_btn.setObjectName("primary")
+        self._save_btn.clicked.connect(self._save_settings)
+        layout.addWidget(self._save_btn)
 
         return footer
 
@@ -510,6 +511,41 @@ class SettingsWindow(QDialog):
         instructions.setFont(QFont("Segoe UI", 10))
         instructions.setWordWrap(True)
         card_layout.addWidget(instructions)
+
+        layout.addWidget(card)
+
+        # Local Mode Presets Card
+        card, card_layout = create_card(
+            "⚡ Local Mode Presets",
+            "Quick-apply optimized settings for local transcription."
+        )
+
+        presets_layout = QHBoxLayout()
+        presets_layout.setSpacing(8)
+
+        # Windows-optimized presets
+        preset_btn_cuda = QPushButton("CUDA Fast")
+        preset_btn_cuda.setToolTip("faster-whisper with CUDA (requires NVIDIA GPU)")
+        preset_btn_cuda.clicked.connect(lambda: self._apply_local_preset("cuda_fast"))
+        presets_layout.addWidget(preset_btn_cuda)
+
+        preset_btn_cpu = QPushButton("CPU Fast")
+        preset_btn_cpu.setToolTip("faster-whisper with CPU int8 optimization")
+        preset_btn_cpu.clicked.connect(lambda: self._apply_local_preset("cpu_fast"))
+        presets_layout.addWidget(preset_btn_cpu)
+
+        preset_btn_quality = QPushButton("CPU Quality")
+        preset_btn_quality.setToolTip("Higher quality transcription (slower)")
+        preset_btn_quality.clicked.connect(lambda: self._apply_local_preset("cpu_quality"))
+        presets_layout.addWidget(preset_btn_quality)
+
+        presets_layout.addStretch()
+        card_layout.addLayout(presets_layout)
+
+        # Status Label
+        self._preset_status = QLabel("")
+        self._preset_status.setFont(QFont("Segoe UI", 9))
+        card_layout.addWidget(self._preset_status)
 
         layout.addWidget(card)
         layout.addStretch()
@@ -749,6 +785,50 @@ class SettingsWindow(QDialog):
         self._temperature_field.setValidator(QDoubleValidator(0.0, 1.0, 2))
         card_layout.addLayout(create_label_row("Temperature:", self._temperature_field, "0.0-1.0"))
 
+        # Best Of (Integer)
+        self._best_of_field = QLineEdit()
+        self._best_of_field.setPlaceholderText("default")
+        self._best_of_field.setValidator(QIntValidator(1, 10))
+        card_layout.addLayout(create_label_row("Best Of:", self._best_of_field, "1-10"))
+
+        layout.addWidget(card)
+
+        # Faster-Whisper Card
+        card, card_layout = create_card(
+            "🚀 Faster-Whisper Settings",
+            "Settings for faster-whisper backend."
+        )
+
+        # Compute Type
+        self._compute_type_combo = QComboBox()
+        self._compute_type_combo.addItems(["default", "float16", "float32", "int8", "int8_float16"])
+        card_layout.addLayout(create_label_row("Compute Type:", self._compute_type_combo))
+
+        # CPU Threads
+        self._cpu_threads_field = QLineEdit()
+        self._cpu_threads_field.setPlaceholderText("auto")
+        self._cpu_threads_field.setValidator(QIntValidator(1, 32))
+        card_layout.addLayout(create_label_row("CPU Threads:", self._cpu_threads_field, "1-32"))
+
+        # Num Workers
+        self._num_workers_field = QLineEdit()
+        self._num_workers_field.setPlaceholderText("1")
+        self._num_workers_field.setValidator(QIntValidator(1, 8))
+        card_layout.addLayout(create_label_row("Num Workers:", self._num_workers_field, "1-8"))
+
+        # Boolean Overrides
+        self._without_timestamps_combo = QComboBox()
+        self._without_timestamps_combo.addItems(BOOL_OVERRIDE_OPTIONS)
+        card_layout.addLayout(create_label_row("Without Timestamps:", self._without_timestamps_combo))
+
+        self._vad_filter_combo = QComboBox()
+        self._vad_filter_combo.addItems(BOOL_OVERRIDE_OPTIONS)
+        card_layout.addLayout(create_label_row("VAD Filter:", self._vad_filter_combo))
+
+        self._fp16_combo = QComboBox()
+        self._fp16_combo.addItems(BOOL_OVERRIDE_OPTIONS)
+        card_layout.addLayout(create_label_row("FP16:", self._fp16_combo))
+
         layout.addWidget(card)
 
         # Lightning Card
@@ -828,6 +908,9 @@ class SettingsWindow(QDialog):
 
         self._overlay_checkbox = QCheckBox("Show Overlay during recording")
         card_layout.addWidget(self._overlay_checkbox)
+
+        self._rtf_checkbox = QCheckBox("Show RTF (Real-Time Factor) after transcription")
+        card_layout.addWidget(self._rtf_checkbox)
 
         self._clipboard_restore_checkbox = QCheckBox("Restore clipboard after paste")
         card_layout.addWidget(self._clipboard_restore_checkbox)
@@ -953,8 +1036,9 @@ class SettingsWindow(QDialog):
         return scroll
 
     def _build_logs_tab(self) -> QWidget:
-        """Logs-Tab: Log-Viewer."""
+        """Logs-Tab: Log-Viewer mit Transcripts."""
         from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QStackedWidget, QButtonGroup
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -965,39 +1049,102 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(CARD_SPACING)
 
-        # Logs Card
-        card, card_layout = create_card(
-            "📋 Logs",
-            "View application logs for debugging."
-        )
+        # Segment Control (Logs | Transcripts)
+        segment_layout = QHBoxLayout()
+        segment_layout.setSpacing(0)
+
+        self._logs_btn = QPushButton("🪵 Logs")
+        self._logs_btn.setCheckable(True)
+        self._logs_btn.setChecked(True)
+        self._logs_btn.setStyleSheet(f"""
+            QPushButton {{ border-radius: 6px 0 0 6px; }}
+            QPushButton:checked {{ background-color: {COLORS['accent']}; }}
+        """)
+        self._logs_btn.clicked.connect(lambda: self._switch_logs_view(0))
+
+        self._transcripts_btn = QPushButton("📝 Transcripts")
+        self._transcripts_btn.setCheckable(True)
+        self._transcripts_btn.setStyleSheet(f"""
+            QPushButton {{ border-radius: 0 6px 6px 0; }}
+            QPushButton:checked {{ background-color: {COLORS['accent']}; }}
+        """)
+        self._transcripts_btn.clicked.connect(lambda: self._switch_logs_view(1))
+
+        # Button Group für exklusive Auswahl
+        self._logs_btn_group = QButtonGroup()
+        self._logs_btn_group.addButton(self._logs_btn, 0)
+        self._logs_btn_group.addButton(self._transcripts_btn, 1)
+
+        segment_layout.addWidget(self._logs_btn)
+        segment_layout.addWidget(self._transcripts_btn)
+        segment_layout.addStretch()
+        layout.addLayout(segment_layout)
+
+        # Stacked Widget für Logs/Transcripts
+        self._logs_stack = QStackedWidget()
+
+        # === Logs Page ===
+        logs_page = QWidget()
+        logs_layout = QVBoxLayout(logs_page)
+        logs_layout.setContentsMargins(0, 8, 0, 0)
 
         self._logs_viewer = QPlainTextEdit()
         self._logs_viewer.setReadOnly(True)
         self._logs_viewer.setMinimumHeight(300)
         self._logs_viewer.setPlaceholderText("Logs will appear here...")
-        card_layout.addWidget(self._logs_viewer)
+        logs_layout.addWidget(self._logs_viewer)
 
-        # Buttons
-        btn_layout = QHBoxLayout()
-
+        # Logs Buttons
+        logs_btn_layout = QHBoxLayout()
         self._auto_refresh_checkbox = QCheckBox("Auto-refresh")
         self._auto_refresh_checkbox.stateChanged.connect(self._toggle_logs_auto_refresh)
-        btn_layout.addWidget(self._auto_refresh_checkbox)
-
-        btn_layout.addStretch()
+        logs_btn_layout.addWidget(self._auto_refresh_checkbox)
+        logs_btn_layout.addStretch()
 
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self._refresh_logs)
-        btn_layout.addWidget(refresh_btn)
+        logs_btn_layout.addWidget(refresh_btn)
 
         open_btn = QPushButton("Open in Explorer")
         open_btn.clicked.connect(self._open_logs_folder)
-        btn_layout.addWidget(open_btn)
+        logs_btn_layout.addWidget(open_btn)
 
-        card_layout.addLayout(btn_layout)
+        logs_layout.addLayout(logs_btn_layout)
+        self._logs_stack.addWidget(logs_page)
 
-        layout.addWidget(card)
-        layout.addStretch()
+        # === Transcripts Page ===
+        transcripts_page = QWidget()
+        transcripts_layout = QVBoxLayout(transcripts_page)
+        transcripts_layout.setContentsMargins(0, 8, 0, 0)
+
+        self._transcripts_viewer = QPlainTextEdit()
+        self._transcripts_viewer.setReadOnly(True)
+        self._transcripts_viewer.setMinimumHeight(300)
+        self._transcripts_viewer.setPlaceholderText("Transcripts history will appear here...")
+        transcripts_layout.addWidget(self._transcripts_viewer)
+
+        # Transcripts Status
+        self._transcripts_status = QLabel("")
+        self._transcripts_status.setFont(QFont("Segoe UI", 9))
+        self._transcripts_status.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        transcripts_layout.addWidget(self._transcripts_status)
+
+        # Transcripts Buttons
+        transcripts_btn_layout = QHBoxLayout()
+        transcripts_btn_layout.addStretch()
+
+        refresh_t_btn = QPushButton("Refresh")
+        refresh_t_btn.clicked.connect(self._refresh_transcripts)
+        transcripts_btn_layout.addWidget(refresh_t_btn)
+
+        clear_t_btn = QPushButton("Clear History")
+        clear_t_btn.clicked.connect(self._clear_transcripts)
+        transcripts_btn_layout.addWidget(clear_t_btn)
+
+        transcripts_layout.addLayout(transcripts_btn_layout)
+        self._logs_stack.addWidget(transcripts_page)
+
+        layout.addWidget(self._logs_stack)
 
         scroll.setWidget(content)
 
@@ -1407,6 +1554,65 @@ class SettingsWindow(QDialog):
             else:
                 self._logs_refresh_timer.stop()
 
+    def _switch_logs_view(self, index: int):
+        """Wechselt zwischen Logs und Transcripts Ansicht."""
+        if hasattr(self, "_logs_stack"):
+            self._logs_stack.setCurrentIndex(index)
+            if index == 1:  # Transcripts
+                self._refresh_transcripts()
+
+    def _refresh_transcripts(self):
+        """Aktualisiert Transcripts-Anzeige."""
+        try:
+            from utils.history import get_recent_transcripts
+
+            entries = get_recent_transcripts(50)  # Letzte 50 Einträge
+            if not entries:
+                if self._transcripts_viewer:
+                    self._transcripts_viewer.setPlainText("No transcripts yet.")
+                if hasattr(self, "_transcripts_status"):
+                    self._transcripts_status.setText("0 entries")
+                return
+
+            # Format entries
+            lines = []
+            for entry in reversed(entries):  # Älteste zuerst
+                ts = entry.get("timestamp", "")[:19].replace("T", " ")
+                text = entry.get("text", "")
+                mode = entry.get("mode", "")
+                refined = "✨" if entry.get("refined") else ""
+                lines.append(f"[{ts}] {refined}{text}")
+                if mode:
+                    lines[-1] = f"[{ts}] ({mode}) {refined}{text}"
+
+            if self._transcripts_viewer:
+                self._transcripts_viewer.setPlainText("\n\n".join(lines))
+                # Scroll to bottom
+                scrollbar = self._transcripts_viewer.verticalScrollBar()
+                scrollbar.setValue(scrollbar.maximum())
+
+            if hasattr(self, "_transcripts_status"):
+                self._transcripts_status.setText(f"{len(entries)} entries")
+
+        except Exception as e:
+            logger.error(f"Transcripts laden fehlgeschlagen: {e}")
+            if self._transcripts_viewer:
+                self._transcripts_viewer.setPlainText(f"Error: {e}")
+
+    def _clear_transcripts(self):
+        """Löscht Transcripts-Historie."""
+        try:
+            from utils.history import clear_history
+
+            clear_history()
+            self._refresh_transcripts()
+            if hasattr(self, "_transcripts_status"):
+                self._transcripts_status.setText("History cleared")
+                self._transcripts_status.setStyleSheet(f"color: {COLORS['success']};")
+
+        except Exception as e:
+            logger.error(f"Transcripts löschen fehlgeschlagen: {e}")
+
     def _get_version(self) -> str:
         """Gibt die aktuelle Version zurück."""
         try:
@@ -1546,6 +1752,49 @@ class SettingsWindow(QDialog):
         if hasattr(self, "_temperature_field") and self._temperature_field:
             self._temperature_field.setText(temperature)
 
+        # Advanced: Best Of
+        best_of = get_env_setting("PULSESCRIBE_LOCAL_BEST_OF") or ""
+        if hasattr(self, "_best_of_field") and self._best_of_field:
+            self._best_of_field.setText(best_of)
+
+        # Faster-Whisper: Compute Type
+        compute_type = get_env_setting("PULSESCRIBE_LOCAL_COMPUTE_TYPE") or "default"
+        if hasattr(self, "_compute_type_combo") and self._compute_type_combo:
+            idx = self._compute_type_combo.findText(compute_type)
+            if idx >= 0:
+                self._compute_type_combo.setCurrentIndex(idx)
+
+        # Faster-Whisper: CPU Threads
+        cpu_threads = get_env_setting("PULSESCRIBE_LOCAL_CPU_THREADS") or ""
+        if hasattr(self, "_cpu_threads_field") and self._cpu_threads_field:
+            self._cpu_threads_field.setText(cpu_threads)
+
+        # Faster-Whisper: Num Workers
+        num_workers = get_env_setting("PULSESCRIBE_LOCAL_NUM_WORKERS") or ""
+        if hasattr(self, "_num_workers_field") and self._num_workers_field:
+            self._num_workers_field.setText(num_workers)
+
+        # Faster-Whisper: Without Timestamps
+        without_ts = get_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS") or "default"
+        if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
+            idx = self._without_timestamps_combo.findText(without_ts)
+            if idx >= 0:
+                self._without_timestamps_combo.setCurrentIndex(idx)
+
+        # Faster-Whisper: VAD Filter
+        vad = get_env_setting("PULSESCRIBE_LOCAL_VAD_FILTER") or "default"
+        if hasattr(self, "_vad_filter_combo") and self._vad_filter_combo:
+            idx = self._vad_filter_combo.findText(vad)
+            if idx >= 0:
+                self._vad_filter_combo.setCurrentIndex(idx)
+
+        # Faster-Whisper: FP16
+        fp16 = get_env_setting("PULSESCRIBE_LOCAL_FP16") or "default"
+        if hasattr(self, "_fp16_combo") and self._fp16_combo:
+            idx = self._fp16_combo.findText(fp16)
+            if idx >= 0:
+                self._fp16_combo.setCurrentIndex(idx)
+
         # Advanced: Lightning Batch Size
         batch_size = get_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE") or "12"
         if hasattr(self, "_lightning_batch_slider") and self._lightning_batch_slider:
@@ -1583,7 +1832,12 @@ class SettingsWindow(QDialog):
         if self._overlay_checkbox:
             self._overlay_checkbox.setChecked(overlay != "false")
 
-        # Tray Icon (Clipboard Restore)
+        # RTF Display
+        rtf = get_env_setting("PULSESCRIBE_SHOW_RTF")
+        if self._rtf_checkbox:
+            self._rtf_checkbox.setChecked(rtf == "true")
+
+        # Clipboard Restore
         clipboard_restore = get_env_setting("PULSESCRIBE_CLIPBOARD_RESTORE")
         if self._clipboard_restore_checkbox:
             self._clipboard_restore_checkbox.setChecked(clipboard_restore == "true")
@@ -1676,6 +1930,62 @@ class SettingsWindow(QDialog):
                 else:
                     remove_env_setting("PULSESCRIBE_LOCAL_TEMPERATURE")
 
+            # Advanced: Best Of
+            if hasattr(self, "_best_of_field") and self._best_of_field:
+                best_of = self._best_of_field.text().strip()
+                if best_of:
+                    save_env_setting("PULSESCRIBE_LOCAL_BEST_OF", best_of)
+                else:
+                    remove_env_setting("PULSESCRIBE_LOCAL_BEST_OF")
+
+            # Faster-Whisper: Compute Type
+            if hasattr(self, "_compute_type_combo") and self._compute_type_combo:
+                compute_type = self._compute_type_combo.currentText()
+                if compute_type == "default":
+                    remove_env_setting("PULSESCRIBE_LOCAL_COMPUTE_TYPE")
+                else:
+                    save_env_setting("PULSESCRIBE_LOCAL_COMPUTE_TYPE", compute_type)
+
+            # Faster-Whisper: CPU Threads
+            if hasattr(self, "_cpu_threads_field") and self._cpu_threads_field:
+                cpu_threads = self._cpu_threads_field.text().strip()
+                if cpu_threads:
+                    save_env_setting("PULSESCRIBE_LOCAL_CPU_THREADS", cpu_threads)
+                else:
+                    remove_env_setting("PULSESCRIBE_LOCAL_CPU_THREADS")
+
+            # Faster-Whisper: Num Workers
+            if hasattr(self, "_num_workers_field") and self._num_workers_field:
+                num_workers = self._num_workers_field.text().strip()
+                if num_workers:
+                    save_env_setting("PULSESCRIBE_LOCAL_NUM_WORKERS", num_workers)
+                else:
+                    remove_env_setting("PULSESCRIBE_LOCAL_NUM_WORKERS")
+
+            # Faster-Whisper: Without Timestamps
+            if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
+                without_ts = self._without_timestamps_combo.currentText()
+                if without_ts == "default":
+                    remove_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS")
+                else:
+                    save_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS", without_ts)
+
+            # Faster-Whisper: VAD Filter
+            if hasattr(self, "_vad_filter_combo") and self._vad_filter_combo:
+                vad = self._vad_filter_combo.currentText()
+                if vad == "default":
+                    remove_env_setting("PULSESCRIBE_LOCAL_VAD_FILTER")
+                else:
+                    save_env_setting("PULSESCRIBE_LOCAL_VAD_FILTER", vad)
+
+            # Faster-Whisper: FP16
+            if hasattr(self, "_fp16_combo") and self._fp16_combo:
+                fp16 = self._fp16_combo.currentText()
+                if fp16 == "default":
+                    remove_env_setting("PULSESCRIBE_LOCAL_FP16")
+                else:
+                    save_env_setting("PULSESCRIBE_LOCAL_FP16", fp16)
+
             # Advanced: Lightning Batch Size
             if hasattr(self, "_lightning_batch_slider") and self._lightning_batch_slider:
                 batch_size = self._lightning_batch_slider.value()
@@ -1722,6 +2032,13 @@ class SettingsWindow(QDialog):
                 else:
                     save_env_setting("PULSESCRIBE_OVERLAY", "false")
 
+            # RTF Display
+            if self._rtf_checkbox:
+                if self._rtf_checkbox.isChecked():
+                    save_env_setting("PULSESCRIBE_SHOW_RTF", "true")
+                else:
+                    remove_env_setting("PULSESCRIBE_SHOW_RTF")  # Default is false
+
             # Clipboard Restore
             if self._clipboard_restore_checkbox:
                 if self._clipboard_restore_checkbox.isChecked():
@@ -1760,12 +2077,128 @@ class SettingsWindow(QDialog):
             logger.info("Settings gespeichert")
             self.settings_changed.emit()
 
+            # Visual Save Feedback
+            self._show_save_feedback()
+
             # Callback aufrufen (für Daemon-Reload)
             if self._on_settings_changed_callback:
                 self._on_settings_changed_callback()
 
         except Exception as e:
             logger.error(f"Settings speichern fehlgeschlagen: {e}")
+            # Error Feedback
+            if hasattr(self, "_save_btn") and self._save_btn:
+                self._save_btn.setText("❌ Error!")
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(1500, lambda: self._save_btn.setText("Save && Apply"))
+
+    def _apply_local_preset(self, preset: str):
+        """Wendet ein Local Mode Preset an (UI-only, ohne zu speichern)."""
+        # Windows-optimierte Presets
+        presets = {
+            "cuda_fast": {
+                "mode": "local",
+                "local_backend": "faster",
+                "local_model": "turbo",
+                "device": "cuda",
+                "compute_type": "float16",
+                "vad_filter": "true",
+                "without_timestamps": "true",
+            },
+            "cpu_fast": {
+                "mode": "local",
+                "local_backend": "faster",
+                "local_model": "turbo",
+                "device": "cpu",
+                "compute_type": "int8",
+                "cpu_threads": "0",
+                "num_workers": "1",
+                "vad_filter": "true",
+                "without_timestamps": "true",
+            },
+            "cpu_quality": {
+                "mode": "local",
+                "local_backend": "faster",
+                "local_model": "large-v3",
+                "device": "cpu",
+                "compute_type": "int8",
+                "beam_size": "5",
+            },
+        }
+
+        values = presets.get(preset)
+        if not values:
+            return
+
+        # UI-Felder aktualisieren
+        if self._mode_combo:
+            idx = self._mode_combo.findText(values.get("mode", "local"))
+            if idx >= 0:
+                self._mode_combo.setCurrentIndex(idx)
+                self._on_mode_changed("local")  # Sichtbarkeit aktualisieren
+
+        if self._local_backend_combo:
+            idx = self._local_backend_combo.findText(values.get("local_backend", "faster"))
+            if idx >= 0:
+                self._local_backend_combo.setCurrentIndex(idx)
+
+        if self._local_model_combo:
+            idx = self._local_model_combo.findText(values.get("local_model", "turbo"))
+            if idx >= 0:
+                self._local_model_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "_device_combo") and self._device_combo:
+            idx = self._device_combo.findText(values.get("device", "auto"))
+            if idx >= 0:
+                self._device_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "_compute_type_combo") and self._compute_type_combo:
+            idx = self._compute_type_combo.findText(values.get("compute_type", "default"))
+            if idx >= 0:
+                self._compute_type_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "_beam_size_field") and self._beam_size_field:
+            self._beam_size_field.setText(values.get("beam_size", ""))
+
+        if hasattr(self, "_cpu_threads_field") and self._cpu_threads_field:
+            self._cpu_threads_field.setText(values.get("cpu_threads", ""))
+
+        if hasattr(self, "_num_workers_field") and self._num_workers_field:
+            self._num_workers_field.setText(values.get("num_workers", ""))
+
+        if hasattr(self, "_vad_filter_combo") and self._vad_filter_combo:
+            idx = self._vad_filter_combo.findText(values.get("vad_filter", "default"))
+            if idx >= 0:
+                self._vad_filter_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
+            idx = self._without_timestamps_combo.findText(values.get("without_timestamps", "default"))
+            if idx >= 0:
+                self._without_timestamps_combo.setCurrentIndex(idx)
+
+        # Feedback
+        if hasattr(self, "_preset_status") and self._preset_status:
+            self._preset_status.setText(f"✓ '{preset}' preset applied — click 'Save & Apply' to persist.")
+            self._preset_status.setStyleSheet(f"color: {COLORS['success']};")
+
+    def _show_save_feedback(self):
+        """Zeigt visuelles Feedback nach erfolgreichem Speichern."""
+        if hasattr(self, "_save_btn") and self._save_btn:
+            self._save_btn.setText("✓ Saved!")
+            self._save_btn.setStyleSheet(f"""
+                QPushButton#primary {{
+                    background-color: {COLORS['success']};
+                    border-color: {COLORS['success']};
+                }}
+            """)
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, self._reset_save_button)
+
+    def _reset_save_button(self):
+        """Setzt Save-Button auf Originalzustand zurück."""
+        if hasattr(self, "_save_btn") and self._save_btn:
+            self._save_btn.setText("Save && Apply")
+            self._save_btn.setStyleSheet("")  # Reset to default stylesheet
 
     # =========================================================================
     # Public API
