@@ -215,10 +215,11 @@ class AnimationLogic:
 
     def _calc_processing_normalized(self, i: int, t: float) -> float:
         """Transcribing/Refining: Wandering pulse. Returns 0-1."""
-        pulse_pos = (t * 1.5) % (BAR_COUNT + 2) - 1
+        # Speed tuned for balanced dynamic feel (4.0)
+        pulse_pos = (t * 4.0) % (BAR_COUNT + 4) - 2
         distance = abs(i - pulse_pos)
-        intensity = max(0, 1 - distance / 2)
-        return 0.6 * intensity
+        intensity = max(0, 1 - distance / 1.5)
+        return 0.8 * intensity
 
     def _calc_loading_normalized(self, i: int, t: float) -> float:
         """Loading: Slow synchronous pulse. Returns 0-1."""
