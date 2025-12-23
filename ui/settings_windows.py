@@ -9,7 +9,7 @@ import sys
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -527,34 +527,72 @@ class SettingsWindow(QDialog):
             "Configure keyboard shortcuts for recording."
         )
 
-        # Toggle Hotkey
+        # Toggle Hotkey Row
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(8)
+        toggle_label = QLabel("Toggle Hotkey:")
+        toggle_label.setMinimumWidth(120)
+        toggle_row.addWidget(toggle_label)
+
         self._toggle_hotkey_field = QLineEdit()
         self._toggle_hotkey_field.setPlaceholderText("e.g., ctrl+alt+r")
-        card_layout.addLayout(create_label_row("Toggle Hotkey:", self._toggle_hotkey_field))
+        self._toggle_hotkey_field.setReadOnly(True)
+        toggle_row.addWidget(self._toggle_hotkey_field, 1)
 
-        # Hold Hotkey
+        self._toggle_record_btn = QPushButton("Record")
+        self._toggle_record_btn.setFixedWidth(80)
+        self._toggle_record_btn.clicked.connect(lambda: self._start_hotkey_recording("toggle"))
+        toggle_row.addWidget(self._toggle_record_btn)
+
+        card_layout.addLayout(toggle_row)
+
+        # Hold Hotkey Row
+        hold_row = QHBoxLayout()
+        hold_row.setSpacing(8)
+        hold_label = QLabel("Hold Hotkey:")
+        hold_label.setMinimumWidth(120)
+        hold_row.addWidget(hold_label)
+
         self._hold_hotkey_field = QLineEdit()
         self._hold_hotkey_field.setPlaceholderText("e.g., ctrl+alt+space")
-        card_layout.addLayout(create_label_row("Hold Hotkey:", self._hold_hotkey_field))
+        self._hold_hotkey_field.setReadOnly(True)
+        hold_row.addWidget(self._hold_hotkey_field, 1)
+
+        self._hold_record_btn = QPushButton("Record")
+        self._hold_record_btn.setFixedWidth(80)
+        self._hold_record_btn.clicked.connect(lambda: self._start_hotkey_recording("hold"))
+        hold_row.addWidget(self._hold_record_btn)
+
+        card_layout.addLayout(hold_row)
+
+        # Status Label für Recording
+        self._hotkey_status = QLabel("")
+        self._hotkey_status.setFont(QFont("Segoe UI", 9))
+        card_layout.addWidget(self._hotkey_status)
 
         # Presets
+        presets_label = QLabel("Presets:")
+        presets_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        card_layout.addWidget(presets_label)
+
         presets_layout = QHBoxLayout()
         presets_layout.setSpacing(8)
 
-        for preset_name, preset_value in [
-            ("F19 (Toggle)", "f19"),
-            ("Ctrl+Alt+R", "ctrl+alt+r"),
-            ("Ctrl+Alt+Space", "ctrl+alt+space"),
+        for preset_name, toggle_val, hold_val in [
+            ("F19 Toggle", "f19", ""),
+            ("Ctrl+Alt+R / Space", "ctrl+alt+r", "ctrl+alt+space"),
+            ("F13 Toggle", "f13", ""),
         ]:
             btn = QPushButton(preset_name)
-            btn.clicked.connect(lambda checked, v=preset_value: self._apply_hotkey_preset(v))
+            btn.clicked.connect(lambda checked, t=toggle_val, h=hold_val: self._apply_hotkey_preset_pair(t, h))
             presets_layout.addWidget(btn)
 
         presets_layout.addStretch()
         card_layout.addLayout(presets_layout)
 
         # Hint
-        hint = QLabel("💡 Hold hotkey: Push-to-talk mode. Toggle hotkey: Press to start/stop.")
+        hint = QLabel("💡 Hold hotkey: Push-to-talk mode. Toggle hotkey: Press to start/stop.\n"
+                      "Click 'Record' and press your desired key combination.")
         hint.setFont(QFont("Segoe UI", 9))
         hint.setStyleSheet(f"color: {COLORS['text_hint']};")
         hint.setWordWrap(True)
@@ -564,6 +602,10 @@ class SettingsWindow(QDialog):
         layout.addStretch()
 
         scroll.setWidget(content)
+
+        # Recording State
+        self._recording_hotkey_for: str | None = None
+
         return scroll
 
     def _build_providers_tab(self) -> QWidget:
@@ -594,24 +636,38 @@ class SettingsWindow(QDialog):
         self._lang_combo.addItems(LANGUAGE_OPTIONS)
         card_layout.addLayout(create_label_row("Language:", self._lang_combo))
 
-        # Local Backend (nur für local mode)
+        # Local Backend Container (nur für local mode)
+        self._local_backend_container = QWidget()
+        backend_layout = QHBoxLayout(self._local_backend_container)
+        backend_layout.setContentsMargins(0, 0, 0, 0)
         self._local_backend_combo = QComboBox()
         self._local_backend_combo.addItems(LOCAL_BACKEND_OPTIONS)
-        self._local_backend_row = create_label_row("Local Backend:", self._local_backend_combo)
-        card_layout.addLayout(self._local_backend_row)
+        backend_label = QLabel("Local Backend:")
+        backend_label.setMinimumWidth(120)
+        backend_layout.addWidget(backend_label)
+        backend_layout.addWidget(self._local_backend_combo, 1)
+        card_layout.addWidget(self._local_backend_container)
 
-        # Local Model (nur für local mode)
+        # Local Model Container (nur für local mode)
+        self._local_model_container = QWidget()
+        model_layout = QHBoxLayout(self._local_model_container)
+        model_layout.setContentsMargins(0, 0, 0, 0)
         self._local_model_combo = QComboBox()
         self._local_model_combo.addItems(LOCAL_MODEL_OPTIONS)
-        self._local_model_row = create_label_row("Local Model:", self._local_model_combo)
-        card_layout.addLayout(self._local_model_row)
+        model_label = QLabel("Local Model:")
+        model_label.setMinimumWidth(120)
+        model_layout.addWidget(model_label)
+        model_layout.addWidget(self._local_model_combo, 1)
+        card_layout.addWidget(self._local_model_container)
 
-        # Streaming (nur für deepgram)
+        # Streaming Container (nur für deepgram)
+        self._streaming_container = QWidget()
+        streaming_layout = QHBoxLayout(self._streaming_container)
+        streaming_layout.setContentsMargins(0, 0, 0, 0)
         self._streaming_checkbox = QCheckBox("Enable WebSocket Streaming")
-        self._streaming_row = QHBoxLayout()
-        self._streaming_row.addWidget(self._streaming_checkbox)
-        self._streaming_row.addStretch()
-        card_layout.addLayout(self._streaming_row)
+        streaming_layout.addWidget(self._streaming_checkbox)
+        streaming_layout.addStretch()
+        card_layout.addWidget(self._streaming_container)
 
         layout.addWidget(card)
 
@@ -790,12 +846,13 @@ class SettingsWindow(QDialog):
         # Prompts Card
         card, card_layout = create_card(
             "📝 Custom Prompts",
-            "Customize prompts for different contexts. Edit ~/.pulsescribe/prompts.toml"
+            "Customize prompts for different contexts."
         )
 
         # Context Selector
         self._prompt_context_combo = QComboBox()
-        self._prompt_context_combo.addItems(["default", "email", "chat", "code", "voice_commands"])
+        self._prompt_context_combo.addItems(["default", "email", "chat", "code", "voice_commands", "app_mappings"])
+        self._prompt_context_combo.currentTextChanged.connect(self._on_prompt_context_changed)
         card_layout.addLayout(create_label_row("Context:", self._prompt_context_combo))
 
         # Prompt Editor
@@ -804,15 +861,22 @@ class SettingsWindow(QDialog):
         self._prompt_editor.setMinimumHeight(200)
         card_layout.addWidget(self._prompt_editor)
 
+        # Status Label
+        self._prompt_status = QLabel("")
+        self._prompt_status.setFont(QFont("Segoe UI", 9))
+        card_layout.addWidget(self._prompt_status)
+
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
         reset_btn = QPushButton("Reset to Default")
+        reset_btn.clicked.connect(self._reset_prompt_to_default)
         btn_layout.addWidget(reset_btn)
 
         save_prompt_btn = QPushButton("Save Prompt")
         save_prompt_btn.setObjectName("primary")
+        save_prompt_btn.clicked.connect(self._save_current_prompt)
         btn_layout.addWidget(save_prompt_btn)
 
         card_layout.addLayout(btn_layout)
@@ -821,6 +885,10 @@ class SettingsWindow(QDialog):
         layout.addStretch()
 
         scroll.setWidget(content)
+
+        # Initial load
+        self._load_prompt_for_context("default")
+
         return scroll
 
     def _build_vocabulary_tab(self) -> QWidget:
@@ -974,14 +1042,13 @@ class SettingsWindow(QDialog):
         is_local = mode == "local"
         is_deepgram = mode == "deepgram"
 
-        # Local-spezifische Felder ein-/ausblenden
-        # (In Qt müssen wir die Widgets direkt verstecken)
-        if self._local_backend_combo:
-            self._local_backend_combo.setVisible(is_local)
-        if self._local_model_combo:
-            self._local_model_combo.setVisible(is_local)
-        if self._streaming_checkbox:
-            self._streaming_checkbox.setVisible(is_deepgram)
+        # Local-spezifische Container ein-/ausblenden
+        if hasattr(self, "_local_backend_container"):
+            self._local_backend_container.setVisible(is_local)
+        if hasattr(self, "_local_model_container"):
+            self._local_model_container.setVisible(is_local)
+        if hasattr(self, "_streaming_container"):
+            self._streaming_container.setVisible(is_deepgram)
 
     def _on_batch_size_changed(self, value: int):
         """Handler für Batch-Size Slider."""
@@ -989,9 +1056,257 @@ class SettingsWindow(QDialog):
             self._lightning_batch_value.setText(str(value))
 
     def _apply_hotkey_preset(self, hotkey: str):
-        """Wendet ein Hotkey-Preset an."""
+        """Wendet ein Hotkey-Preset an (nur Toggle)."""
         if self._toggle_hotkey_field:
             self._toggle_hotkey_field.setText(hotkey)
+
+    def _apply_hotkey_preset_pair(self, toggle: str, hold: str):
+        """Wendet ein Hotkey-Preset-Paar an."""
+        if self._toggle_hotkey_field:
+            self._toggle_hotkey_field.setText(toggle)
+        if self._hold_hotkey_field:
+            self._hold_hotkey_field.setText(hold)
+        self._set_hotkey_status(f"Preset applied: Toggle={toggle or 'none'}, Hold={hold or 'none'}", "success")
+
+    def _start_hotkey_recording(self, kind: str):
+        """Startet Hotkey-Recording für toggle oder hold."""
+        self._recording_hotkey_for = kind
+
+        # Button-Text ändern
+        if kind == "toggle" and hasattr(self, "_toggle_record_btn"):
+            self._toggle_record_btn.setText("Press key...")
+            self._toggle_record_btn.setStyleSheet(f"background-color: {COLORS['accent']};")
+        elif kind == "hold" and hasattr(self, "_hold_record_btn"):
+            self._hold_record_btn.setText("Press key...")
+            self._hold_record_btn.setStyleSheet(f"background-color: {COLORS['accent']};")
+
+        self._set_hotkey_status("Press your hotkey combination, then press Enter to confirm...", "warning")
+
+        # Key-Capture aktivieren
+        self.setFocus()
+        self.grabKeyboard()
+
+    def _stop_hotkey_recording(self, hotkey_str: str | None = None):
+        """Beendet Hotkey-Recording."""
+        kind = self._recording_hotkey_for
+        self._recording_hotkey_for = None
+
+        # Keyboard freigeben
+        self.releaseKeyboard()
+
+        # Buttons zurücksetzen
+        if hasattr(self, "_toggle_record_btn"):
+            self._toggle_record_btn.setText("Record")
+            self._toggle_record_btn.setStyleSheet("")
+        if hasattr(self, "_hold_record_btn"):
+            self._hold_record_btn.setText("Record")
+            self._hold_record_btn.setStyleSheet("")
+
+        if hotkey_str and kind:
+            # Hotkey in Feld setzen
+            if kind == "toggle" and self._toggle_hotkey_field:
+                self._toggle_hotkey_field.setText(hotkey_str)
+            elif kind == "hold" and self._hold_hotkey_field:
+                self._hold_hotkey_field.setText(hotkey_str)
+            self._set_hotkey_status(f"✓ Recorded: {hotkey_str}", "success")
+        else:
+            self._set_hotkey_status("Recording cancelled", "text_hint")
+
+    def keyPressEvent(self, event):
+        """Fängt Tastendruck für Hotkey-Recording ab."""
+        if self._recording_hotkey_for:
+            from PySide6.QtCore import Qt as QtCore
+
+            # Escape = Abbrechen
+            if event.key() == QtCore.Key.Key_Escape:
+                self._stop_hotkey_recording(None)
+                return
+
+            # Enter = Bestätigen
+            if event.key() in (QtCore.Key.Key_Return, QtCore.Key.Key_Enter):
+                # Aktuelles Feld auslesen
+                if self._recording_hotkey_for == "toggle" and self._toggle_hotkey_field:
+                    hotkey = self._toggle_hotkey_field.text()
+                elif self._recording_hotkey_for == "hold" and self._hold_hotkey_field:
+                    hotkey = self._hold_hotkey_field.text()
+                else:
+                    hotkey = None
+                self._stop_hotkey_recording(hotkey)
+                return
+
+            # Hotkey bauen
+            parts = []
+            modifiers = event.modifiers()
+            if modifiers & QtCore.KeyboardModifier.ControlModifier:
+                parts.append("ctrl")
+            if modifiers & QtCore.KeyboardModifier.AltModifier:
+                parts.append("alt")
+            if modifiers & QtCore.KeyboardModifier.ShiftModifier:
+                parts.append("shift")
+            if modifiers & QtCore.KeyboardModifier.MetaModifier:
+                parts.append("win")
+
+            # Key-Name
+            key = event.key()
+            key_name = self._qt_key_to_string(key)
+            if key_name and key_name not in ("ctrl", "alt", "shift", "win", "meta"):
+                parts.append(key_name)
+
+            hotkey_str = "+".join(parts) if parts else ""
+
+            # In Feld anzeigen
+            if self._recording_hotkey_for == "toggle" and self._toggle_hotkey_field:
+                self._toggle_hotkey_field.setText(hotkey_str)
+            elif self._recording_hotkey_for == "hold" and self._hold_hotkey_field:
+                self._hold_hotkey_field.setText(hotkey_str)
+
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+    def _qt_key_to_string(self, key: int) -> str:
+        """Konvertiert Qt Key zu String."""
+        from PySide6.QtCore import Qt as QtCore
+
+        # Spezielle Tasten
+        special_keys = {
+            QtCore.Key.Key_Space: "space",
+            QtCore.Key.Key_Tab: "tab",
+            QtCore.Key.Key_Backspace: "backspace",
+            QtCore.Key.Key_Delete: "delete",
+            QtCore.Key.Key_Home: "home",
+            QtCore.Key.Key_End: "end",
+            QtCore.Key.Key_PageUp: "pageup",
+            QtCore.Key.Key_PageDown: "pagedown",
+            QtCore.Key.Key_Up: "up",
+            QtCore.Key.Key_Down: "down",
+            QtCore.Key.Key_Left: "left",
+            QtCore.Key.Key_Right: "right",
+            QtCore.Key.Key_Control: "ctrl",
+            QtCore.Key.Key_Alt: "alt",
+            QtCore.Key.Key_Shift: "shift",
+            QtCore.Key.Key_Meta: "win",
+        }
+        if key in special_keys:
+            return special_keys[key]
+
+        # F-Tasten
+        if QtCore.Key.Key_F1 <= key <= QtCore.Key.Key_F24:
+            return f"f{key - QtCore.Key.Key_F1 + 1}"
+
+        # Buchstaben
+        if QtCore.Key.Key_A <= key <= QtCore.Key.Key_Z:
+            return chr(ord('a') + key - QtCore.Key.Key_A)
+
+        # Zahlen
+        if QtCore.Key.Key_0 <= key <= QtCore.Key.Key_9:
+            return chr(ord('0') + key - QtCore.Key.Key_0)
+
+        return ""
+
+    def _set_hotkey_status(self, text: str, color: str):
+        """Setzt Hotkey-Status-Text."""
+        if hasattr(self, "_hotkey_status") and self._hotkey_status:
+            self._hotkey_status.setText(text)
+            color_value = COLORS.get(color, COLORS["text"])
+            self._hotkey_status.setStyleSheet(f"color: {color_value};")
+
+    # =========================================================================
+    # Prompt Handlers
+    # =========================================================================
+
+    def _on_prompt_context_changed(self, context: str):
+        """Lädt Prompt für gewählten Kontext."""
+        self._load_prompt_for_context(context)
+
+    def _load_prompt_for_context(self, context: str):
+        """Lädt den Prompt-Text für einen Kontext."""
+        try:
+            from utils.custom_prompts import (
+                load_custom_prompts,
+                get_voice_commands,
+                format_app_mappings,
+                get_app_contexts,
+            )
+
+            if context == "voice_commands":
+                text = get_voice_commands()
+            elif context == "app_mappings":
+                text = format_app_mappings(get_app_contexts())
+            else:
+                data = load_custom_prompts()
+                prompts = data.get("prompts", {})
+                text = prompts.get(context, {}).get("prompt", "")
+
+            if self._prompt_editor:
+                self._prompt_editor.setPlainText(text)
+                self._set_prompt_status("", "text")
+
+        except Exception as e:
+            logger.error(f"Prompt laden fehlgeschlagen: {e}")
+            self._set_prompt_status(f"Error: {e}", "error")
+
+    def _save_current_prompt(self):
+        """Speichert den aktuellen Prompt."""
+        try:
+            from utils.custom_prompts import (
+                load_custom_prompts,
+                save_custom_prompts,
+                parse_app_mappings,
+            )
+
+            context = self._prompt_context_combo.currentText() if self._prompt_context_combo else "default"
+            text = self._prompt_editor.toPlainText() if self._prompt_editor else ""
+
+            # Aktuelle Daten laden
+            data = load_custom_prompts()
+
+            if context == "voice_commands":
+                data["voice_commands"] = {"instruction": text}
+            elif context == "app_mappings":
+                data["app_contexts"] = parse_app_mappings(text)
+            else:
+                if "prompts" not in data:
+                    data["prompts"] = {}
+                data["prompts"][context] = {"prompt": text}
+
+            save_custom_prompts(data)
+            self._set_prompt_status("✓ Saved", "success")
+
+        except Exception as e:
+            logger.error(f"Prompt speichern fehlgeschlagen: {e}")
+            self._set_prompt_status(f"Error: {e}", "error")
+
+    def _reset_prompt_to_default(self):
+        """Setzt aktuellen Prompt auf Default zurück."""
+        try:
+            from utils.custom_prompts import get_defaults, format_app_mappings
+
+            context = self._prompt_context_combo.currentText() if self._prompt_context_combo else "default"
+            defaults = get_defaults()
+
+            if context == "voice_commands":
+                text = defaults["voice_commands"]["instruction"]
+            elif context == "app_mappings":
+                text = format_app_mappings(defaults["app_contexts"])
+            else:
+                text = defaults["prompts"].get(context, {}).get("prompt", "")
+
+            if self._prompt_editor:
+                self._prompt_editor.setPlainText(text)
+                self._set_prompt_status("Reset to default (not saved)", "warning")
+
+        except Exception as e:
+            logger.error(f"Reset fehlgeschlagen: {e}")
+            self._set_prompt_status(f"Error: {e}", "error")
+
+    def _set_prompt_status(self, text: str, color: str):
+        """Setzt Status-Text mit Farbe."""
+        if self._prompt_status:
+            self._prompt_status.setText(text)
+            color_value = COLORS.get(color, COLORS["text"])
+            self._prompt_status.setStyleSheet(f"color: {color_value};")
 
     def _load_vocabulary(self):
         """Lädt Vocabulary aus Datei."""
@@ -1072,6 +1387,38 @@ class SettingsWindow(QDialog):
         streaming = get_env_setting("PULSESCRIBE_STREAMING")
         if self._streaming_checkbox:
             self._streaming_checkbox.setChecked(streaming != "false")
+
+        # Advanced: Device
+        device = get_env_setting("PULSESCRIBE_DEVICE") or "auto"
+        if hasattr(self, "_device_combo") and self._device_combo:
+            idx = self._device_combo.findText(device)
+            if idx >= 0:
+                self._device_combo.setCurrentIndex(idx)
+
+        # Advanced: Beam Size
+        beam_size = get_env_setting("PULSESCRIBE_LOCAL_BEAM_SIZE") or ""
+        if hasattr(self, "_beam_size_field") and self._beam_size_field:
+            self._beam_size_field.setText(beam_size)
+
+        # Advanced: Temperature
+        temperature = get_env_setting("PULSESCRIBE_LOCAL_TEMPERATURE") or ""
+        if hasattr(self, "_temperature_field") and self._temperature_field:
+            self._temperature_field.setText(temperature)
+
+        # Advanced: Lightning Batch Size
+        batch_size = get_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE") or "12"
+        if hasattr(self, "_lightning_batch_slider") and self._lightning_batch_slider:
+            try:
+                self._lightning_batch_slider.setValue(int(batch_size))
+            except ValueError:
+                self._lightning_batch_slider.setValue(12)
+
+        # Advanced: Lightning Quantization
+        quant = get_env_setting("PULSESCRIBE_LIGHTNING_QUANT") or "none"
+        if hasattr(self, "_lightning_quant_combo") and self._lightning_quant_combo:
+            idx = self._lightning_quant_combo.findText(quant)
+            if idx >= 0:
+                self._lightning_quant_combo.setCurrentIndex(idx)
 
         # Refine
         refine = get_env_setting("PULSESCRIBE_REFINE")
@@ -1163,6 +1510,46 @@ class SettingsWindow(QDialog):
                     remove_env_setting("PULSESCRIBE_STREAMING")  # Default is true
                 else:
                     save_env_setting("PULSESCRIBE_STREAMING", "false")
+
+            # Advanced: Device
+            if hasattr(self, "_device_combo") and self._device_combo:
+                device = self._device_combo.currentText()
+                if device == "auto":
+                    remove_env_setting("PULSESCRIBE_DEVICE")
+                else:
+                    save_env_setting("PULSESCRIBE_DEVICE", device)
+
+            # Advanced: Beam Size
+            if hasattr(self, "_beam_size_field") and self._beam_size_field:
+                beam_size = self._beam_size_field.text().strip()
+                if beam_size:
+                    save_env_setting("PULSESCRIBE_LOCAL_BEAM_SIZE", beam_size)
+                else:
+                    remove_env_setting("PULSESCRIBE_LOCAL_BEAM_SIZE")
+
+            # Advanced: Temperature
+            if hasattr(self, "_temperature_field") and self._temperature_field:
+                temperature = self._temperature_field.text().strip()
+                if temperature:
+                    save_env_setting("PULSESCRIBE_LOCAL_TEMPERATURE", temperature)
+                else:
+                    remove_env_setting("PULSESCRIBE_LOCAL_TEMPERATURE")
+
+            # Advanced: Lightning Batch Size
+            if hasattr(self, "_lightning_batch_slider") and self._lightning_batch_slider:
+                batch_size = self._lightning_batch_slider.value()
+                if batch_size == 12:
+                    remove_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE")  # Default
+                else:
+                    save_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE", str(batch_size))
+
+            # Advanced: Lightning Quantization
+            if hasattr(self, "_lightning_quant_combo") and self._lightning_quant_combo:
+                quant = self._lightning_quant_combo.currentText()
+                if quant == "none":
+                    remove_env_setting("PULSESCRIBE_LIGHTNING_QUANT")
+                else:
+                    save_env_setting("PULSESCRIBE_LIGHTNING_QUANT", quant)
 
             # Refine
             if self._refine_checkbox:
