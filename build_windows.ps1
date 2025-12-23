@@ -140,11 +140,10 @@ if ($Installer) {
         exit 1
     }
 
-    # Check for icon (create placeholder if missing)
+    # Check for icon (optional)
     if (-not (Test-Path "assets\icon.ico")) {
-        Write-Warning "  assets\icon.ico not found - installer will use default icon"
-        # Comment out SetupIconFile line in .iss would be needed
-        # For now, we'll let it fail gracefully
+        Write-Warning "  assets\icon.ico not found - using default icon"
+        Write-Host "    To add custom icon: place icon.ico in assets/ and uncomment SetupIconFile in installer_windows.iss" -ForegroundColor Gray
     }
 
     # Run Inno Setup

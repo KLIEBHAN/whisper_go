@@ -37,7 +37,7 @@ DisableProgramGroupPage=yes
 ; Output settings
 OutputDir=dist
 OutputBaseFilename=PulseScribe-Setup-{#MyAppVersion}
-SetupIconFile=assets\icon.ico
+; SetupIconFile=assets\icon.ico  ; Uncomment when icon.ico exists
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; Compression
