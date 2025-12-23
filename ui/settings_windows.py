@@ -417,6 +417,9 @@ class SettingsWindow(QDialog):
         self._tabs.addTab(self._build_logs_tab(), "Logs")
         self._tabs.addTab(self._build_about_tab(), "About")
 
+        # Tab-Wechsel Handler für Auto-Load
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
         # Footer
         footer = self._build_footer()
         layout.addWidget(footer)
@@ -936,6 +939,8 @@ class SettingsWindow(QDialog):
 
     def _build_logs_tab(self) -> QWidget:
         """Logs-Tab: Log-Viewer."""
+        from PySide6.QtCore import QTimer
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -961,6 +966,7 @@ class SettingsWindow(QDialog):
         btn_layout = QHBoxLayout()
 
         self._auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self._auto_refresh_checkbox.stateChanged.connect(self._toggle_logs_auto_refresh)
         btn_layout.addWidget(self._auto_refresh_checkbox)
 
         btn_layout.addStretch()
@@ -979,6 +985,14 @@ class SettingsWindow(QDialog):
         layout.addStretch()
 
         scroll.setWidget(content)
+
+        # Auto-Refresh Timer
+        self._logs_refresh_timer = QTimer()
+        self._logs_refresh_timer.timeout.connect(self._refresh_logs)
+
+        # Initial load
+        self._refresh_logs()
+
         return scroll
 
     def _build_about_tab(self) -> QWidget:
@@ -997,8 +1011,9 @@ class SettingsWindow(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(title)
 
-        # Version
-        version = QLabel("Version 1.1.1")
+        # Version (dynamisch laden)
+        version_str = self._get_version()
+        version = QLabel(f"Version {version_str}")
         version.setFont(QFont("Segoe UI", 12))
         version.setStyleSheet(f"color: {COLORS['text_secondary']};")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1036,6 +1051,18 @@ class SettingsWindow(QDialog):
     # =========================================================================
     # Event Handlers
     # =========================================================================
+
+    def _on_tab_changed(self, index: int):
+        """Handler für Tab-Wechsel."""
+        tab_name = self._tabs.tabText(index) if self._tabs else ""
+
+        # Vocabulary automatisch laden
+        if tab_name == "Vocabulary":
+            self._load_vocabulary()
+
+        # Logs automatisch laden
+        if tab_name == "Logs":
+            self._refresh_logs()
 
     def _on_mode_changed(self, mode: str):
         """Handler für Mode-Änderung."""
@@ -1307,6 +1334,30 @@ class SettingsWindow(QDialog):
             self._prompt_status.setText(text)
             color_value = COLORS.get(color, COLORS["text"])
             self._prompt_status.setStyleSheet(f"color: {color_value};")
+
+    def _toggle_logs_auto_refresh(self, state: int):
+        """Schaltet Auto-Refresh für Logs ein/aus."""
+        if hasattr(self, "_logs_refresh_timer"):
+            if state:
+                self._logs_refresh_timer.start(2000)  # Alle 2 Sekunden
+            else:
+                self._logs_refresh_timer.stop()
+
+    def _get_version(self) -> str:
+        """Gibt die aktuelle Version zurück."""
+        try:
+            # Versuche aus CHANGELOG.md zu lesen
+            from pathlib import Path
+            changelog = Path(__file__).parent.parent / "CHANGELOG.md"
+            if changelog.exists():
+                for line in changelog.read_text(encoding="utf-8").split("\n"):
+                    if line.startswith("## [") and "]" in line:
+                        # Format: ## [1.2.3] - 2024-01-01
+                        version = line.split("[")[1].split("]")[0]
+                        return version
+        except Exception:
+            pass
+        return "1.1.1"  # Fallback
 
     def _load_vocabulary(self):
         """Lädt Vocabulary aus Datei."""
@@ -1633,6 +1684,9 @@ class SettingsWindow(QDialog):
 
     def closeEvent(self, event):
         """Handler für Fenster schließen."""
+        # Auto-Refresh Timer stoppen
+        if hasattr(self, "_logs_refresh_timer"):
+            self._logs_refresh_timer.stop()
         self.closed.emit()
         super().closeEvent(event)
 
