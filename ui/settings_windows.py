@@ -6,6 +6,7 @@ Portiert von ui/welcome.py (macOS AppKit).
 
 import logging
 import sys
+import threading
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
@@ -37,6 +38,54 @@ from utils.preferences import (
 )
 
 logger = logging.getLogger("pulsescribe.settings")
+
+# =============================================================================
+# pynput Key-Mapping (einmalig geladen für Performance)
+# =============================================================================
+
+# Cache für pynput-Verfügbarkeit und Key-Map
+_pynput_available: bool | None = None
+_pynput_key_map: dict | None = None
+
+
+def _get_pynput_key_map() -> tuple[bool, dict]:
+    """Lädt pynput einmalig und gibt (available, key_map) zurück."""
+    global _pynput_available, _pynput_key_map
+
+    if _pynput_available is not None:
+        return _pynput_available, _pynput_key_map or {}
+
+    try:
+        from pynput import keyboard  # type: ignore[import-not-found]
+
+        _pynput_key_map = {
+            keyboard.Key.ctrl: "ctrl",
+            keyboard.Key.ctrl_l: "ctrl",
+            keyboard.Key.ctrl_r: "ctrl",
+            keyboard.Key.alt: "alt",
+            keyboard.Key.alt_l: "alt",
+            keyboard.Key.alt_r: "alt",
+            keyboard.Key.alt_gr: "alt",
+            keyboard.Key.shift: "shift",
+            keyboard.Key.shift_l: "shift",
+            keyboard.Key.shift_r: "shift",
+            keyboard.Key.cmd: "win",
+            keyboard.Key.cmd_l: "win",
+            keyboard.Key.cmd_r: "win",
+            keyboard.Key.space: "space",
+            keyboard.Key.tab: "tab",
+            keyboard.Key.backspace: "backspace",
+            keyboard.Key.delete: "delete",
+            keyboard.Key.enter: "enter",
+            keyboard.Key.esc: "esc",
+        }
+        _pynput_available = True
+    except ImportError:
+        _pynput_available = False
+        _pynput_key_map = {}
+
+    return _pynput_available, _pynput_key_map
+
 
 # =============================================================================
 # Window-Konstanten (analog zu macOS)
@@ -382,7 +431,9 @@ class SettingsWindow(QDialog):
         self._recording_hotkey_for: str | None = None
         self._pynput_listener = None  # pynput Keyboard Listener
         self._pressed_keys: set = set()  # Aktuell gedrückte Tasten
+        self._pressed_keys_lock = threading.Lock()  # Thread-safe Zugriff
         self._using_qt_grab: bool = False  # Fallback wenn pynput nicht verfügbar
+        self._is_closed: bool = False  # Verhindert Signal-Emission nach Close
 
         # Signal für Thread-safe UI-Updates verbinden
         self._hotkey_field_update.connect(self._set_hotkey_field_text)
@@ -1287,24 +1338,38 @@ class SettingsWindow(QDialog):
     def _start_pynput_listener(self):
         """Startet pynput Listener für Low-Level Key-Capture."""
         self._using_qt_grab = False
+        available, _ = _get_pynput_key_map()
+
+        if not available:
+            logger.warning("pynput nicht verfügbar, Fallback auf Qt grabKeyboard")
+            self._using_qt_grab = True
+            self.grabKeyboard()
+            return
+
         try:
             from pynput import keyboard  # type: ignore[import-not-found]
 
             def on_press(key):
+                if self._is_closed:
+                    return
                 key_str = self._pynput_key_to_string(key)
                 if key_str and key_str not in ("enter", "return", "esc", "escape"):
-                    self._pressed_keys.add(key_str)
+                    with self._pressed_keys_lock:
+                        self._pressed_keys.add(key_str)
                     self._update_hotkey_field_from_pressed_keys()
 
             def on_release(key):
+                if self._is_closed:
+                    return
                 key_str = self._pynput_key_to_string(key)
                 if key_str:
-                    self._pressed_keys.discard(key_str)
+                    with self._pressed_keys_lock:
+                        self._pressed_keys.discard(key_str)
 
             self._pynput_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
             self._pynput_listener.start()
-        except ImportError:
-            logger.warning("pynput nicht verfügbar, Fallback auf Qt grabKeyboard")
+        except Exception as e:
+            logger.warning(f"pynput Listener fehlgeschlagen: {e}, Fallback auf Qt")
             self._using_qt_grab = True
             self.grabKeyboard()
 
@@ -1316,63 +1381,48 @@ class SettingsWindow(QDialog):
         if self._using_qt_grab:
             self.releaseKeyboard()
             self._using_qt_grab = False
-        self._pressed_keys.clear()
+        with self._pressed_keys_lock:
+            self._pressed_keys.clear()
 
     def _pynput_key_to_string(self, key) -> str:
-        """Konvertiert pynput Key zu String."""
-        try:
-            from pynput import keyboard  # type: ignore[import-not-found]
+        """Konvertiert pynput Key zu String (nutzt gecachten key_map)."""
+        _, key_map = _get_pynput_key_map()
 
-            # Modifier-Tasten
-            key_map = {
-                keyboard.Key.ctrl: "ctrl",
-                keyboard.Key.ctrl_l: "ctrl",
-                keyboard.Key.ctrl_r: "ctrl",
-                keyboard.Key.alt: "alt",
-                keyboard.Key.alt_l: "alt",
-                keyboard.Key.alt_r: "alt",
-                keyboard.Key.alt_gr: "alt",
-                keyboard.Key.shift: "shift",
-                keyboard.Key.shift_l: "shift",
-                keyboard.Key.shift_r: "shift",
-                keyboard.Key.cmd: "win",
-                keyboard.Key.cmd_l: "win",
-                keyboard.Key.cmd_r: "win",
-                keyboard.Key.space: "space",
-                keyboard.Key.tab: "tab",
-                keyboard.Key.backspace: "backspace",
-                keyboard.Key.delete: "delete",
-                keyboard.Key.enter: "enter",
-                keyboard.Key.esc: "esc",
-            }
-            if key in key_map:
-                return key_map[key]
+        # Bekannte Tasten aus Cache
+        if key in key_map:
+            return key_map[key]
 
-            # F-Tasten
-            if hasattr(key, "name") and key.name and key.name.startswith("f") and key.name[1:].isdigit():
-                return key.name.lower()
+        # F-Tasten (f1-f24)
+        if hasattr(key, "name") and key.name:
+            name = key.name
+            if name.startswith("f") and len(name) > 1 and name[1:].isdigit():
+                return name.lower()
 
-            # Normale Zeichen
-            if hasattr(key, "char") and key.char:
-                return key.char.lower()
+        # Normale Zeichen
+        if hasattr(key, "char") and key.char:
+            return key.char.lower()
 
-            # Sonstige benannte Tasten
-            if hasattr(key, "name") and key.name:
-                return key.name.lower()
+        # Sonstige benannte Tasten
+        if hasattr(key, "name") and key.name:
+            return key.name.lower()
 
-        except Exception:
-            pass
         return ""
 
     def _update_hotkey_field_from_pressed_keys(self):
         """Aktualisiert das Hotkey-Feld basierend auf gedrückten Tasten."""
-        if not self._recording_hotkey_for or not self._pressed_keys:
+        if self._is_closed or not self._recording_hotkey_for:
             return
+
+        # Thread-safe Kopie der gedrückten Tasten
+        with self._pressed_keys_lock:
+            if not self._pressed_keys:
+                return
+            pressed_copy = set(self._pressed_keys)
 
         # Sortiere: Modifier zuerst, dann andere Tasten
         modifiers = []
         keys = []
-        for k in self._pressed_keys:
+        for k in pressed_copy:
             if k in ("ctrl", "alt", "shift", "win"):
                 modifiers.append(k)
             else:
@@ -1385,7 +1435,8 @@ class SettingsWindow(QDialog):
         hotkey_str = "+".join(sorted_modifiers + sorted(keys))
 
         # UI-Update (Thread-safe via Signal, da pynput in eigenem Thread läuft)
-        self._hotkey_field_update.emit(hotkey_str)
+        if not self._is_closed:
+            self._hotkey_field_update.emit(hotkey_str)
 
     def _set_hotkey_field_text(self, hotkey_str: str):
         """Setzt den Text im aktiven Hotkey-Feld (Thread-safe)."""
@@ -2325,13 +2376,16 @@ class SettingsWindow(QDialog):
 
     def closeEvent(self, event):
         """Handler für Fenster schließen."""
+        # Als erstes: Signal-Emission verhindern
+        self._is_closed = True
+
         # Auto-Refresh Timer stoppen
         if hasattr(self, "_logs_refresh_timer"):
             self._logs_refresh_timer.stop()
 
-        # Keyboard Grab freigeben falls noch aktiv
+        # pynput Listener und Keyboard Grab stoppen falls Recording aktiv
         if hasattr(self, "_recording_hotkey_for") and self._recording_hotkey_for:
-            self.releaseKeyboard()
+            self._stop_pynput_listener()
             self._recording_hotkey_for = None
 
         self.closed.emit()
