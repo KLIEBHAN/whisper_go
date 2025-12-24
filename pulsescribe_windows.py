@@ -118,6 +118,10 @@ _TAIL_PADDING_SEC = 0.2
 # Provider die gecached werden sollen (stateful, z.B. Model-Caching)
 _STATEFUL_PROVIDERS = {"local"}
 
+# Default-Hotkeys (verwendet bei Startup und Reload wenn nichts konfiguriert)
+_DEFAULT_TOGGLE_HOTKEY = "ctrl+alt+r"
+_DEFAULT_HOLD_HOTKEY = "ctrl+win"
+
 
 def _resample_audio(audio, from_rate: int, to_rate: int):
     """Resampled Audio-Array von from_rate auf to_rate.
@@ -1411,6 +1415,9 @@ class PulseScribeWindows:
         self.refine_model = env_values.get("PULSESCRIBE_REFINE_MODEL")
         self.refine_provider = env_values.get("PULSESCRIBE_REFINE_PROVIDER")
 
+        # Context aktualisieren
+        self.context = env_values.get("PULSESCRIBE_CONTEXT")
+
         # Streaming aktualisieren (nur Deepgram unterstützt Streaming)
         streaming_val = env_values.get("PULSESCRIBE_STREAMING", "true")
         streaming_enabled = streaming_val.lower() != "false"
@@ -1435,6 +1442,11 @@ class PulseScribeWindows:
         # Hotkeys aktualisieren (erfordert Listener-Neustart)
         new_toggle = env_values.get("PULSESCRIBE_TOGGLE_HOTKEY")
         new_hold = env_values.get("PULSESCRIBE_HOLD_HOTKEY")
+
+        # Fallback: Wenn nichts konfiguriert, beide Defaults setzen (wie beim Startup)
+        if not new_toggle and not new_hold:
+            new_toggle = _DEFAULT_TOGGLE_HOTKEY
+            new_hold = _DEFAULT_HOLD_HOTKEY
 
         if new_toggle != self.toggle_hotkey or new_hold != self.hold_hotkey:
             self.toggle_hotkey = new_toggle
@@ -1883,8 +1895,8 @@ def main():
 
     # Fallback: Wenn nichts konfiguriert, beide Defaults setzen
     if not effective_toggle_hotkey and not effective_hold_hotkey:
-        effective_toggle_hotkey = "ctrl+alt+r"
-        effective_hold_hotkey = "ctrl+win"
+        effective_toggle_hotkey = _DEFAULT_TOGGLE_HOTKEY
+        effective_hold_hotkey = _DEFAULT_HOLD_HOTKEY
 
     daemon = PulseScribeWindows(
         toggle_hotkey=effective_toggle_hotkey,
