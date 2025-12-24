@@ -99,13 +99,37 @@ def _lightning_workdir() -> Generator[Path, None, None]:
         os.chdir(old_cwd)
 
 
+def _validate_cuda_runtime() -> bool:
+    """Prüft ob CUDA/cuDNN wirklich funktioniert (nicht nur sichtbar).
+
+    torch.cuda.is_available() prüft nur ob CUDA-Treiber vorhanden sind.
+    cuDNN-Fehler (z.B. fehlende cudnn_ops64_9.dll) treten erst bei
+    tatsächlicher GPU-Nutzung auf. Diese Funktion testet mit einer
+    Dummy-Operation, ob die Runtime wirklich funktioniert.
+    """
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        # Dummy-Operation auf GPU - testet CUDA + cuDNN Runtime
+        test_tensor = torch.zeros(1, device="cuda")
+        _ = test_tensor + 1
+        del test_tensor
+        torch.cuda.empty_cache()
+        return True
+    except Exception as e:
+        logger.warning(f"CUDA-Validierung fehlgeschlagen: {e}")
+        return False
+
+
 def _select_device() -> str:
     """Wählt ein sinnvolles Torch-Device für lokales Whisper.
 
     Priorität:
       1) PULSESCRIBE_DEVICE Env-Override (z.B. "cpu", "mps", "cuda")
       2) Apple Silicon GPU via MPS
-      3) CUDA (falls verfügbar)
+      3) CUDA (falls verfügbar UND funktional)
       4) CPU
     """
     env_device = (os.getenv("PULSESCRIBE_DEVICE") or "").strip().lower()
@@ -118,7 +142,11 @@ def _select_device() -> str:
             if torch.backends.mps.is_available() and torch.backends.mps.is_built():
                 return "mps"
         if torch.cuda.is_available():
-            return "cuda"
+            if _validate_cuda_runtime():
+                return "cuda"
+            logger.warning(
+                "CUDA sichtbar aber nicht funktional (cuDNN fehlt?), nutze CPU"
+            )
     except Exception as e:
         logger.debug(f"Device-Detection fehlgeschlagen, fallback CPU: {e}")
     return "cpu"

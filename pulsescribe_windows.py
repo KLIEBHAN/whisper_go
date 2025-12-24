@@ -1225,6 +1225,9 @@ class PulseScribeWindows:
         # Stop-Signal fuer Hauptschleife
         self._stop_event.set()
 
+        # FileWatcher stoppen
+        self._stop_env_watcher()
+
         # Warm-Stream stoppen
         self._stop_warm_stream()
 
@@ -1343,14 +1346,12 @@ class PulseScribeWindows:
     def _reload_settings(self):
         """Lädt Settings aus .env neu und wendet sie an.
 
-        Note: Diese Methode kann manuell aufgerufen werden oder über einen
-        FileWatcher getriggert werden. Da das Settings-Fenster jetzt in einem
-        separaten Prozess läuft, wird der Callback nicht mehr automatisch ausgelöst.
-        Stattdessen werden Settings bei der nächsten Transkription neu geladen.
+        Wird automatisch aufgerufen wenn die .env Datei geändert wird (via FileWatcher)
+        oder manuell über das Tray-Menü.
         """
         logger.info("Settings neu laden...")
 
-        # .env neu einlesen
+        # .env neu einlesen (python-dotenv Cache umgehen)
         from utils.preferences import read_env_file
         env_values = read_env_file()
 
@@ -1359,10 +1360,20 @@ class PulseScribeWindows:
         if new_mode != self.mode:
             old_mode = self.mode
             self.mode = new_mode
-            # Provider-Cache invalidieren bei Mode-Wechsel
-            if old_mode in self._provider_cache:
-                del self._provider_cache[old_mode]
+
+            # GESAMTEN Provider-Cache leeren (nicht nur alten Mode)
+            # Wichtig weil auch LocalProvider.invalidate_runtime_config() nötig ist
+            for provider in self._provider_cache.values():
+                if hasattr(provider, "invalidate_runtime_config"):
+                    provider.invalidate_runtime_config()
+            self._provider_cache.clear()
             logger.info(f"Mode geändert: {old_mode} → {new_mode}")
+
+            # Bei Wechsel zu local: Model preloaden
+            if new_mode == "local":
+                threading.Thread(
+                    target=self._preload_local_model, daemon=True
+                ).start()
 
         # Refine aktualisieren
         self.refine = env_values.get("PULSESCRIBE_REFINE", "").lower() == "true"
@@ -1389,6 +1400,72 @@ class PulseScribeWindows:
             self._restart_hotkey_listeners()
 
         logger.info("Settings erfolgreich neu geladen")
+
+    def _preload_local_model(self):
+        """Lädt Local-Model vor nach Settings-Änderung."""
+        try:
+            provider = self._get_provider("local")
+            model, _ = self._get_transcription_config()
+            if self._overlay:
+                self._overlay.update_state("LOADING", f"Loading {model}...")
+            if hasattr(provider, "preload"):
+                logger.info(f"Preloading local model '{model}'...")
+                provider.preload(model=model)
+            if self._overlay and self.state == AppState.LOADING:
+                self._set_state(AppState.IDLE)
+        except Exception as e:
+            logger.warning(f"Local-Model Preload fehlgeschlagen: {e}")
+            if self.state == AppState.LOADING:
+                self._set_state(AppState.IDLE)
+
+    def _start_env_watcher(self):
+        """Startet FileWatcher für .env Änderungen (Auto-Reload)."""
+        try:
+            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler
+            from utils.preferences import ENV_FILE
+
+            class EnvFileHandler(FileSystemEventHandler):
+                def __init__(handler_self, callback):
+                    handler_self.callback = callback
+                    handler_self._last_modified = 0.0
+
+                def on_modified(handler_self, event):
+                    # Nur .env Datei beachten
+                    if not event.src_path.endswith(".env"):
+                        return
+                    # Debounce: Ignoriere Events < 1s nach letztem
+                    now = time.time()
+                    if now - handler_self._last_modified > 1.0:
+                        handler_self._last_modified = now
+                        logger.debug(f".env geändert: {event.src_path}")
+                        handler_self.callback()
+
+            handler = EnvFileHandler(self._reload_settings)
+            self._env_observer = Observer()
+            self._env_observer.schedule(
+                handler, str(ENV_FILE.parent), recursive=False
+            )
+            self._env_observer.start()
+            logger.info(f"FileWatcher gestartet für {ENV_FILE.parent}")
+
+        except ImportError:
+            logger.debug("watchdog nicht installiert - Auto-Reload deaktiviert")
+            self._env_observer = None
+        except Exception as e:
+            logger.warning(f"FileWatcher konnte nicht gestartet werden: {e}")
+            self._env_observer = None
+
+    def _stop_env_watcher(self):
+        """Stoppt den FileWatcher."""
+        if hasattr(self, "_env_observer") and self._env_observer is not None:
+            try:
+                self._env_observer.stop()
+                self._env_observer.join(timeout=1.0)
+                logger.debug("FileWatcher gestoppt")
+            except Exception as e:
+                logger.debug(f"FileWatcher Stop-Fehler: {e}")
+            self._env_observer = None
 
     def _restart_hotkey_listeners(self):
         """Startet Hotkey-Listener mit neuen Einstellungen neu."""
@@ -1549,6 +1626,9 @@ class PulseScribeWindows:
         ).start()
 
         self._setup_tray()
+
+        # FileWatcher für Auto-Reload bei .env Änderungen
+        self._start_env_watcher()
 
         # Ctrl+C Handler: Signal wird an _quit weitergeleitet (nur einmal)
         def signal_handler(sig, frame):
