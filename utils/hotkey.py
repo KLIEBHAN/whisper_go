@@ -343,12 +343,25 @@ def paste_transcript(text: str) -> bool:
     if sys.platform == "win32":
         try:
             import pyperclip
-
-            pyperclip.copy(text)
-            logger.debug(f"pyperclip: {len(text)} Zeichen kopiert")
         except ImportError:
             logger.error("pyperclip nicht installiert")
             return False
+
+        # Optional: Vorherigen Clipboard-Text merken für Restore nach dem Paste
+        # (ENV: PULSESCRIBE_CLIPBOARD_RESTORE=true)
+        restore_clipboard = (
+            os.getenv("PULSESCRIBE_CLIPBOARD_RESTORE", "").lower() == "true"
+        )
+        previous_text = None
+        if restore_clipboard:
+            try:
+                previous_text = pyperclip.paste()
+            except Exception:
+                previous_text = None
+
+        try:
+            pyperclip.copy(text)
+            logger.debug(f"pyperclip: {len(text)} Zeichen kopiert")
         except Exception as e:
             logger.error(f"Clipboard-Fehler: {e}")
             return False
@@ -359,6 +372,24 @@ def paste_transcript(text: str) -> bool:
                 "Text wurde in Zwischenablage kopiert - manuell mit Ctrl+V einfügen."
             )
             return False
+
+        # Optional: Vorherigen Text erneut ins Clipboard kopieren
+        # Safety check: Nur restore wenn Clipboard noch unseren Text enthält
+        # (verhindert Überschreiben wenn User/App zwischenzeitlich kopiert hat)
+        if previous_text is not None:
+            try:
+                time.sleep(0.5)  # Kurz warten bis Paste verarbeitet wurde
+                current = pyperclip.paste()
+                if current == text:
+                    pyperclip.copy(previous_text)
+                    logger.debug("Vorheriger Clipboard-Text wiederhergestellt")
+                else:
+                    logger.debug(
+                        "Clipboard-Restore übersprungen: Inhalt wurde verändert"
+                    )
+            except Exception as e:
+                logger.warning(f"Clipboard-Restore fehlgeschlagen: {e}")
+
         return True
 
     # macOS: Bestehende komplexe Logik mit Fallbacks
