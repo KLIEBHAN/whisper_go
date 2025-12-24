@@ -341,6 +341,20 @@ def paste_transcript(text: str) -> bool:
 
     # Windows: pyperclip + pynput direkt
     if sys.platform == "win32":
+        # Optional: Vorherigen Clipboard-Text merken für Restore nach dem Paste
+        # (ENV: PULSESCRIBE_CLIPBOARD_RESTORE=true)
+        restore_clipboard = (
+            os.getenv("PULSESCRIBE_CLIPBOARD_RESTORE", "").lower() == "true"
+        )
+        previous_text = None
+        if restore_clipboard:
+            try:
+                import pyperclip
+
+                previous_text = pyperclip.paste()
+            except Exception:
+                previous_text = None
+
         try:
             import pyperclip
 
@@ -359,6 +373,16 @@ def paste_transcript(text: str) -> bool:
                 "Text wurde in Zwischenablage kopiert - manuell mit Ctrl+V einfügen."
             )
             return False
+
+        # Optional: Vorherigen Text erneut ins Clipboard kopieren
+        if previous_text is not None:
+            try:
+                time.sleep(1.0)  # Warten bis Paste verarbeitet wurde
+                pyperclip.copy(previous_text)
+                logger.debug("Vorheriger Clipboard-Text wiederhergestellt")
+            except Exception as e:
+                logger.warning(f"Clipboard-Restore fehlgeschlagen: {e}")
+
         return True
 
     # macOS: Bestehende komplexe Logik mit Fallbacks
