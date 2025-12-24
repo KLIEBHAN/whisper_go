@@ -379,6 +379,8 @@ class SettingsWindow(QDialog):
 
         # Hotkey Recording State
         self._recording_hotkey_for: str | None = None
+        self._pynput_listener = None  # pynput Keyboard Listener
+        self._pressed_keys: set = set()  # Aktuell gedrückte Tasten
 
         # Prompt Cache für Save & Apply
         self._prompts_cache: dict[str, str] = {}
@@ -1261,6 +1263,7 @@ class SettingsWindow(QDialog):
     def _start_hotkey_recording(self, kind: str):
         """Startet Hotkey-Recording für toggle oder hold."""
         self._recording_hotkey_for = kind
+        self._pressed_keys.clear()
 
         # Button-Text ändern
         if kind == "toggle" and hasattr(self, "_toggle_record_btn"):
@@ -1272,17 +1275,123 @@ class SettingsWindow(QDialog):
 
         self._set_hotkey_status("Press your hotkey combination, then press Enter to confirm...", "warning")
 
-        # Key-Capture aktivieren
+        # Low-level pynput Hook für Win-Taste (Qt kann sie nicht abfangen)
+        self._start_pynput_listener()
         self.setFocus()
-        self.grabKeyboard()
+
+    def _start_pynput_listener(self):
+        """Startet pynput Listener für Low-Level Key-Capture."""
+        try:
+            from pynput import keyboard  # type: ignore[import-not-found]
+
+            def on_press(key):
+                key_str = self._pynput_key_to_string(key)
+                if key_str and key_str not in ("enter", "return", "esc", "escape"):
+                    self._pressed_keys.add(key_str)
+                    self._update_hotkey_field_from_pressed_keys()
+
+            def on_release(key):
+                key_str = self._pynput_key_to_string(key)
+                if key_str:
+                    self._pressed_keys.discard(key_str)
+
+            self._pynput_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            self._pynput_listener.start()
+        except ImportError:
+            logger.warning("pynput nicht verfügbar, Fallback auf Qt grabKeyboard")
+            self.grabKeyboard()
+
+    def _stop_pynput_listener(self):
+        """Stoppt pynput Listener."""
+        if self._pynput_listener:
+            self._pynput_listener.stop()
+            self._pynput_listener = None
+        self._pressed_keys.clear()
+
+    def _pynput_key_to_string(self, key) -> str:
+        """Konvertiert pynput Key zu String."""
+        try:
+            from pynput import keyboard  # type: ignore[import-not-found]
+
+            # Modifier-Tasten
+            key_map = {
+                keyboard.Key.ctrl: "ctrl",
+                keyboard.Key.ctrl_l: "ctrl",
+                keyboard.Key.ctrl_r: "ctrl",
+                keyboard.Key.alt: "alt",
+                keyboard.Key.alt_l: "alt",
+                keyboard.Key.alt_r: "alt",
+                keyboard.Key.alt_gr: "alt",
+                keyboard.Key.shift: "shift",
+                keyboard.Key.shift_l: "shift",
+                keyboard.Key.shift_r: "shift",
+                keyboard.Key.cmd: "win",
+                keyboard.Key.cmd_l: "win",
+                keyboard.Key.cmd_r: "win",
+                keyboard.Key.space: "space",
+                keyboard.Key.tab: "tab",
+                keyboard.Key.backspace: "backspace",
+                keyboard.Key.delete: "delete",
+                keyboard.Key.enter: "enter",
+                keyboard.Key.esc: "esc",
+            }
+            if key in key_map:
+                return key_map[key]
+
+            # F-Tasten
+            if hasattr(key, "name") and key.name and key.name.startswith("f") and key.name[1:].isdigit():
+                return key.name.lower()
+
+            # Normale Zeichen
+            if hasattr(key, "char") and key.char:
+                return key.char.lower()
+
+            # Sonstige benannte Tasten
+            if hasattr(key, "name") and key.name:
+                return key.name.lower()
+
+        except Exception:
+            pass
+        return ""
+
+    def _update_hotkey_field_from_pressed_keys(self):
+        """Aktualisiert das Hotkey-Feld basierend auf gedrückten Tasten."""
+        if not self._recording_hotkey_for or not self._pressed_keys:
+            return
+
+        # Sortiere: Modifier zuerst, dann andere Tasten
+        modifiers = []
+        keys = []
+        for k in self._pressed_keys:
+            if k in ("ctrl", "alt", "shift", "win"):
+                modifiers.append(k)
+            else:
+                keys.append(k)
+
+        # Stabile Reihenfolge für Modifier
+        modifier_order = ["ctrl", "alt", "shift", "win"]
+        sorted_modifiers = [m for m in modifier_order if m in modifiers]
+
+        hotkey_str = "+".join(sorted_modifiers + sorted(keys))
+
+        # UI-Update (Thread-safe via QTimer)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self._set_hotkey_field_text(hotkey_str))
+
+    def _set_hotkey_field_text(self, hotkey_str: str):
+        """Setzt den Text im aktiven Hotkey-Feld (Thread-safe)."""
+        if self._recording_hotkey_for == "toggle" and self._toggle_hotkey_field:
+            self._toggle_hotkey_field.setText(hotkey_str)
+        elif self._recording_hotkey_for == "hold" and self._hold_hotkey_field:
+            self._hold_hotkey_field.setText(hotkey_str)
 
     def _stop_hotkey_recording(self, hotkey_str: str | None = None):
         """Beendet Hotkey-Recording."""
         kind = self._recording_hotkey_for
         self._recording_hotkey_for = None
 
-        # Keyboard freigeben
-        self.releaseKeyboard()
+        # pynput Listener stoppen
+        self._stop_pynput_listener()
 
         # Buttons zurücksetzen
         if hasattr(self, "_toggle_record_btn"):
@@ -1303,11 +1412,12 @@ class SettingsWindow(QDialog):
             self._set_hotkey_status("Recording cancelled", "text_hint")
 
     def keyPressEvent(self, event):
-        """Fängt Tastendruck für Hotkey-Recording ab."""
+        """Fängt Tastendruck für Hotkey-Recording ab (nur Enter/Escape)."""
         if self._recording_hotkey_for:
             # Escape = Abbrechen
             if event.key() == Qt.Key.Key_Escape:
                 self._stop_hotkey_recording(None)
+                event.accept()
                 return
 
             # Enter = Bestätigen
@@ -1320,34 +1430,10 @@ class SettingsWindow(QDialog):
                 else:
                     hotkey = None
                 self._stop_hotkey_recording(hotkey)
+                event.accept()
                 return
 
-            # Hotkey bauen
-            parts = []
-            modifiers = event.modifiers()
-            if modifiers & Qt.KeyboardModifier.ControlModifier:
-                parts.append("ctrl")
-            if modifiers & Qt.KeyboardModifier.AltModifier:
-                parts.append("alt")
-            if modifiers & Qt.KeyboardModifier.ShiftModifier:
-                parts.append("shift")
-            if modifiers & Qt.KeyboardModifier.MetaModifier:
-                parts.append("win")
-
-            # Key-Name
-            key = event.key()
-            key_name = self._qt_key_to_string(key)
-            if key_name and key_name not in ("ctrl", "alt", "shift", "win", "meta"):
-                parts.append(key_name)
-
-            hotkey_str = "+".join(parts) if parts else ""
-
-            # In Feld anzeigen
-            if self._recording_hotkey_for == "toggle" and self._toggle_hotkey_field:
-                self._toggle_hotkey_field.setText(hotkey_str)
-            elif self._recording_hotkey_for == "hold" and self._hold_hotkey_field:
-                self._hold_hotkey_field.setText(hotkey_str)
-
+            # Alle anderen Tasten werden von pynput behandelt
             event.accept()
             return
 
