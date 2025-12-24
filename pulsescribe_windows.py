@@ -1264,7 +1264,7 @@ class PulseScribeWindows:
             if getattr(sys, 'frozen', False):
                 process = subprocess.Popen(
                     [sys.executable, "--settings"],
-                    stdout=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 )
@@ -1319,7 +1319,7 @@ class PulseScribeWindows:
                 [python_exe, str(settings_script)],
                 cwd=str(PROJECT_ROOT),
                 env=env,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
             )
