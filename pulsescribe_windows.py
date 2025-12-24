@@ -1411,9 +1411,10 @@ class PulseScribeWindows:
         self.refine_model = env_values.get("PULSESCRIBE_REFINE_MODEL")
         self.refine_provider = env_values.get("PULSESCRIBE_REFINE_PROVIDER")
 
-        # Streaming aktualisieren
+        # Streaming aktualisieren (nur Deepgram unterstützt Streaming)
         streaming_val = env_values.get("PULSESCRIBE_STREAMING", "true")
-        self.streaming = streaming_val.lower() != "false"
+        streaming_enabled = streaming_val.lower() != "false"
+        self.streaming = streaming_enabled and self.mode == "deepgram"
 
         # Overlay aktualisieren (mit Start/Stop wenn nötig)
         overlay_val = env_values.get("PULSESCRIBE_OVERLAY", "true")
