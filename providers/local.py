@@ -372,13 +372,36 @@ class LocalProvider:
                 f"Lade faster-whisper Modell '{faster_name}' ({device}, {compute_type}, "
                 f"threads={cpu_threads}, workers={num_workers})..."
             )
-            self._model_cache[cache_key] = WhisperModel(
-                faster_name,
-                device=device,
-                compute_type=compute_type,
-                cpu_threads=cpu_threads,
-                num_workers=num_workers,
-            )
+            try:
+                self._model_cache[cache_key] = WhisperModel(
+                    faster_name,
+                    device=device,
+                    compute_type=compute_type,
+                    cpu_threads=cpu_threads,
+                    num_workers=num_workers,
+                )
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Fallback auf CPU wenn CUDA/cuDNN fehlschlägt
+                if device == "cuda" and ("cudnn" in error_msg or "cuda" in error_msg):
+                    logger.warning(
+                        f"CUDA/cuDNN nicht verfügbar ({e}), "
+                        "fallback auf CPU. Für GPU-Unterstützung cuDNN installieren."
+                    )
+                    cpu_compute = "int8"
+                    cpu_cache_key = (
+                        f"faster:{faster_name}:cpu:{cpu_compute}:{cpu_threads}:{num_workers}"
+                    )
+                    log(f"Lade faster-whisper Modell '{faster_name}' (cpu, {cpu_compute})...")
+                    self._model_cache[cpu_cache_key] = WhisperModel(
+                        faster_name,
+                        device="cpu",
+                        compute_type=cpu_compute,
+                        cpu_threads=cpu_threads,
+                        num_workers=num_workers,
+                    )
+                    return self._model_cache[cpu_cache_key]
+                raise
             return self._model_cache[cache_key]
 
     def _get_lightning_model(self, model_name: str) -> Any:

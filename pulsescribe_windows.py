@@ -1211,6 +1211,7 @@ class PulseScribeWindows:
             pystray.MenuItem(f"Hotkeys: {hotkey_text}", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Settings...", self._show_settings),
+            pystray.MenuItem("Reload Settings", self._reload_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Beenden", self._quit),
         )
@@ -1356,8 +1357,12 @@ class PulseScribeWindows:
         # Mode aktualisieren
         new_mode = env_values.get("PULSESCRIBE_MODE", "deepgram")
         if new_mode != self.mode:
+            old_mode = self.mode
             self.mode = new_mode
-            logger.info(f"Mode geändert: {new_mode}")
+            # Provider-Cache invalidieren bei Mode-Wechsel
+            if old_mode in self._provider_cache:
+                del self._provider_cache[old_mode]
+            logger.info(f"Mode geändert: {old_mode} → {new_mode}")
 
         # Refine aktualisieren
         self.refine = env_values.get("PULSESCRIBE_REFINE", "").lower() == "true"
