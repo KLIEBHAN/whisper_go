@@ -2196,7 +2196,9 @@ class SettingsWindow(QDialog):
             signal_file.write_text(str(time.time()))
             logger.debug(f"Reload-Signal geschrieben: {signal_file}")
         except Exception as e:
-            logger.debug(f"Reload-Signal schreiben fehlgeschlagen: {e}")
+            # Warning statt debug, damit Benutzer sieht wenn Reload nicht funktioniert
+            logger.warning(f"Reload-Signal konnte nicht geschrieben werden: {e} - "
+                          "Daemon wird Änderungen erst nach Neustart übernehmen")
 
     def _show_save_feedback(self):
         """Zeigt visuelles Feedback nach erfolgreichem Speichern."""
