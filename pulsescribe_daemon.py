@@ -792,7 +792,7 @@ class PulseScribeDaemon:
                 refined=self.refine,
             )
         except Exception as e:
-            logger.debug(f"History save failed: {e}")
+            logger.warning(f"History save failed: {e}")
 
     def _format_done_text(self, transcript: str) -> str:
         """Formatiert den Overlay-Text für DONE-State mit optionalem RTF."""
