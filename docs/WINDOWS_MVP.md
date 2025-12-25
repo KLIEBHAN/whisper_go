@@ -33,7 +33,7 @@
 
 ### Out of Scope (v1)
 
-- Glass/Acrylic Overlay-Effekte
+- ~~Glass/Acrylic Overlay-Effekte~~ → ✅ Mica-Effekt implementiert (Windows 11 22H2+)
 - Vollständige UI-Parität mit macOS
 - Code-Signing (für MVP ohne Reputation)
 

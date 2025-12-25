@@ -4,7 +4,8 @@ GPU-beschleunigtes Overlay mit:
 - QWidget + QPainter für Hardware-Rendering
 - QTimer mit PreciseTimer für echte 60 FPS
 - Signals/Slots für Thread-Safety
-- Optionaler Windows Acrylic Blur (Win10+)
+- Windows 11 Mica-Effekt mit nativen runden Ecken (22H2+)
+- Graceful Fallback auf Solid-Background (Win10/ältere Builds)
 - Traveling Wave + Gaussian Envelope Animation
 - High-DPI Awareness (scharfe Darstellung auf 4K)
 - Multi-Monitor Support (Overlay auf aktivem Monitor)
@@ -105,6 +106,28 @@ STATE_TEXTS = {
 # Auto-Hide Timer für DONE/ERROR
 FEEDBACK_DISPLAY_MS = 800  # Millisekunden
 
+# =============================================================================
+# Windows 11 DWM-Konstanten (Mica Effect)
+# =============================================================================
+
+# DwmSetWindowAttribute Attribute IDs
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWA_SYSTEMBACKDROP_TYPE = 38
+
+# DWM_SYSTEMBACKDROP_TYPE Values (Windows 11 22H2+)
+DWMSBT_AUTO = 0
+DWMSBT_DISABLE = 1
+DWMSBT_MAINWINDOW = 2       # Mica
+DWMSBT_TRANSIENTWINDOW = 3  # Acrylic
+DWMSBT_TABBEDWINDOW = 4     # Tabbed (Mica Alt)
+
+# DWM_WINDOW_CORNER_PREFERENCE Values
+DWMWCP_DEFAULT = 0
+DWMWCP_DONOTROUND = 1
+DWMWCP_ROUND = 2
+DWMWCP_ROUNDSMALL = 3
+
 
 # =============================================================================
 # Multi-Monitor Helper
@@ -155,54 +178,101 @@ def _get_active_screen() -> "QScreen | None":
 
 
 # =============================================================================
-# Windows Blur Helper
+# Windows 11 Mica Effect Helper
 # =============================================================================
 
 
-def _enable_windows_blur(hwnd: int) -> bool:
-    """Aktiviert Windows Acrylic Blur (Windows 10 1803+)."""
+def _get_windows_build() -> int:
+    """Ermittelt die Windows Build-Nummer."""
     if sys.platform != "win32":
+        return 0
+
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as key:
+            build = winreg.QueryValueEx(key, "CurrentBuildNumber")[0]
+            return int(build)
+    except Exception:
+        return 0
+
+
+def _enable_mica_effect(hwnd: int) -> bool:
+    """Aktiviert Windows 11 Mica-Effekt mit nativen runden Ecken.
+
+    Erfordert Windows 11 22H2 (Build 22621+) für DWMWA_SYSTEMBACKDROP_TYPE.
+    Auf älteren Systemen wird False zurückgegeben und der Solid-Background verwendet.
+
+    Hinweis: DwmExtendFrameIntoClientArea wird NICHT aufgerufen, da es laut
+    Avalonia Issue #7403 den Mica-Effekt auf Qt-ähnlichen Frameworks bricht.
+    Qt's FramelessWindowHint + WA_TranslucentBackground reicht aus.
+    """
+    if sys.platform != "win32":
+        return False
+
+    # Mindestens Windows 11 22H2 (Build 22621) erforderlich
+    build = _get_windows_build()
+    if build < 22621:
+        logger.debug(f"Mica nicht verfügbar (Build {build} < 22621)")
         return False
 
     try:
         from ctypes import wintypes
 
-        class ACCENT_POLICY(ctypes.Structure):
-            _fields_ = [
-                ("AccentState", ctypes.c_int),
-                ("AccentFlags", ctypes.c_int),
-                ("GradientColor", ctypes.c_uint),
-                ("AnimationId", ctypes.c_int),
-            ]
+        dwmapi = ctypes.windll.dwmapi
 
-        class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
-            _fields_ = [
-                ("Attribute", ctypes.c_int),
-                ("Data", ctypes.POINTER(ACCENT_POLICY)),
-                ("SizeOfData", ctypes.c_size_t),
-            ]
+        # Funktions-Signaturen definieren für korrektes 64-bit Handling
+        # HRESULT DwmSetWindowAttribute(HWND, DWORD, LPCVOID, DWORD)
+        dwmapi.DwmSetWindowAttribute.argtypes = [
+            wintypes.HWND,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
+        dwmapi.DwmSetWindowAttribute.restype = wintypes.LONG  # HRESULT
 
-        # ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
-        accent = ACCENT_POLICY()
-        accent.AccentState = 4
-        accent.AccentFlags = 2  # ACCENT_FLAG_DRAW_ALL
-        accent.GradientColor = 0xCC1A1A1A  # ABGR: Dark with alpha
+        # 1. Dark Mode aktivieren (für dunkles Mica)
+        # Nicht kritisch - bei Fehler wird Light-Theme verwendet
+        dark_mode = ctypes.c_int(1)
+        result = dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(dark_mode),
+            ctypes.sizeof(dark_mode),
+        )
+        if result != 0:
+            logger.debug(f"Dark Mode fehlgeschlagen (HRESULT {result}), fahre fort...")
 
-        data = WINDOWCOMPOSITIONATTRIBDATA()
-        data.Attribute = 19  # WCA_ACCENT_POLICY
-        data.Data = ctypes.pointer(accent)
-        data.SizeOfData = ctypes.sizeof(accent)
+        # 2. Runde Ecken via DWM (native, nicht QPainter)
+        # Nicht kritisch - bei Fehler werden Default-Ecken verwendet
+        corners = ctypes.c_int(DWMWCP_ROUND)
+        result = dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(corners),
+            ctypes.sizeof(corners),
+        )
+        if result != 0:
+            logger.debug(f"Rounded Corners fehlgeschlagen (HRESULT {result}), fahre fort...")
 
-        set_window_composition_attribute = ctypes.windll.user32.SetWindowCompositionAttribute
-        set_window_composition_attribute.argtypes = [wintypes.HWND, ctypes.POINTER(WINDOWCOMPOSITIONATTRIBDATA)]
-        set_window_composition_attribute.restype = ctypes.c_bool
+        # 3. Mica Backdrop aktivieren - KRITISCH
+        # Bei Fehler hier → Fallback auf Solid-Background
+        backdrop = ctypes.c_int(DWMSBT_MAINWINDOW)
+        result = dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            ctypes.byref(backdrop),
+            ctypes.sizeof(backdrop),
+        )
 
-        result = set_window_composition_attribute(hwnd, ctypes.byref(data))
-        if result:
-            logger.debug("Windows Acrylic Blur aktiviert")
-        return result
+        if result == 0:  # S_OK
+            logger.debug(f"Windows 11 Mica-Effekt aktiviert (Build {build})")
+            return True
+        else:
+            logger.debug(f"Mica Backdrop fehlgeschlagen (HRESULT {result}) → Fallback")
+            return False
+
     except Exception as e:
-        logger.debug(f"Blur nicht verfügbar: {e}")
+        logger.debug(f"Mica nicht verfügbar: {e}")
         return False
 
 
@@ -229,7 +299,7 @@ class PySide6OverlayWidget(QWidget):
         self._anim = AnimationLogic()
         self._bar_heights = [float(BAR_MIN_HEIGHT)] * BAR_COUNT
         self._animation_start = time.perf_counter()
-        self._blur_enabled = False
+        self._mica_enabled = False
         self._fade_out_timer: QTimer | None = None
 
         # Setup
@@ -354,12 +424,11 @@ class PySide6OverlayWidget(QWidget):
             self._fade_animation.stop()
 
     def showEvent(self, event):
-        """Aktiviert Blur beim ersten Anzeigen."""
+        """Aktiviert Mica-Effekt beim ersten Anzeigen (Windows 11 22H2+)."""
         super().showEvent(event)
-        # Blur deaktiviert für korrekte Transparenz & runde Ecken
-        # if not self._blur_enabled:
-        #     hwnd = int(self.winId())
-        #     self._blur_enabled = _enable_windows_blur(hwnd)
+        if not self._mica_enabled:
+            hwnd = int(self.winId())
+            self._mica_enabled = _enable_mica_effect(hwnd)
 
     # =========================================================================
     # Public API (Thread-Safe via Signals)
@@ -508,16 +577,21 @@ class PySide6OverlayWidget(QWidget):
         painter.end()
 
     def _draw_background(self, painter: QPainter):
-        """Zeichnet abgerundeten Hintergrund."""
+        """Zeichnet abgerundeten Hintergrund.
+
+        Bei aktivem Mica-Effekt wird nichts gezeichnet, da DWM das
+        komplette Fenster mit Blur und nativen runden Ecken rendert.
+        """
+        # Bei Mica: DWM übernimmt Hintergrund UND Ecken - nichts zeichnen
+        if self._mica_enabled:
+            return
+
+        # Fallback: Solid-Background mit QPainter (Win10/ältere Builds)
         path = QPainterPath()
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         path.addRoundedRect(rect, WINDOW_CORNER_RADIUS, WINDOW_CORNER_RADIUS)
 
-        # Hintergrund (nur wenn kein Blur aktiv)
-        if not self._blur_enabled:
-            painter.fillPath(path, QBrush(BG_COLOR))
-
-        # Border
+        painter.fillPath(path, QBrush(BG_COLOR))
         painter.setPen(QPen(BORDER_COLOR, 1))
         painter.drawPath(path)
 
