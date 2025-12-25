@@ -31,6 +31,46 @@ CUDNN_INSTALL_COMMAND = "pip install nvidia-cudnn-cu12"
 CPU_COMPUTE_TYPE = "int8"
 
 
+def _register_nvidia_dll_directories() -> None:
+    """Register NVIDIA DLL directories for Windows.
+
+    nvidia-cudnn-cu12 and nvidia-cublas-cu12 install DLLs into
+    site-packages/nvidia/*/bin, which are not automatically found.
+    This function must be called BEFORE importing ctranslate2/faster_whisper.
+    """
+    if sys.platform != "win32":
+        return
+
+    import site
+
+    # Collect all possible site-packages locations
+    site_packages: list[str] = []
+    try:
+        site_packages.extend(site.getsitepackages())
+    except AttributeError:
+        pass  # May not exist in some environments
+    try:
+        user_site = site.getusersitepackages()
+        if user_site:
+            site_packages.append(user_site)
+    except AttributeError:
+        pass  # May not exist in some environments
+
+    for sp in site_packages:
+        for subdir in ("cudnn", "cublas"):
+            dll_path = Path(sp) / "nvidia" / subdir / "bin"
+            if dll_path.is_dir():
+                try:
+                    os.add_dll_directory(str(dll_path))
+                    logger.debug(f"NVIDIA DLL directory registered: {dll_path}")
+                except OSError as e:
+                    logger.warning(f"Failed to register NVIDIA DLL directory {dll_path}: {e}")
+
+
+# Register NVIDIA DLLs early (before faster_whisper import)
+_register_nvidia_dll_directories()
+
+
 def _is_apple_silicon() -> bool:
     """Prüft ob wir auf Apple Silicon (arm64 macOS) laufen."""
     return sys.platform == "darwin" and platform.machine() == "arm64"
