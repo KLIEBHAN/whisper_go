@@ -534,9 +534,9 @@ class SettingsWindow(QDialog):
         layout.addWidget(self._save_btn)
 
         # Close-Button (rechts vom Save-Button, wie macOS)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-        layout.addWidget(close_btn)
+        self._close_btn = QPushButton("Close")
+        self._close_btn.clicked.connect(self.reject)  # QDialog-konform
+        layout.addWidget(self._close_btn)
 
         return footer
 
