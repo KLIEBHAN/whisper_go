@@ -1,6 +1,6 @@
 # PulseScribe Vision
 
-> Eine minimalistische, Open-Source Alternative zu [Wispr Flow](https://wisprflow.ai) – systemweite Spracheingabe für macOS.
+> Eine minimalistische, Open-Source Alternative zu [Wispr Flow](https://wisprflow.ai) – systemweite Spracheingabe für macOS und Windows.
 
 ---
 
@@ -33,7 +33,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 | Prinzip            | Bedeutung                    |
 | ------------------ | ---------------------------- |
 | **Minimalistisch** | Eine Sache gut machen        |
-| **Offline-first**  | Lokale Modelle als Default   |
+| **Offline-fähig**  | Lokale Modelle als Option    |
 | **Atomar**         | Kleine, fokussierte Releases |
 | **Open Source**    | Transparent, erweiterbar     |
 

@@ -85,6 +85,7 @@ pulsescribe/
 │   ├── permissions.py       # macOS Berechtigungs-Checks
 │   ├── logging.py           # Logging-Konfiguration
 │   ├── env.py               # ENV-Variablen laden
+│   ├── environment.py       # Plattform-Environment-Checks
 │   ├── preferences.py       # User-Preferences verwalten
 │   ├── hotkey.py            # Hotkey-Parsing und -Validierung
 │   ├── hotkey_validation.py # Hotkey-Format-Validierung
