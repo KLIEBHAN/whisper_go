@@ -527,7 +527,10 @@ class PulseScribeWindows:
                 try:
                     self._warm_stream_queue.put_nowait(audio_bytes)
                 except queue.Full:
-                    pass  # Queue voll, Chunk verwerfen
+                    # Queue voll - Audio-Chunk verworfen (z.B. bei langer REST-Transkription)
+                    if not hasattr(self, "_warm_stream_overflow_logged"):
+                        self._warm_stream_overflow_logged = True
+                        logger.warning("Warm-Stream Queue voll, Audio-Chunks werden verworfen")
 
         try:
             self._warm_stream = sd.InputStream(

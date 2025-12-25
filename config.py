@@ -189,7 +189,9 @@ FINALIZE_TIMEOUT = (
     1.0  # Warten auf finale Transkripte (Deepgram antwortet meist in 300-500ms)
 )
 DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
-DEEPGRAM_CLOSE_TIMEOUT = 0.5  # Schneller WebSocket-Shutdown (SDK Default: 10s)
+DEEPGRAM_CLOSE_TIMEOUT = float(
+    os.getenv("PULSESCRIBE_DEEPGRAM_CLOSE_TIMEOUT", "0.5")
+)  # Schneller WebSocket-Shutdown (SDK Default: 10s)
 
 # Watchdog: Automatisches Timeout wenn TRANSCRIBING zu lange dauert
 # Verhindert "hängendes Overlay" bei Worker-Problemen (z.B. WebSocket-Hänger)
