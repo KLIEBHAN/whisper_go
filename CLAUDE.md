@@ -9,99 +9,53 @@ Siehe [docs/SECURITY.md](docs/SECURITY.md) und [docs/NETWORK.md](docs/NETWORK.md
 
 ## Architektur
 
+### Projektstruktur (Übersicht)
+
 ```
 pulsescribe/
-├── transcribe.py            # CLI Orchestrierung (Wrapper)
-├── pulsescribe_daemon.py    # macOS Daemon (NSApplication Loop)
+├── transcribe.py            # CLI Entry-Point
+├── pulsescribe_daemon.py    # macOS Daemon (NSApplication)
 ├── pulsescribe_windows.py   # Windows Daemon (pystray + pynput)
-├── config.py                # Zentrale Konfiguration (Pfade, Konstanten)
+├── config.py                # Zentrale Konfiguration
 │
-├── start_daemon.command     # macOS Login Item für Auto-Start
-├── start_daemon.bat         # Windows Batch für Auto-Start
+├── audio/                   # Audio-Aufnahme (AudioRecorder)
+├── providers/               # Transkription (Deepgram, OpenAI, Groq, Local)
+├── refine/                  # LLM-Nachbearbeitung (Prompts, Context, LLM-Calls)
+├── ui/                      # UI-Komponenten (Overlay, Menubar, Settings)
+├── whisper_platform/        # Plattform-Abstraktion (Clipboard, Sound, Hotkey)
+├── utils/                   # Utilities (Logging, Permissions, Preferences)
 │
-├── build_app.spec           # PyInstaller Spec für macOS App Bundle
-├── build_app.sh             # macOS Build-Script (App Bundle)
-├── build_dmg.sh             # macOS DMG-Erstellung
-├── build_windows.spec       # PyInstaller Spec für Windows EXE
-├── build_windows_light.spec # Leichter Windows Build (ohne PySide6)
-├── build_windows.ps1        # PowerShell Build-Script (EXE + Installer)
-├── build_windows.py         # Python Build-Helper für Windows
-├── installer_windows.iss    # Inno Setup Script für Windows Installer
-│
-├── pyproject.toml           # Python Projekt-Konfiguration
-├── requirements.txt         # Dependencies (beide Plattformen)
-├── requirements-dev.txt     # Dev-Dependencies (pytest, etc.)
-│
-├── README.md                # Benutzer-Dokumentation (EN)
-├── README.de.md             # Benutzer-Dokumentation (DE)
-├── CHANGELOG.md             # Versionshistorie
-├── CONTRIBUTING.md          # Contributor-Guidelines
-├── CLAUDE.md                # Diese Datei
-│
-├── assets/                  # Icons und Ressourcen
-│   ├── icon.icns            # macOS App Icon
-│   ├── icon.ico             # Windows App Icon
-│   └── icon.iconset/        # Icon-Varianten
-├── macos/                   # macOS-spezifische Dateien
-│   └── entitlements.plist   # Code-Signing Entitlements
-├── docs/                    # Dokumentation (Vision, Windows MVP, etc.)
-│
-├── cli/                     # CLI-Modul
-│   └── types.py             # CLI-Typdefinitionen
-├── audio/                   # Audio-Aufnahme und -Handling
-│   └── recording.py         # AudioRecorder-Klasse
-├── providers/               # Transkriptions-Provider
-│   ├── base.py              # Provider-Basisklasse
-│   ├── deepgram.py          # Deepgram REST Provider
-│   ├── deepgram_stream.py   # Deepgram WebSocket Streaming
-│   ├── openai.py            # OpenAI Provider
-│   ├── groq.py              # Groq Provider
-│   └── local.py             # Lokaler Whisper Provider
-├── refine/                  # LLM-Nachbearbeitung
-│   ├── prompts.py           # Prompt-Templates
-│   ├── context.py           # Kontext-Detection
-│   └── llm.py               # LLM-API-Calls
-├── ui/                      # User Interface Components
-│   ├── animation.py         # Shared Animation Logic
-│   ├── menubar.py           # macOS MenuBar Controller
-│   ├── overlay.py           # macOS Overlay
-│   ├── overlay_windows.py   # Windows Overlay (Tkinter)
-│   ├── overlay_pyside6.py   # Windows Overlay (PySide6)
-│   ├── welcome.py           # macOS Welcome/Settings Window
-│   ├── settings_windows.py  # Windows Settings Window (PySide6)
-│   ├── onboarding_wizard.py # Onboarding-Wizard
-│   ├── hotkey_card.py       # Hotkey-Konfigurations-UI
-│   └── permissions_card.py  # Berechtigungs-UI (macOS)
-├── whisper_platform/        # Plattform-Abstraktion (Factory Pattern)
-│   ├── __init__.py          # Factory-Exports
-│   ├── base.py              # Abstrakte Basisklassen
-│   ├── clipboard.py         # Clipboard + Paste (macOS/Windows)
-│   ├── sound.py             # Sound-Feedback (macOS/Windows)
-│   ├── hotkey.py            # Hotkey-Listener
-│   ├── app_detection.py     # Aktive App erkennen
-│   └── daemon.py            # Daemon-Helper (Windows)
-├── utils/                   # Utilities
-│   ├── paths.py             # Pfad-Helper für PyInstaller
-│   ├── permissions.py       # macOS Berechtigungs-Checks
-│   ├── logging.py           # Logging-Konfiguration
-│   ├── env.py               # ENV-Variablen laden
-│   ├── environment.py       # Plattform-Environment-Checks
-│   ├── preferences.py       # User-Preferences verwalten
-│   ├── hotkey.py            # Hotkey-Parsing und -Validierung
-│   ├── hotkey_validation.py # Hotkey-Format-Validierung
-│   ├── hotkey_recording.py  # Hotkey-Aufnahme-UI
-│   ├── carbon_hotkey.py     # macOS Carbon Hotkey-Handling
-│   ├── custom_prompts.py    # Custom Prompts aus TOML
-│   ├── vocabulary.py        # Custom Vocabulary
-│   ├── history.py           # Transkriptions-Historie
-│   ├── diagnostics.py       # System-Diagnose
-│   ├── onboarding.py        # Onboarding-Status
-│   ├── presets.py           # Provider-Presets
-│   ├── alerts.py            # macOS Alert-Dialoge
-│   ├── timing.py            # Performance-Timing
-│   └── state.py             # Globaler State
+├── assets/                  # Icons (icon.icns, icon.ico)
+├── macos/                   # macOS-spezifisch (entitlements.plist)
+├── docs/                    # Dokumentation
 └── tests/                   # Unit & Integration Tests
 ```
+
+> **Tipp:** Für die vollständige Dateiliste:
+> ```bash
+> tree -L 2 --dirsfirst -I '__pycache__|*.pyc|venv|dist|build|*.egg-info'
+> ```
+
+### Modul-Verantwortlichkeiten
+
+| Modul | Verantwortlichkeit |
+|-------|-------------------|
+| `audio/` | Mikrofon-Aufnahme via sounddevice, WAV-Export |
+| `providers/` | Transkriptions-APIs (Deepgram REST+WS, OpenAI, Groq, lokales Whisper) |
+| `refine/` | LLM-Nachbearbeitung, Kontext-Detection, Prompt-Templates |
+| `ui/` | Overlay-Animation, Menubar (macOS), Settings-GUI (Windows), Onboarding |
+| `whisper_platform/` | OS-Abstraktion: Clipboard, Sound, Hotkeys, App-Detection |
+| `utils/` | Shared Utilities: Logging, Paths, Preferences, Hotkey-Parsing |
+
+### Build-Dateien
+
+| Datei | Zweck |
+|-------|-------|
+| `build_app.sh` / `build_app.spec` | macOS App Bundle |
+| `build_dmg.sh` | macOS DMG-Erstellung |
+| `build_windows.ps1` / `build_windows.spec` | Windows EXE + Installer |
+| `installer_windows.iss` | Inno Setup Script |
+| `pyproject.toml` | Python-Projekt-Konfiguration |
 
 ## Kern-Datei: `transcribe.py`
 

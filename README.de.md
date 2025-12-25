@@ -744,6 +744,8 @@ Siehe `docs/BUILDING_MACOS.md` für die Notarization-Einrichtung.
 
 | Dokument | Beschreibung |
 |----------|--------------|
+| [Konfigurations-Referenz](docs/KONFIGURATION.md) | Alle Einstellungen, API-Keys, Hotkeys, Umgebungsvariablen |
+| [Lokale Backends](docs/LOKALE_BACKENDS.md) | Offline-Transkription mit Whisper, MLX, Lightning |
 | [Sicherheit & Datenschutz](docs/SICHERHEIT.md) | Datenverarbeitung, Berechtigungen, API-Key-Speicherung |
 | [Netzwerk-Anforderungen](docs/NETZWERK.md) | Endpunkte, Firewall-Regeln, Proxy-Konfiguration, Offline-Modus |
 | [Vision & Roadmap](docs/VISION.md) | Projektziele und geplante Features |

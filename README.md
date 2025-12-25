@@ -809,6 +809,8 @@ See `docs/BUILDING_MACOS.md` for notarization setup.
 
 | Document | Description |
 |----------|-------------|
+| [Configuration Reference](docs/CONFIGURATION.md) | All settings, API keys, hotkeys, environment variables |
+| [Local Backends](docs/LOCAL_BACKENDS.md) | Offline transcription with Whisper, MLX, Lightning |
 | [Security & Privacy](docs/SECURITY.md) | Data handling, permissions, API key storage |
 | [Network Requirements](docs/NETWORK.md) | Endpoints, firewall rules, proxy configuration, offline mode |
 | [Vision & Roadmap](docs/VISION.md) | Project goals and planned features |
