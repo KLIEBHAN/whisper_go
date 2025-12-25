@@ -48,6 +48,8 @@ from utils.logging import get_session_id
 from utils.timing import log_preview
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import numpy as np
     import sounddevice as sd
     from deepgram.clients.listen.v1 import LiveResultResponse
@@ -573,7 +575,16 @@ def _setup_stop_mechanism(
 ) -> None:
     """Richtet den Stop-Mechanismus ein.
 
-    Entweder externes threading.Event oder SIGUSR1 Signal-Handler (nur Unix).
+    Unterstützte Modi:
+    1. external_stop_event gesetzt: Thread überwacht das Event (alle Plattformen)
+    2. Unix + Main-Thread: SIGUSR1 Signal-Handler
+    3. Windows ohne external_stop_event: Warnung, da kein Stop-Mechanismus verfügbar
+
+    Args:
+        state: StreamState mit stop_event
+        loop: Event-Loop für thread-safe Aufrufe
+        external_stop_event: Externes threading.Event zum Stoppen
+        session_id: Session-ID für Logging
     """
     if external_stop_event is not None:
         # Unified-Daemon-Mode: Externes threading.Event überwachen
@@ -597,6 +608,17 @@ def _setup_stop_mechanism(
         import signal
 
         loop.add_signal_handler(signal.SIGUSR1, state.stop_event.set)
+        logger.debug(f"[{session_id}] SIGUSR1 handler registriert")
+
+    else:
+        # Windows ohne external_stop_event oder non-main thread
+        # In diesem Fall muss der Caller selbst für das Stoppen sorgen
+        # (z.B. durch direktes Setzen von state.stop_event)
+        logger.warning(
+            f"[{session_id}] Kein Stop-Mechanismus verfügbar. "
+            f"Auf Windows muss external_stop_event gesetzt werden, "
+            f"oder state.stop_event manuell gesetzt werden."
+        )
 
 
 def _cleanup_stop_mechanism(
@@ -906,19 +928,28 @@ class DeepgramStreamProvider:
 
     def transcribe(
         self,
-        audio_path: str,
+        audio_path: Path | str,
         model: str | None = None,
         language: str | None = None,
     ) -> str:
         """Transkribiert eine Audio-Datei via REST API (nicht Streaming).
 
         Für Datei-Transkription nutze den regulären DeepgramProvider.
+
+        Args:
+            audio_path: Pfad zur Audio-Datei (Path oder str)
+            model: Deepgram-Modell (optional)
+            language: Sprachcode (optional)
+
+        Returns:
+            Transkribierter Text
         """
-        from pathlib import Path
+        from pathlib import Path as PathLib
 
         from .deepgram import DeepgramProvider
 
-        return DeepgramProvider().transcribe(Path(audio_path), model, language)
+        path = audio_path if isinstance(audio_path, PathLib) else PathLib(audio_path)
+        return DeepgramProvider().transcribe(path, model, language)
 
     def transcribe_stream(
         self,
