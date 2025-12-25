@@ -5,6 +5,23 @@
 
 [🇺🇸 English Version](README.md)
 
+## Inhaltsverzeichnis
+
+- [Schnellstart](#schnellstart)
+- [CLI-Nutzung](#cli-nutzung)
+- [Konfiguration](#konfiguration)
+- [Erweiterte Features](#erweiterte-features)
+- [Hotkey Integration](#hotkey-integration)
+- [Provider-Vergleich](#provider-vergleich)
+- [Modell-Referenz](#modell-referenz)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+  - [Windows-Unterstützung](#windows-unterstützung)
+  - [macOS App Bundle erstellen](#macos-app-bundle-erstellen)
+- [Weitere Dokumentation](#weitere-dokumentation)
+
+---
+
 Spracheingabe für macOS und Windows – inspiriert von [Wispr Flow](https://wisprflow.ai). Transkribiert Audio mit OpenAI Whisper über API, Deepgram, Groq oder lokal.
 
 **Features:** Echtzeit-Streaming (Deepgram) · Mehrere Provider (OpenAI, Deepgram, Groq, lokal inkl. MLX/Metal auf Apple Silicon) · LLM-Nachbearbeitung · Kontext-Awareness · Custom Vocabulary · Live-Preview Overlay · Menübar-Feedback
@@ -23,6 +40,16 @@ Spracheingabe für macOS und Windows – inspiriert von [Wispr Flow](https://wis
 | **Groq**     | ~1s       | REST      | Whisper auf LPU, sehr schnell                           |
 | **OpenAI**   | ~2-3s     | REST      | GPT-4o, höchste Qualität                                |
 | **Lokal**    | variiert  | Whisper   | Offline, keine API-Kosten (MLX/Metal auf Apple Silicon) |
+
+### Begriffe
+
+| Begriff | Bedeutung |
+|---------|-----------|
+| **LPU** | Language Processing Unit – Groqs Custom-Chip für ultra-schnelle Inferenz |
+| **VAD** | Voice Activity Detection – automatische Sprach-Start/Stop-Erkennung |
+| **RTF** | Real-Time Factor – Verarbeitungszeit / Audiodauer (niedriger = schneller) |
+| **Refine** | LLM-Nachbearbeitung zur Bereinigung von Transkriptionen |
+| **Streaming** | WebSocket-basierte Echtzeit-Transkription während der Aufnahme |
 
 ## Schnellstart
 
@@ -673,11 +700,23 @@ Um eine eigenständige `PulseScribe.app` zu erstellen:
 # PyInstaller installieren (falls noch nicht vorhanden)
 pip install pyinstaller
 
-# App bauen
-pyinstaller build_app.spec
+# Vollständiger Build (alle Provider inkl. lokaler Whisper-Backends)
+./build_app.sh
+
+# Schlanker Build (nur Cloud: Deepgram, OpenAI, Groq - keine lokalen Backends)
+./build_app.sh --slim
 
 # Output: dist/PulseScribe.app
 ```
+
+**Build-Varianten:**
+
+| Variante            | Größe   | Provider                              | Anwendungsfall                      |
+| ------------------- | ------- | ------------------------------------- | ----------------------------------- |
+| **Full** (Standard) | ~1 GB   | Alle (Deepgram, OpenAI, Groq, Lokal)  | Offline-Transkription benötigt      |
+| **Slim** (`--slim`) | ~300 MB | Nur Cloud (Deepgram, OpenAI, Groq)    | Nur Cloud-Nutzung, kleinerer Download |
+
+> **Hinweis:** Der Slim-Build enthält keine lokalen Whisper-Backends (faster-whisper, mlx-whisper, lightning). Für Offline-Transkription den Full-Build verwenden.
 
 **Optional: Code-Signierung für stabile Accessibility-Berechtigungen**
 
@@ -700,3 +739,16 @@ export NOTARY_PROFILE="whispergo-notary"
 ```
 
 Siehe `docs/BUILDING_MACOS.md` für die Notarization-Einrichtung.
+
+## Weitere Dokumentation
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [Konfigurations-Referenz](docs/KONFIGURATION.md) | Alle Einstellungen, API-Keys, Hotkeys, Umgebungsvariablen |
+| [Lokale Backends](docs/LOKALE_BACKENDS.md) | Offline-Transkription mit Whisper, MLX, Lightning |
+| [Sicherheit & Datenschutz](docs/SICHERHEIT.md) | Datenverarbeitung, Berechtigungen, API-Key-Speicherung |
+| [Netzwerk-Anforderungen](docs/NETZWERK.md) | Endpunkte, Firewall-Regeln, Proxy-Konfiguration, Offline-Modus |
+| [Vision & Roadmap](docs/VISION.md) | Projektziele und geplante Features |
+| [macOS Build](docs/BUILDING_MACOS.md) | App-Bundle und DMG-Erstellung |
+| [Windows Build](docs/BUILDING_WINDOWS.md) | EXE und Installer-Erstellung |
+| [CLAUDE.md](CLAUDE.md) | Architektur-Referenz für Entwickler |

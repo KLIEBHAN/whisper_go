@@ -45,7 +45,7 @@ Kein Electron. Kein Cloud-Lock-in. Kein Abo.
 
 - [x] **Native Hotkeys (macOS)** ✅
   - Hotkey-Registrierung via [QuickMacHotKey](https://github.com/glyph/QuickMacHotKey) (Carbon API)
-- [x] **Windows Support** ✅ – MVP Complete (siehe [WINDOWS_MVP.md](./WINDOWS_MVP.md))
+- [x] **Windows Support** ✅ – MVP Complete
   - System-Tray, Hotkeys, Settings-GUI, Mica-Effekt
 - [ ] **Linux Support** – Geplant
 - [x] **CLI Modernisierung** (Migration auf `typer`) ✅
