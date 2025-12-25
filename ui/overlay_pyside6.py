@@ -129,17 +129,6 @@ DWMWCP_ROUND = 2
 DWMWCP_ROUNDSMALL = 3
 
 
-# MARGINS-Struktur für DwmExtendFrameIntoClientArea
-class MARGINS(ctypes.Structure):
-    """Windows MARGINS Struktur für DWM-Funktionen."""
-    _fields_ = [
-        ("cxLeftWidth", ctypes.c_int),
-        ("cxRightWidth", ctypes.c_int),
-        ("cyTopHeight", ctypes.c_int),
-        ("cyBottomHeight", ctypes.c_int),
-    ]
-
-
 # =============================================================================
 # Multi-Monitor Helper
 # =============================================================================
@@ -195,6 +184,9 @@ def _get_active_screen() -> "QScreen | None":
 
 def _get_windows_build() -> int:
     """Ermittelt die Windows Build-Nummer."""
+    if sys.platform != "win32":
+        return 0
+
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as key:
@@ -266,7 +258,7 @@ def _enable_mica_effect(hwnd: int) -> bool:
         )
 
         if result == 0:  # S_OK
-            logger.info(f"Windows 11 Mica-Effekt aktiviert (Build {build})")
+            logger.debug(f"Windows 11 Mica-Effekt aktiviert (Build {build})")
             return True
         else:
             logger.debug(f"DwmSetWindowAttribute SYSTEMBACKDROP fehlgeschlagen: {result}")
