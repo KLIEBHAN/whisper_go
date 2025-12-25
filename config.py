@@ -194,11 +194,28 @@ DEEPGRAM_CLOSE_TIMEOUT = float(
 )  # Schneller WebSocket-Shutdown (SDK Default: 10s)
 
 # Buffer-Konfiguration für Streaming
-CLI_BUFFER_LIMIT = int(
-    os.getenv("PULSESCRIBE_CLI_BUFFER_LIMIT", "500")
+def _get_bounded_int_env(
+    var_name: str,
+    default: int,
+    min_value: int,
+    max_value: int,
+) -> int:
+    """Liest Integer-ENV und begrenzt auf sinnvollen Bereich. Fallback auf Default."""
+    raw = os.getenv(var_name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(value, max_value))
+
+
+CLI_BUFFER_LIMIT = _get_bounded_int_env(
+    "PULSESCRIBE_CLI_BUFFER_LIMIT", default=500, min_value=1, max_value=5000
 )  # Max. gepufferte Chunks während WebSocket-Handshake (~10s Audio bei 20ms Chunks)
-WARM_STREAM_QUEUE_SIZE = int(
-    os.getenv("PULSESCRIBE_WARM_STREAM_QUEUE_SIZE", "300")
+WARM_STREAM_QUEUE_SIZE = _get_bounded_int_env(
+    "PULSESCRIBE_WARM_STREAM_QUEUE_SIZE", default=300, min_value=1, max_value=5000
 )  # Queue-Größe für Warm-Stream (~6s Audio bei 20ms Chunks)
 
 # Watchdog: Automatisches Timeout wenn TRANSCRIBING zu lange dauert
