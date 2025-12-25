@@ -33,10 +33,15 @@ from PySide6.QtWidgets import (
 from utils.preferences import (
     get_api_key,
     get_env_setting,
+    get_show_welcome_on_startup,
+    is_onboarding_complete,
     remove_env_setting,
     save_api_key,
     save_env_setting,
+    set_onboarding_step,
+    set_show_welcome_on_startup,
 )
+from utils.onboarding import OnboardingStep
 
 logger = logging.getLogger("pulsescribe.settings")
 
@@ -1266,6 +1271,20 @@ class SettingsWindow(QDialog):
         card_layout.addWidget(links)
 
         layout.addWidget(card)
+
+        # Startup Settings Card
+        startup_card, startup_layout = create_card(
+            "⚙️ Startup",
+            "Configure behavior when PulseScribe starts."
+        )
+
+        # Show at startup checkbox
+        self._show_at_startup_checkbox = QCheckBox("Show Settings at startup")
+        self._show_at_startup_checkbox.setChecked(get_show_welcome_on_startup())
+        self._show_at_startup_checkbox.stateChanged.connect(self._on_show_at_startup_changed)
+        startup_layout.addWidget(self._show_at_startup_checkbox)
+
+        layout.addWidget(startup_card)
         layout.addStretch()
 
         return content
@@ -1303,6 +1322,10 @@ class SettingsWindow(QDialog):
         """Handler für Batch-Size Slider."""
         if self._lightning_batch_value:
             self._lightning_batch_value.setText(str(value))
+
+    def _on_show_at_startup_changed(self, state: int):
+        """Handler für Show at startup Checkbox."""
+        set_show_welcome_on_startup(state == Qt.CheckState.Checked.value)
 
     def _apply_hotkey_preset(self, hotkey: str):
         """Wendet ein Hotkey-Preset an (nur Toggle)."""
@@ -2240,6 +2263,12 @@ class SettingsWindow(QDialog):
 
             # Prompts speichern (aus Cache + aktuellem Editor)
             self._save_all_prompts()
+
+            # Onboarding als abgeschlossen markieren (beim ersten Speichern)
+            # Dies verhindert, dass Settings bei jedem Start erneut öffnet
+            if not is_onboarding_complete():
+                set_onboarding_step(OnboardingStep.DONE)
+                logger.info("Onboarding als abgeschlossen markiert")
 
             logger.info("Settings gespeichert")
             self.settings_changed.emit()

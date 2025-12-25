@@ -1707,6 +1707,27 @@ class PulseScribeWindows:
         finally:
             self._prewarm_complete.set()
 
+    def _show_settings_if_needed(self):
+        """Zeigt Settings-Fenster beim ersten Start oder wenn aktiviert.
+
+        Analog zu macOS _show_welcome_if_needed(): Öffnet Settings automatisch
+        wenn Onboarding nicht abgeschlossen ist oder "Show at startup" aktiviert ist.
+        """
+        from utils.preferences import (
+            is_onboarding_complete,
+            get_show_welcome_on_startup,
+        )
+
+        # Logik analog zu macOS (dort mit Wizard, hier direkt Settings):
+        # 1. Erster Start (Onboarding nicht complete) → Settings öffnen
+        # 2. Sonst: Nur wenn "Show at startup" aktiviert → Settings öffnen
+        if not is_onboarding_complete():
+            logger.info("Erster Start erkannt - Settings öffnen")
+            self._show_settings()
+        elif get_show_welcome_on_startup():
+            logger.info("'Show at startup' aktiviert - Settings öffnen")
+            self._show_settings()
+
     def run(self):
         """Startet den Daemon."""
         hotkey_info = []
@@ -1746,6 +1767,9 @@ class PulseScribeWindows:
 
         # FileWatcher für Auto-Reload bei .env Änderungen
         self._start_env_watcher()
+
+        # Settings-Fenster beim ersten Start oder wenn aktiviert öffnen (wie macOS)
+        self._show_settings_if_needed()
 
         # Ctrl+C Handler: Signal wird an _quit weitergeleitet (nur einmal)
         def signal_handler(sig, frame):
