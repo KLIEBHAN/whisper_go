@@ -189,8 +189,8 @@ class PulseScribeWindows:
         AppState.ERROR: (255, 0, 0),  # Rot
     }
 
-    # Icon-Cache: Vermeidet Neuzeichnen bei State-Wechsel
-    _icon_cache: dict[tuple, "PIL_Image.Image"] = {}
+    # Icon-Cache: Vermeidet Neuzeichnen bei State-Wechsel (key = RGB color tuple)
+    _icon_cache: dict[tuple[int, int, int], "PIL_Image.Image"] = {}
 
     def __init__(
         self,
@@ -354,18 +354,25 @@ class PulseScribeWindows:
         }
         self._tray.title = f"PulseScribe - {state_text.get(self.state, 'Unbekannt')}"
 
-    def _create_icon(self, color: tuple) -> "PIL_Image.Image":
+    def _create_icon(self, color: tuple[int, int, int]) -> "PIL_Image.Image":
         """Erstellt ein Mikrofon-Icon wie bei macOS (mit Caching)."""
         # Cache-Lookup: Gleiches Icon für gleiche Farbe wiederverwenden
         if color in PulseScribeWindows._icon_cache:
             return PulseScribeWindows._icon_cache[color]
 
+        # Fallback auf einfaches farbiges Icon wenn ImageDraw nicht verfügbar
+        if PIL_ImageDraw is None:
+            icon = PIL_Image.new("RGB", (64, 64), color)
+            PulseScribeWindows._icon_cache[color] = icon
+            return icon
+
         icon = self._draw_microphone_icon(color)
         PulseScribeWindows._icon_cache[color] = icon
         return icon
 
-    def _draw_microphone_icon(self, color: tuple, size: int = 64) -> "PIL_Image.Image":
+    def _draw_microphone_icon(self, color: tuple[int, int, int]) -> "PIL_Image.Image":
         """Zeichnet das Mikrofon-Icon (interne Methode)."""
+        size = 64  # Feste Größe für Windows Tray-Icons
         # Transparenter Hintergrund für sauberes Tray-Icon
         image = PIL_Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = PIL_ImageDraw.Draw(image)
@@ -425,7 +432,7 @@ class PulseScribeWindows:
         stand_width = 3
         # Vertikale Linie
         draw.rectangle(
-            [center_x - stand_width // 2, stand_top, center_x + stand_width // 2 + 1, stand_bottom - 3],
+            [center_x - stand_width // 2, stand_top, center_x + stand_width // 2, stand_bottom - 3],
             fill=color,
         )
         # Fuß (horizontale Linie)
