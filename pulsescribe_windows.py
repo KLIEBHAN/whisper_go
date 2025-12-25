@@ -1111,7 +1111,7 @@ class PulseScribeWindows:
                 refined=self.refine,
             )
         except Exception as e:
-            logger.debug(f"History save failed: {e}")
+            logger.warning(f"History save failed: {e}")
 
     def _handle_result(self, transcript: str):
         """Verarbeitet Transkriptions-Ergebnis."""
