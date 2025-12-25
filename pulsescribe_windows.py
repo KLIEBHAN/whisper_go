@@ -334,7 +334,7 @@ class PulseScribeWindows:
 
     def _update_tray_icon(self):
         """Aktualisiert Tray-Icon basierend auf State."""
-        if self._tray is None or PIL_Image is None:
+        if self._tray is None or PIL_Image is None or PIL_ImageDraw is None:
             return
 
         color = self.COLORS.get(self.state, (128, 128, 128))
