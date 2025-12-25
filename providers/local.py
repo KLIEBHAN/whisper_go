@@ -24,6 +24,9 @@ from utils.vocabulary import load_vocabulary
 
 logger = logging.getLogger("pulsescribe.providers.local")
 
+# Command for missing cuDNN libraries
+CUDNN_INSTALL_COMMAND = "pip install nvidia-cudnn-cu12"
+
 
 def _is_apple_silicon() -> bool:
     """Prüft ob wir auf Apple Silicon (arm64 macOS) laufen."""
@@ -419,7 +422,7 @@ class LocalProvider:
                     logger.warning(
                         f"CUDA/cuDNN nicht verfügbar ({e}), "
                         "Fallback auf CPU mit int8. "
-                        "Für GPU-Unterstützung: pip install nvidia-cudnn-cu12"
+                        f"Für GPU-Unterstützung: {CUDNN_INSTALL_COMMAND}"
                     )
                     cpu_compute = "int8"
                     cpu_cache_key = (
