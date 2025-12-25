@@ -858,12 +858,18 @@ class PulseScribeWindows:
                         self._set_state(AppState.REFINING)
                         from refine.llm import maybe_refine_transcript
 
+                        t_refine_start = time.perf_counter()
                         transcript = maybe_refine_transcript(
                             transcript,
                             refine=True,
                             refine_model=self.refine_model,
                             refine_provider=self.refine_provider,
                             context=self.context,
+                        )
+                        t_refine = time.perf_counter() - t_refine_start
+                        logger.info(
+                            f"Refine: provider={self.refine_provider}, "
+                            f"model={self.refine_model}, time={t_refine:.2f}s"
                         )
 
                     self._handle_result(transcript)
@@ -935,12 +941,18 @@ class PulseScribeWindows:
                         self._set_state(AppState.REFINING)
                         from refine.llm import maybe_refine_transcript
 
+                        t_refine_start = time.perf_counter()
                         transcript = maybe_refine_transcript(
                             transcript,
                             refine=True,
                             refine_model=self.refine_model,
                             refine_provider=self.refine_provider,
                             context=self.context,
+                        )
+                        t_refine = time.perf_counter() - t_refine_start
+                        logger.info(
+                            f"Refine: provider={self.refine_provider}, "
+                            f"model={self.refine_model}, time={t_refine:.2f}s"
                         )
 
                     self._handle_result(transcript)
@@ -1034,12 +1046,18 @@ class PulseScribeWindows:
                     self._set_state(AppState.REFINING)
                     from refine.llm import maybe_refine_transcript
 
+                    t_refine_start = time.perf_counter()
                     transcript = maybe_refine_transcript(
                         transcript,
                         refine=True,
                         refine_model=self.refine_model,
                         refine_provider=self.refine_provider,
                         context=self.context,
+                    )
+                    t_refine = time.perf_counter() - t_refine_start
+                    logger.info(
+                        f"Refine: provider={self.refine_provider}, "
+                        f"model={self.refine_model}, time={t_refine:.2f}s"
                     )
 
                 self._handle_result(transcript)
@@ -1115,8 +1133,7 @@ class PulseScribeWindows:
             # Format: {normalized_key: timestamp}
             current_keys: dict = {}
 
-            # Hold-Mode State pro Hotkey: {source_id: bool}
-            active_holds: dict[str, bool] = {}
+            # Hold-Mode State wird über self._hold_state verwaltet
 
             def normalize_key(key):
                 """Normalisiert Key zu vergleichbarer Form."""
@@ -1175,10 +1192,8 @@ class PulseScribeWindows:
                                     # Hold-Mode: Recording starten, bleibt aktiv bis Release
                                     if self.state == AppState.LOADING and self._is_prewarm_loading:
                                         logger.debug("Hold-Hotkey ignoriert: Pre-Warm noch nicht abgeschlossen")
-                                    elif not active_holds.get(source_id):
-                                        active_holds[source_id] = True
-                                        if self._hold_state.should_start(source_id):
-                                            self._start_recording_from_hold(source_id)
+                                    elif self._hold_state.should_start(source_id):
+                                        self._start_recording_from_hold(source_id)
                                 else:
                                     # Toggle-Mode: Keys leeren und Toggle-Action
                                     current_keys.clear()
@@ -1193,10 +1208,9 @@ class PulseScribeWindows:
 
                 # Jeden Hold-Hotkey prüfen
                 for hotkey_keys, mode, source_id in parsed_hotkeys:
-                    if mode == "hold" and active_holds.get(source_id):
+                    if mode == "hold" and self._hold_state.is_active(source_id):
                         if not hotkey_keys.issubset(active_keys):
                             # Mindestens eine Hotkey-Taste wurde losgelassen
-                            active_holds[source_id] = False
                             logger.debug(f"Hotkey losgelassen: {normalized}")
                             if self._hold_state.should_stop(source_id):
                                 self._stop_recording_from_hotkey()

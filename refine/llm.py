@@ -272,7 +272,7 @@ def maybe_refine_transcript(
     except (APIError, APIConnectionError, RateLimitError) as e:
         logger.warning(f"LLM-Nachbearbeitung fehlgeschlagen: {e}")
         return transcript
-    except Exception as e:
+    except Exception:
         # Generischer Fallback für unerwartete Fehler (z.B. Netzwerk, JSON-Parsing)
-        logger.warning(f"LLM-Nachbearbeitung fehlgeschlagen (unerwartet): {e}")
+        logger.exception("LLM-Nachbearbeitung fehlgeschlagen (unerwartet)")
         return transcript
