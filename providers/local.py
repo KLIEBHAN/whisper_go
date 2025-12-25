@@ -400,7 +400,8 @@ class LocalProvider:
             if cache_key in self._model_cache:
                 return self._model_cache[cache_key]
             log(
-                f"Lade faster-whisper Modell '{faster_name}' ({device}, {compute_type}, "
+                f"Lade faster-whisper Modell '{faster_name}' "
+                f"(Device: {device.upper()}, Compute: {compute_type}, "
                 f"threads={cpu_threads}, workers={num_workers})..."
             )
             try:
@@ -417,13 +418,17 @@ class LocalProvider:
                 if device == "cuda" and ("cudnn" in error_msg or "cuda" in error_msg):
                     logger.warning(
                         f"CUDA/cuDNN nicht verfügbar ({e}), "
-                        "fallback auf CPU. Für GPU-Unterstützung cuDNN installieren."
+                        "Fallback auf CPU mit int8. "
+                        "Für GPU-Unterstützung: pip install nvidia-cudnn-cu12"
                     )
                     cpu_compute = "int8"
                     cpu_cache_key = (
                         f"faster:{faster_name}:cpu:{cpu_compute}:{cpu_threads}:{num_workers}"
                     )
-                    log(f"Lade faster-whisper Modell '{faster_name}' (cpu, {cpu_compute})...")
+                    log(
+                        f"Lade faster-whisper Modell '{faster_name}' "
+                        f"(Device: CPU [Fallback], Compute: {cpu_compute})..."
+                    )
                     self._model_cache[cpu_cache_key] = WhisperModel(
                         faster_name,
                         device="cpu",
