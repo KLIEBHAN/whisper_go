@@ -5,7 +5,8 @@ These documents are kept for reference but may not reflect the current implement
 
 ## Contents
 
-- `WINDOWS_ANALYSIS.md` - Pre-implementation analysis for Windows support (superseded by [WINDOWS_MVP.md](../WINDOWS_MVP.md))
+- `WINDOWS_MVP_2025-12.md` - Windows MVP definition and implementation status (completed 2025-12-22)
+- `WINDOWS_ANALYSIS.md` - Pre-implementation analysis for Windows support
 - `plans/` - Implementation plans for completed features
 
 ## Note
@@ -13,4 +14,5 @@ These documents are kept for reference but may not reflect the current implement
 For current documentation, see:
 - [README.md](../../README.md) - User documentation
 - [CLAUDE.md](../../CLAUDE.md) - Architecture and developer reference
-- [WINDOWS_MVP.md](../WINDOWS_MVP.md) - Windows implementation status
+- [SECURITY.md](../SECURITY.md) - Security and privacy documentation
+- [NETWORK.md](../NETWORK.md) - Network requirements

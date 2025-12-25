@@ -2,7 +2,7 @@
 
 > ⚠️ **ARCHIVIERT (2025-12-25):** Diese Analyse wurde vor der Windows-Implementierung erstellt.
 > Der Windows-MVP wurde am 2025-12-22 fertiggestellt.
-> Siehe [WINDOWS_MVP.md](../WINDOWS_MVP.md) für den aktuellen Status.
+> Siehe [WINDOWS_MVP_2025-12.md](./WINDOWS_MVP_2025-12.md) für den MVP-Status.
 
 > **Ziel:** Bewertung des Aufwands, PulseScribe auf Windows zu portieren
 

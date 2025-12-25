@@ -5,7 +5,7 @@
 **PulseScribe** – Minimalistische Spracheingabe für macOS und Windows, inspiriert von [Wispr Flow](https://wisprflow.ai).
 
 Siehe [docs/VISION.md](docs/VISION.md) für Roadmap und langfristige Ziele.
-Siehe [docs/WINDOWS_MVP.md](docs/WINDOWS_MVP.md) für Windows-Port Status.
+Siehe [docs/SECURITY.md](docs/SECURITY.md) und [docs/NETWORK.md](docs/NETWORK.md) für Sicherheit und Netzwerk.
 
 ## Architektur
 

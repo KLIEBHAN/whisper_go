@@ -18,6 +18,7 @@
 - [Development](#development)
   - [Windows Support](#windows-support)
   - [Building the macOS App Bundle](#building-the-macos-app-bundle)
+- [Additional Documentation](#additional-documentation)
 
 ---
 
@@ -803,3 +804,14 @@ export NOTARY_PROFILE="whispergo-notary"
 ```
 
 See `docs/BUILDING_MACOS.md` for notarization setup.
+
+## Additional Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Security & Privacy](docs/SECURITY.md) | Data handling, permissions, API key storage |
+| [Network Requirements](docs/NETWORK.md) | Endpoints, firewall rules, proxy configuration, offline mode |
+| [Vision & Roadmap](docs/VISION.md) | Project goals and planned features |
+| [Building macOS](docs/BUILDING_MACOS.md) | App bundle and DMG creation |
+| [Building Windows](docs/BUILDING_WINDOWS.md) | EXE and installer creation |
+| [CLAUDE.md](CLAUDE.md) | Architecture reference for developers |

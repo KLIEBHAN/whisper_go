@@ -18,6 +18,7 @@
 - [Development](#development)
   - [Windows-Unterstützung](#windows-unterstützung)
   - [macOS App Bundle erstellen](#macos-app-bundle-erstellen)
+- [Weitere Dokumentation](#weitere-dokumentation)
 
 ---
 
@@ -738,3 +739,14 @@ export NOTARY_PROFILE="whispergo-notary"
 ```
 
 Siehe `docs/BUILDING_MACOS.md` für die Notarization-Einrichtung.
+
+## Weitere Dokumentation
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [Sicherheit & Datenschutz](docs/SICHERHEIT.md) | Datenverarbeitung, Berechtigungen, API-Key-Speicherung |
+| [Netzwerk-Anforderungen](docs/NETZWERK.md) | Endpunkte, Firewall-Regeln, Proxy-Konfiguration, Offline-Modus |
+| [Vision & Roadmap](docs/VISION.md) | Projektziele und geplante Features |
+| [macOS Build](docs/BUILDING_MACOS.md) | App-Bundle und DMG-Erstellung |
+| [Windows Build](docs/BUILDING_WINDOWS.md) | EXE und Installer-Erstellung |
+| [CLAUDE.md](CLAUDE.md) | Architektur-Referenz für Entwickler |
