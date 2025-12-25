@@ -524,6 +524,7 @@ async def deepgram_stream_core(
             # 2. Finalize: Deepgram verarbeitet gepuffertes Audio
             #    Server antwortet mit from_finalize=True wenn fertig
             logger.info(f"[{session_id}] Sende Finalize...")
+            t_finalize_start = time.perf_counter()
             try:
                 await connection.send_control(ListenV1ControlMessage(type="Finalize"))
             except Exception as e:
@@ -532,9 +533,14 @@ async def deepgram_stream_core(
             # 3. Warten auf finale Transkripte (from_finalize=True Event)
             try:
                 await asyncio.wait_for(finalize_done.wait(), timeout=FINALIZE_TIMEOUT)
-                logger.info(f"[{session_id}] Finalize abgeschlossen")
+                t_finalize = (time.perf_counter() - t_finalize_start) * 1000
+                logger.info(f"[{session_id}] Finalize abgeschlossen ({t_finalize:.0f}ms)")
             except asyncio.TimeoutError:
-                logger.warning(f"[{session_id}] Finalize-Timeout ({FINALIZE_TIMEOUT}s)")
+                t_finalize = (time.perf_counter() - t_finalize_start) * 1000
+                logger.warning(
+                    f"[{session_id}] Finalize-Timeout nach {t_finalize:.0f}ms "
+                    f"(max: {FINALIZE_TIMEOUT}s)"
+                )
 
             # 4. CloseStream: Erzwingt sofortiges Verbindungs-Ende
             #    Ohne CloseStream wartet der async-with Exit ~10s auf Server-Close
