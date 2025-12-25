@@ -1099,11 +1099,26 @@ class PulseScribeWindows:
             time.sleep(1.0)
             self._set_state(AppState.IDLE)
 
+    def _save_to_history(self, transcript: str) -> None:
+        """Speichert Transkript in der Historie."""
+        from utils.history import save_transcript
+
+        try:
+            save_transcript(
+                transcript,
+                mode=self.mode,
+                language=os.getenv("PULSESCRIBE_LANGUAGE", "de"),
+                refined=self.refine,
+            )
+        except Exception as e:
+            logger.warning(f"History save failed: {e}")
+
     def _handle_result(self, transcript: str):
         """Verarbeitet Transkriptions-Ergebnis."""
         logger.info(f"Transkript: {transcript[:50]}...")
         self._set_state(AppState.DONE)
         self._play_sound("done")
+        self._save_to_history(transcript)
 
         if self.auto_paste:
             success = paste_transcript(transcript)
