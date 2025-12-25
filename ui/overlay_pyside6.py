@@ -572,18 +572,19 @@ class PySide6OverlayWidget(QWidget):
     def _draw_background(self, painter: QPainter):
         """Zeichnet abgerundeten Hintergrund.
 
-        Bei aktivem Mica-Effekt wird nur der Border gezeichnet,
-        da DWM den Hintergrund mit Blur rendert.
+        Bei aktivem Mica-Effekt wird nichts gezeichnet, da DWM das
+        komplette Fenster mit Blur und nativen runden Ecken rendert.
         """
+        # Bei Mica: DWM übernimmt Hintergrund UND Ecken - nichts zeichnen
+        if self._mica_enabled:
+            return
+
+        # Fallback: Solid-Background mit QPainter (Win10/ältere Builds)
         path = QPainterPath()
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         path.addRoundedRect(rect, WINDOW_CORNER_RADIUS, WINDOW_CORNER_RADIUS)
 
-        # Hintergrund (nur wenn kein Mica aktiv - DWM übernimmt sonst)
-        if not self._mica_enabled:
-            painter.fillPath(path, QBrush(BG_COLOR))
-
-        # Border (immer zeichnen für visuelle Abgrenzung)
+        painter.fillPath(path, QBrush(BG_COLOR))
         painter.setPen(QPen(BORDER_COLOR, 1))
         painter.drawPath(path)
 
