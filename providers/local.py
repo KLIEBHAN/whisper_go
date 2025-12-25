@@ -400,7 +400,8 @@ class LocalProvider:
             if cache_key in self._model_cache:
                 return self._model_cache[cache_key]
             log(
-                f"Lade faster-whisper Modell '{faster_name}' ({device}, {compute_type}, "
+                f"Lade faster-whisper Modell '{faster_name}' "
+                f"(Device: {device.upper()}, Compute: {compute_type}, "
                 f"threads={cpu_threads}, workers={num_workers})..."
             )
             try:
@@ -417,13 +418,17 @@ class LocalProvider:
                 if device == "cuda" and ("cudnn" in error_msg or "cuda" in error_msg):
                     logger.warning(
                         f"CUDA/cuDNN nicht verfügbar ({e}), "
-                        "fallback auf CPU. Für GPU-Unterstützung cuDNN installieren."
+                        "Fallback auf CPU mit int8. "
+                        "Für GPU-Unterstützung: pip install nvidia-cudnn-cu12"
                     )
                     cpu_compute = "int8"
                     cpu_cache_key = (
                         f"faster:{faster_name}:cpu:{cpu_compute}:{cpu_threads}:{num_workers}"
                     )
-                    log(f"Lade faster-whisper Modell '{faster_name}' (cpu, {cpu_compute})...")
+                    log(
+                        f"Lade faster-whisper Modell '{faster_name}' "
+                        f"(Device: CPU [Fallback], Compute: {cpu_compute})..."
+                    )
                     self._model_cache[cpu_cache_key] = WhisperModel(
                         faster_name,
                         device="cpu",
@@ -567,6 +572,25 @@ class LocalProvider:
         if env_model:
             return env_model.strip()
         return self.default_model
+
+    def get_runtime_info(self) -> dict[str, str | None]:
+        """Gibt aktuelle Runtime-Konfiguration zurück (nach preload/transcribe).
+
+        Returns:
+            Dict mit backend, device, compute_type (compute_type nur bei faster-whisper).
+        """
+        self._ensure_runtime_config()
+        info: dict[str, str | None] = {
+            "backend": self._backend,
+            "device": self._device,
+        }
+        # compute_type nur bei faster-whisper relevant
+        if self._backend == "faster":
+            device = "cuda" if self._device == "cuda" else "cpu"
+            info["compute_type"] = self._compute_type or (
+                "float16" if device == "cuda" else "int8"
+            )
+        return info
 
     def preload(self, model: str | None = None) -> None:
         """Lädt ein Modell vorab in den Cache."""
