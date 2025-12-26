@@ -124,6 +124,10 @@ _STATEFUL_PROVIDERS = {"local"}
 _DEFAULT_TOGGLE_HOTKEY = "ctrl+alt+r"
 _DEFAULT_HOLD_HOTKEY = "ctrl+win"
 
+# Shutdown-Timeout für FileWatcher und andere Komponenten (Sekunden)
+# Kurz gehalten für schnelles Beenden - Daemon-Threads werden automatisch beendet
+_SHUTDOWN_TIMEOUT_SEC = 0.1
+
 
 def _resample_audio(audio, from_rate: int, to_rate: int):
     """Resampled Audio-Array von from_rate auf to_rate.
@@ -1270,6 +1274,9 @@ class PulseScribeWindows:
                             if self._hold_state.should_stop(source_id):
                                 self._stop_recording_from_hotkey()
 
+            # pynput.Listener ist standardmäßig ein Daemon-Thread (daemon=True)
+            # Das ist wichtig für die Shutdown-Logik: Daemon-Threads werden beim
+            # Prozessende automatisch beendet, auch wenn stop() blockiert
             listener = keyboard.Listener(on_press=on_press, on_release=on_release)
             listener.start()
             self._hotkey_listeners.append(listener)
@@ -1685,7 +1692,7 @@ class PulseScribeWindows:
         if hasattr(self, "_env_observer") and self._env_observer is not None:
             try:
                 self._env_observer.stop()
-                self._env_observer.join(timeout=0.1)  # Kurz warten, dann weitermachen
+                self._env_observer.join(timeout=_SHUTDOWN_TIMEOUT_SEC)
                 logger.debug("FileWatcher gestoppt")
             except Exception as e:
                 logger.debug(f"FileWatcher Stop-Fehler: {e}")
