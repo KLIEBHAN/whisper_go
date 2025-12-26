@@ -1347,21 +1347,21 @@ class PulseScribeWindows:
         self._tray = pystray.Icon("pulsescribe", icon, "PulseScribe - Bereit", menu)
 
     def _quit(self):
-        """Beendet den Daemon."""
+        """Beendet den Daemon.
+
+        Optimiert für schnelles Beenden:
+        - Hotkey-Listener werden nicht blockierend gestoppt (Daemon-Threads)
+        - FileWatcher mit kurzem Timeout
+        - Alle Komponenten signalisieren Stop, ohne lange zu warten
+        """
         logger.info("Beende PulseScribe...")
 
-        # Stop-Signal fuer Hauptschleife
+        # Stop-Signal für Hauptschleife
         self._stop_event.set()
 
-        # FileWatcher stoppen
-        self._stop_env_watcher()
-
-        # Warm-Stream stoppen
-        self._stop_warm_stream()
-
-        if self._overlay:
-            self._overlay.stop()
-
+        # Hotkey-Listener: stop() aufrufen, aber NICHT warten
+        # pynput-Listener blockieren bis zum nächsten Tastendruck - das umgehen wir
+        # Die Listener sind Daemon-Threads und werden beim Prozessende automatisch beendet
         for listener in self._hotkey_listeners:
             try:
                 listener.stop()
@@ -1369,6 +1369,17 @@ class PulseScribeWindows:
                 pass
         self._hotkey_listeners.clear()
 
+        # FileWatcher stoppen (kurzer Timeout)
+        self._stop_env_watcher()
+
+        # Warm-Stream stoppen
+        self._stop_warm_stream()
+
+        # Overlay stoppen
+        if self._overlay:
+            self._overlay.stop()
+
+        # Tray stoppen (beendet auch den Prozess)
         if self._tray:
             self._tray.stop()
 
@@ -1670,11 +1681,11 @@ class PulseScribeWindows:
 
     def _stop_env_watcher(self):
         """Stoppt den FileWatcher und Polling."""
-        # FileWatcher stoppen
+        # FileWatcher stoppen (kurzer Timeout für schnelles Beenden)
         if hasattr(self, "_env_observer") and self._env_observer is not None:
             try:
                 self._env_observer.stop()
-                self._env_observer.join(timeout=1.0)
+                self._env_observer.join(timeout=0.1)  # Kurz warten, dann weitermachen
                 logger.debug("FileWatcher gestoppt")
             except Exception as e:
                 logger.debug(f"FileWatcher Stop-Fehler: {e}")
