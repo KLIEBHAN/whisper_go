@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from ui.styles_windows import (
     CARD_PADDING,
     COLORS,
+    DEFAULT_FONT_FAMILY,
     LANGUAGE_OPTIONS,
     get_pynput_key_map,
     get_wizard_stylesheet,
@@ -89,21 +90,21 @@ def _create_choice_button(title: str, description: str) -> QPushButton:
     btn.setObjectName("choice")
     btn.setCheckable(True)
     btn.setText(f"{title}\n{description}")
-    btn.setFont(QFont("Segoe UI", 10))
+    btn.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
     return btn
 
 
 def _create_section_title(text: str) -> QLabel:
     """Creates a section title label."""
     label = QLabel(text)
-    label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+    label.setFont(QFont(DEFAULT_FONT_FAMILY, 14, QFont.Weight.Bold))
     return label
 
 
 def _create_description(text: str) -> QLabel:
     """Creates a description label."""
     label = QLabel(text)
-    label.setFont(QFont("Segoe UI", 10))
+    label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
     label.setStyleSheet(f"color: {COLORS['text_secondary']};")
     label.setWordWrap(True)
     return label
@@ -213,11 +214,11 @@ class OnboardingWizardWindows(QDialog):
         header_layout.setContentsMargins(PADDING, PADDING, PADDING, 12)
 
         title = QLabel("PulseScribe Setup")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title.setFont(QFont(DEFAULT_FONT_FAMILY, 18, QFont.Weight.Bold))
         header_layout.addWidget(title)
 
         self._progress_label = QLabel()
-        self._progress_label.setFont(QFont("Segoe UI", 10))
+        self._progress_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
         self._progress_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         header_layout.addWidget(self._progress_label)
 
@@ -303,7 +304,7 @@ class OnboardingWizardWindows(QDialog):
         # Language selection
         lang_row = QHBoxLayout()
         lang_label = QLabel("Sprache:")
-        lang_label.setFont(QFont("Segoe UI", 10))
+        lang_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
         lang_row.addWidget(lang_label)
 
         self._lang_combo = QComboBox()
@@ -339,16 +340,16 @@ class OnboardingWizardWindows(QDialog):
 
         mic_row = QHBoxLayout()
         mic_icon = QLabel("🎤")
-        mic_icon.setFont(QFont("Segoe UI", 16))
+        mic_icon.setFont(QFont(DEFAULT_FONT_FAMILY, 16))
         mic_row.addWidget(mic_icon)
 
         mic_text = QVBoxLayout()
         mic_title = QLabel("Mikrofon")
-        mic_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        mic_title.setFont(QFont(DEFAULT_FONT_FAMILY, 11, QFont.Weight.Bold))
         mic_text.addWidget(mic_title)
 
         self._mic_status_label = QLabel("Wird geprüft...")
-        self._mic_status_label.setFont(QFont("Segoe UI", 9))
+        self._mic_status_label.setFont(QFont(DEFAULT_FONT_FAMILY, 9))
         self._mic_status_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         mic_text.addWidget(self._mic_status_label)
 
@@ -366,7 +367,7 @@ class OnboardingWizardWindows(QDialog):
             "Hinweis: Unter Windows sind keine weiteren Berechtigungen erforderlich. "
             "Hotkeys funktionieren systemweit ohne zusätzliche Einstellungen."
         )
-        info.setFont(QFont("Segoe UI", 9))
+        info.setFont(QFont(DEFAULT_FONT_FAMILY, 9))
         info.setStyleSheet(f"color: {COLORS['text_hint']};")
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -395,7 +396,7 @@ class OnboardingWizardWindows(QDialog):
         # Toggle hotkey
         toggle_row = QHBoxLayout()
         toggle_label = QLabel("Toggle-Hotkey:")
-        toggle_label.setFont(QFont("Segoe UI", 10))
+        toggle_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
         toggle_label.setMinimumWidth(120)
         toggle_row.addWidget(toggle_label)
 
@@ -418,7 +419,7 @@ class OnboardingWizardWindows(QDialog):
         # Hold hotkey
         hold_row = QHBoxLayout()
         hold_label = QLabel("Hold-Hotkey:")
-        hold_label.setFont(QFont("Segoe UI", 10))
+        hold_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
         hold_label.setMinimumWidth(120)
         hold_row.addWidget(hold_label)
 
@@ -442,7 +443,7 @@ class OnboardingWizardWindows(QDialog):
         hint = QLabel(
             "Toggle: Drücken-Sprechen-Drücken | Hold: Halten-Sprechen-Loslassen"
         )
-        hint.setFont(QFont("Segoe UI", 9))
+        hint.setFont(QFont(DEFAULT_FONT_FAMILY, 9))
         hint.setStyleSheet(f"color: {COLORS['text_hint']};")
         card_layout.addWidget(hint)
 
@@ -450,7 +451,7 @@ class OnboardingWizardWindows(QDialog):
 
         # Presets
         presets_label = QLabel("Schnellauswahl:")
-        presets_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        presets_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10, QFont.Weight.Bold))
         layout.addWidget(presets_label)
 
         presets_row = QHBoxLayout()
@@ -502,7 +503,7 @@ class OnboardingWizardWindows(QDialog):
         hotkey_label = QLabel(
             " | ".join(hotkey_text) if hotkey_text else "Kein Hotkey konfiguriert"
         )
-        hotkey_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        hotkey_label.setFont(QFont(DEFAULT_FONT_FAMILY, 11, QFont.Weight.Bold))
         hotkey_label.setStyleSheet(f"color: {COLORS['accent']};")
         layout.addWidget(hotkey_label)
 
@@ -510,7 +511,7 @@ class OnboardingWizardWindows(QDialog):
         card, card_layout = _create_card()
 
         self._test_status_label = QLabel("Warte auf Hotkey...")
-        self._test_status_label.setFont(QFont("Segoe UI", 10))
+        self._test_status_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
         self._test_status_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         card_layout.addWidget(self._test_status_label)
 
@@ -523,6 +524,16 @@ class OnboardingWizardWindows(QDialog):
         card_layout.addWidget(self._test_transcript)
 
         layout.addWidget(card)
+
+        # Standalone mode notice
+        notice = QLabel(
+            "Hinweis: Im Standalone-Modus ist die Test-Funktion nicht verfügbar. "
+            "Starte PulseScribe nach dem Setup, um die Diktierfunktion zu testen."
+        )
+        notice.setFont(QFont(DEFAULT_FONT_FAMILY, 9))
+        notice.setStyleSheet(f"color: {COLORS['warning']};")
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
 
         # Skip link
         skip_btn = QPushButton("Überspringen →")
@@ -583,7 +594,7 @@ class OnboardingWizardWindows(QDialog):
 
         # Ready message
         ready = QLabel("Du kannst jetzt mit dem Diktieren beginnen!")
-        ready.setFont(QFont("Segoe UI", 11))
+        ready.setFont(QFont(DEFAULT_FONT_FAMILY, 11))
         ready.setStyleSheet(f"color: {COLORS['success']};")
         layout.addWidget(ready)
 
@@ -949,6 +960,13 @@ class OnboardingWizardWindows(QDialog):
         if self._mic_timer:
             self._mic_timer.stop()
         super().closeEvent(event)
+
+    def reject(self) -> None:
+        """Handle ESC key or Cancel - ensures proper cleanup."""
+        self._stop_hotkey_recording()
+        if self._mic_timer:
+            self._mic_timer.stop()
+        super().reject()
 
 
 # =============================================================================

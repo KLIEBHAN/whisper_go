@@ -2103,6 +2103,11 @@ def main():
         action="store_true",
         help="Settings-Fenster öffnen (statt Daemon starten)",
     )
+    parser.add_argument(
+        "--onboarding",
+        action="store_true",
+        help="Onboarding-Wizard öffnen (statt Daemon starten)",
+    )
 
     args = parser.parse_args()
 
@@ -2118,6 +2123,20 @@ def main():
             sys.exit(app.exec())
         except ImportError as e:
             print(f"Settings-Fenster nicht verfügbar: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # --onboarding: Onboarding-Wizard öffnen und beenden (kein Daemon)
+    if args.onboarding:
+        try:
+            from PySide6.QtWidgets import QApplication
+            from ui.onboarding_wizard_windows import OnboardingWizardWindows
+
+            app = QApplication(sys.argv)
+            wizard = OnboardingWizardWindows()
+            wizard.show()
+            sys.exit(app.exec())
+        except ImportError as e:
+            print(f"Onboarding-Wizard nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
 
     if args.debug:
