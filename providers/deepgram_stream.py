@@ -745,10 +745,12 @@ async def _graceful_shutdown(
     except Exception as e:
         logger.warning(f"[{session_id}] CloseStream fehlgeschlagen: {e}")
 
-    # 5. Listener beenden
+    # 5. Listener beenden (Guard: nicht den eigenen Task canceln)
     logger.info(f"[{session_id}] Beende Listener...")
-    listen_task.cancel()
-    await asyncio.gather(listen_task, return_exceptions=True)
+    current_task = asyncio.current_task()
+    if listen_task is not current_task:
+        listen_task.cancel()
+        await asyncio.gather(listen_task, return_exceptions=True)
     logger.info(f"[{session_id}] Listener beendet")
 
 
