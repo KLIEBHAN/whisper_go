@@ -146,6 +146,7 @@ def _resample_audio(audio, from_rate: int, to_rate: int):
     # Versuch 1: scipy (beste Qualität, Anti-Aliasing)
     try:
         from scipy.signal import resample
+
         return resample(audio, new_length).astype(np.float32)
     except ImportError:
         pass
@@ -251,7 +252,9 @@ class PulseScribeWindows:
         self._warm_stream_armed = threading.Event()  # Wenn gesetzt: Samples sammeln
         # Queue mit maxsize: via PULSESCRIBE_WARM_STREAM_QUEUE_SIZE (default: 300)
         # Verhindert Memory Leak wenn Forwarder nicht läuft
-        self._warm_stream_queue: queue.Queue[bytes] = queue.Queue(maxsize=WARM_STREAM_QUEUE_SIZE)
+        self._warm_stream_queue: queue.Queue[bytes] = queue.Queue(
+            maxsize=WARM_STREAM_QUEUE_SIZE
+        )
         self._warm_stream_sample_rate = 16000  # Wird beim Start aktualisiert
         self._is_prewarm_loading = False  # Unterscheidet Pre-Warm von Recording LOADING
 
@@ -394,7 +397,12 @@ class PulseScribeWindows:
         )
         # Rechteckiger Körper
         draw.rectangle(
-            [mic_left, mic_top + mic_width // 2, mic_right, mic_bottom - mic_width // 2],
+            [
+                mic_left,
+                mic_top + mic_width // 2,
+                mic_right,
+                mic_bottom - mic_width // 2,
+            ],
             fill=color,
         )
         # Unterer Halbkreis
@@ -432,13 +440,23 @@ class PulseScribeWindows:
         stand_width = 3
         # Vertikale Linie
         draw.rectangle(
-            [center_x - stand_width // 2, stand_top, center_x + stand_width // 2, stand_bottom - 3],
+            [
+                center_x - stand_width // 2,
+                stand_top,
+                center_x + stand_width // 2,
+                stand_bottom - 3,
+            ],
             fill=color,
         )
         # Fuß (horizontale Linie)
         foot_width = 16
         draw.rectangle(
-            [center_x - foot_width // 2, stand_bottom - 3, center_x + foot_width // 2, stand_bottom],
+            [
+                center_x - foot_width // 2,
+                stand_bottom - 3,
+                center_x + foot_width // 2,
+                stand_bottom,
+            ],
             fill=color,
         )
 
@@ -530,7 +548,9 @@ class PulseScribeWindows:
                     # Queue voll - Audio-Chunk verworfen (z.B. bei langer REST-Transkription)
                     if not hasattr(self, "_warm_stream_overflow_logged"):
                         self._warm_stream_overflow_logged = True
-                        logger.warning("Warm-Stream Queue voll, Audio-Chunks werden verworfen")
+                        logger.warning(
+                            "Warm-Stream Queue voll, Audio-Chunks werden verworfen"
+                        )
 
         try:
             self._warm_stream = sd.InputStream(
@@ -837,9 +857,14 @@ class PulseScribeWindows:
                         # Erster Audio-Callback = Mikrofon ist bereit
                         logger.debug("Mikrofon bereit → LISTENING")
                         self._set_state(AppState.LISTENING)
-                    elif current_state == AppState.LISTENING and level > _VAD_THRESHOLD_RMS:
+                    elif (
+                        current_state == AppState.LISTENING
+                        and level > _VAD_THRESHOLD_RMS
+                    ):
                         # VAD: Sprache erkannt
-                        logger.debug(f"VAD triggered: level={level:.4f} > threshold={_VAD_THRESHOLD_RMS}")
+                        logger.debug(
+                            f"VAD triggered: level={level:.4f} > threshold={_VAD_THRESHOLD_RMS}"
+                        )
                         self._set_state(AppState.RECORDING)
 
                 transcript = loop.run_until_complete(
@@ -1017,7 +1042,9 @@ class PulseScribeWindows:
 
                 # Resampling auf 16kHz (Whisper erwartet WHISPER_SAMPLE_RATE)
                 if sample_rate != WHISPER_SAMPLE_RATE:
-                    audio_data = _resample_audio(audio_data, sample_rate, WHISPER_SAMPLE_RATE)
+                    audio_data = _resample_audio(
+                        audio_data, sample_rate, WHISPER_SAMPLE_RATE
+                    )
                     logger.debug(
                         f"Audio resampled: {sample_rate}Hz → {WHISPER_SAMPLE_RATE}Hz"
                     )
@@ -1177,8 +1204,11 @@ class PulseScribeWindows:
 
             def cleanup_stale_keys(now: float):
                 """Entfernt Keys die länger als Timeout gedrückt sind (missed releases)."""
-                stale = [k for k, t in current_keys.items()
-                         if now - t > _KEY_STALE_TIMEOUT_SEC]
+                stale = [
+                    k
+                    for k, t in current_keys.items()
+                    if now - t > _KEY_STALE_TIMEOUT_SEC
+                ]
                 for k in stale:
                     del current_keys[k]
                     logger.debug(f"Stale Key entfernt: {k}")
@@ -1204,12 +1234,19 @@ class PulseScribeWindows:
                             # Debouncing: Verhindere Doppel-Trigger
                             if now - self._last_hotkey_time >= _HOTKEY_DEBOUNCE_SEC:
                                 self._last_hotkey_time = now
-                                logger.debug(f"Hotkey ausgelöst: {hotkey_keys} (mode: {mode})")
+                                logger.debug(
+                                    f"Hotkey ausgelöst: {hotkey_keys} (mode: {mode})"
+                                )
 
                                 if mode == "hold":
                                     # Hold-Mode: Recording starten, bleibt aktiv bis Release
-                                    if self.state == AppState.LOADING and self._is_prewarm_loading:
-                                        logger.debug("Hold-Hotkey ignoriert: Pre-Warm noch nicht abgeschlossen")
+                                    if (
+                                        self.state == AppState.LOADING
+                                        and self._is_prewarm_loading
+                                    ):
+                                        logger.debug(
+                                            "Hold-Hotkey ignoriert: Pre-Warm noch nicht abgeschlossen"
+                                        )
                                     elif self._hold_state.should_start(source_id):
                                         self._start_recording_from_hold(source_id)
                                 else:
@@ -1233,15 +1270,15 @@ class PulseScribeWindows:
                             if self._hold_state.should_stop(source_id):
                                 self._stop_recording_from_hotkey()
 
-            listener = keyboard.Listener(
-                on_press=on_press, on_release=on_release
-            )
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
             listener.start()
             self._hotkey_listeners.append(listener)
 
             # Logging
             for hotkey_str, mode in bindings:
-                logger.info(f"Hotkey registriert: {hotkey_str} ({mode.capitalize()}-Mode)")
+                logger.info(
+                    f"Hotkey registriert: {hotkey_str} ({mode.capitalize()}-Mode)"
+                )
 
         except ImportError:
             logger.error("pynput nicht installiert")
@@ -1352,16 +1389,21 @@ class PulseScribeWindows:
 
         try:
             # PyInstaller Bundle: sich selbst mit --settings aufrufen
-            if getattr(sys, 'frozen', False):
+            if getattr(sys, "frozen", False):
                 process = subprocess.Popen(
                     [sys.executable, "--settings"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                    creationflags=(
+                        subprocess.CREATE_NO_WINDOW
+                        if hasattr(subprocess, "CREATE_NO_WINDOW")
+                        else 0
+                    ),
                 )
 
                 # Kurz warten und prüfen ob Prozess sofort stirbt
                 import time
+
                 time.sleep(0.5)
                 if process.poll() is not None:
                     _, stderr = process.communicate(timeout=1)
@@ -1384,6 +1426,7 @@ class PulseScribeWindows:
             else:
                 # Kein venv - prüfe ob PySide6 im aktuellen Python verfügbar ist
                 import importlib.util
+
                 if importlib.util.find_spec("PySide6") is None:
                     logger.warning("PySide6 nicht installiert - öffne .env im Editor")
                     self._open_env_in_editor()
@@ -1412,11 +1455,16 @@ class PulseScribeWindows:
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW
+                    if hasattr(subprocess, "CREATE_NO_WINDOW")
+                    else 0
+                ),
             )
 
             # Kurz warten und prüfen ob Prozess sofort stirbt (Import-Fehler etc.)
             import time
+
             time.sleep(0.5)
             if process.poll() is not None:
                 _, stderr = process.communicate(timeout=1)
@@ -1435,6 +1483,7 @@ class PulseScribeWindows:
         """Öffnet die .env Datei im Standard-Editor als Fallback."""
         try:
             from utils.preferences import ENV_FILE
+
             env_path = ENV_FILE
 
             if env_path.exists():
@@ -1470,6 +1519,7 @@ class PulseScribeWindows:
 
         # .env auch als Dict lesen für explizite Instanzvariablen
         from utils.preferences import read_env_file
+
         env_values = read_env_file()
 
         # Mode aktualisieren
@@ -1488,9 +1538,7 @@ class PulseScribeWindows:
 
             # Bei Wechsel zu local: Model preloaden
             if new_mode == "local":
-                threading.Thread(
-                    target=self._preload_local_model, daemon=True
-                ).start()
+                threading.Thread(target=self._preload_local_model, daemon=True).start()
 
         # Refine aktualisieren
         self.refine = env_values.get("PULSESCRIBE_REFINE", "").lower() == "true"
@@ -1579,8 +1627,10 @@ class PulseScribeWindows:
 
                 def on_modified(handler_self, event):
                     # .env oder .reload Datei beachten
-                    if not (event.src_path.endswith(".env") or
-                            event.src_path.endswith(".reload")):
+                    if not (
+                        event.src_path.endswith(".env")
+                        or event.src_path.endswith(".reload")
+                    ):
                         return
                     # Debounce: Ignoriere Events < 1s nach letztem
                     now = time.time()
@@ -1602,9 +1652,7 @@ class PulseScribeWindows:
 
             handler = EnvFileHandler(self._reload_settings, self._reload_signal_file)
             self._env_observer = Observer()
-            self._env_observer.schedule(
-                handler, str(ENV_FILE.parent), recursive=False
-            )
+            self._env_observer.schedule(handler, str(ENV_FILE.parent), recursive=False)
             self._env_observer.start()
             logger.info(f"FileWatcher gestartet für {ENV_FILE.parent}")
             watchdog_started = True
@@ -1633,7 +1681,10 @@ class PulseScribeWindows:
             self._env_observer = None
 
         # Polling stoppen
-        if hasattr(self, "_reload_polling_timer") and self._reload_polling_timer is not None:
+        if (
+            hasattr(self, "_reload_polling_timer")
+            and self._reload_polling_timer is not None
+        ):
             self._reload_polling_timer.cancel()
             self._reload_polling_timer = None
 
@@ -1718,7 +1769,9 @@ class PulseScribeWindows:
 
                 # Deepgram SDK-Klassen (werden in deepgram_stream_core benötigt)
                 from deepgram.core.events import EventType  # noqa: F401
-                from deepgram.extensions.types.sockets import ListenV1ControlMessage  # noqa: F401
+                from deepgram.extensions.types.sockets import (
+                    ListenV1ControlMessage,
+                )  # noqa: F401
 
                 # Event-Loop vorab erstellen (spart ~50-100ms beim ersten Recording)
                 import asyncio
@@ -1755,6 +1808,7 @@ class PulseScribeWindows:
             if self.streaming:
                 try:
                     import socket
+
                     socket.getaddrinfo("api.deepgram.com", 443)
                 except Exception:
                     pass  # Ignorieren wenn es fehlschlägt
@@ -1789,7 +1843,9 @@ class PulseScribeWindows:
 
             total_ms = (time.perf_counter() - start) * 1000
             mode_desc = f"{self.mode} ({'Streaming' if self.streaming else 'REST'})"
-            preload_info = f", Preload={preload_ms:.0f}ms" if self.mode == "local" else ""
+            preload_info = (
+                f", Preload={preload_ms:.0f}ms" if self.mode == "local" else ""
+            )
             logger.info(
                 f"Pre-Warm abgeschlossen ({total_ms:.0f}ms, {mode_desc}, Warm-Stream): "
                 f"Imports={imports_ms:.0f}ms, Device={device_ms:.0f}ms{preload_info} "
@@ -1801,24 +1857,122 @@ class PulseScribeWindows:
             self._prewarm_complete.set()
 
     def _show_settings_if_needed(self):
-        """Zeigt Settings-Fenster beim ersten Start oder wenn aktiviert.
+        """Zeigt Wizard beim ersten Start oder Settings wenn aktiviert.
 
-        Analog zu macOS _show_welcome_if_needed(): Öffnet Settings automatisch
-        wenn Onboarding nicht abgeschlossen ist oder "Show at startup" aktiviert ist.
+        Analog zu macOS _show_welcome_if_needed(): Öffnet Wizard automatisch
+        wenn Onboarding nicht abgeschlossen ist, sonst Settings wenn aktiviert.
         """
         from utils.preferences import (
-            is_onboarding_complete,
             get_show_welcome_on_startup,
+            is_onboarding_complete,
         )
 
-        # Logik analog zu macOS (dort mit Wizard, hier direkt Settings):
-        # 1. Erster Start (Onboarding nicht complete) → Settings öffnen
+        # Logik analog zu macOS:
+        # 1. Erster Start (Onboarding nicht complete) → Wizard öffnen
         # 2. Sonst: Nur wenn "Show at startup" aktiviert → Settings öffnen
         if not is_onboarding_complete():
-            logger.info("Erster Start erkannt - Settings öffnen")
-            self._show_settings()
+            logger.info("Erster Start erkannt - Onboarding-Wizard öffnen")
+            self._show_onboarding_wizard()
         elif get_show_welcome_on_startup():
             logger.info("'Show at startup' aktiviert - Settings öffnen")
+            self._show_settings()
+
+    def _show_onboarding_wizard(self):
+        """Zeigt den Onboarding-Wizard als separaten Prozess an.
+
+        Analog zu _show_settings(): Qt-GUIs müssen in einem eigenen Prozess
+        laufen, nicht in einem Thread, da Qt den Main-Thread benötigt.
+        """
+        import subprocess
+
+        try:
+            # PyInstaller Bundle: sich selbst mit --onboarding aufrufen
+            if getattr(sys, "frozen", False):
+                process = subprocess.Popen(
+                    [sys.executable, "--onboarding"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    creationflags=(
+                        subprocess.CREATE_NO_WINDOW
+                        if hasattr(subprocess, "CREATE_NO_WINDOW")
+                        else 0
+                    ),
+                )
+
+                import time
+
+                time.sleep(0.5)
+                if process.poll() is not None:
+                    _, stderr = process.communicate(timeout=1)
+                    error_msg = stderr.decode("utf-8", errors="replace").strip()
+                    logger.error(f"Onboarding-Wizard fehlgeschlagen: {error_msg[:200]}")
+                    self._show_settings()
+                    return
+
+                logger.info("Onboarding-Wizard gestartet (--onboarding)")
+                return
+
+            # Entwicklung: Python-Interpreter mit onboarding_wizard_windows.py starten
+            venv_python = PROJECT_ROOT / "venv" / "Scripts" / "python.exe"
+            dotvenv_python = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+            if venv_python.exists():
+                python_exe = str(venv_python)
+            elif dotvenv_python.exists():
+                python_exe = str(dotvenv_python)
+            else:
+                import importlib.util
+
+                if importlib.util.find_spec("PySide6") is None:
+                    logger.warning(
+                        "PySide6 nicht installiert - öffne Settings stattdessen"
+                    )
+                    self._show_settings()
+                    return
+                python_exe = sys.executable
+
+            wizard_script = PROJECT_ROOT / "ui" / "onboarding_wizard_windows.py"
+
+            if not wizard_script.exists():
+                logger.error(f"Wizard-Script nicht gefunden: {wizard_script}")
+                self._show_settings()
+                return
+
+            # PYTHONPATH erweitern damit utils.* imports funktionieren
+            env = os.environ.copy()
+            project_root = str(PROJECT_ROOT)
+            existing_pythonpath = env.get("PYTHONPATH")
+            if existing_pythonpath:
+                env["PYTHONPATH"] = project_root + os.pathsep + existing_pythonpath
+            else:
+                env["PYTHONPATH"] = project_root
+
+            process = subprocess.Popen(
+                [python_exe, str(wizard_script)],
+                cwd=str(PROJECT_ROOT),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW
+                    if hasattr(subprocess, "CREATE_NO_WINDOW")
+                    else 0
+                ),
+            )
+
+            import time
+
+            time.sleep(0.5)
+            if process.poll() is not None:
+                _, stderr = process.communicate(timeout=1)
+                error_msg = stderr.decode("utf-8", errors="replace").strip()
+                logger.error(f"Onboarding-Wizard fehlgeschlagen: {error_msg[:200]}")
+                self._show_settings()
+                return
+
+            logger.info("Onboarding-Wizard gestartet")
+
+        except Exception as e:
+            logger.error(f"Onboarding-Wizard konnte nicht geöffnet werden: {e}")
             self._show_settings()
 
     def run(self):
@@ -1852,9 +2006,7 @@ class PulseScribeWindows:
                 self._set_state(AppState.IDLE)
                 self._play_sound("ready")  # Signal: System bereit
 
-        threading.Thread(
-            target=_prewarm_and_ready, daemon=True, name="PreWarm"
-        ).start()
+        threading.Thread(target=_prewarm_and_ready, daemon=True, name="PreWarm").start()
 
         self._setup_tray()
 
@@ -1951,6 +2103,11 @@ def main():
         action="store_true",
         help="Settings-Fenster öffnen (statt Daemon starten)",
     )
+    parser.add_argument(
+        "--onboarding",
+        action="store_true",
+        help="Onboarding-Wizard öffnen (statt Daemon starten)",
+    )
 
     args = parser.parse_args()
 
@@ -1966,6 +2123,20 @@ def main():
             sys.exit(app.exec())
         except ImportError as e:
             print(f"Settings-Fenster nicht verfügbar: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # --onboarding: Onboarding-Wizard öffnen und beenden (kein Daemon)
+    if args.onboarding:
+        try:
+            from PySide6.QtWidgets import QApplication
+            from ui.onboarding_wizard_windows import OnboardingWizardWindows
+
+            app = QApplication(sys.argv)
+            wizard = OnboardingWizardWindows()
+            wizard.show()
+            sys.exit(app.exec())
+        except ImportError as e:
+            print(f"Onboarding-Wizard nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
 
     if args.debug:
@@ -2003,12 +2174,10 @@ def main():
 
     # Hotkeys: CLI > ENV > Default
     # Konsistent mit macOS: PULSESCRIBE_TOGGLE_HOTKEY und PULSESCRIBE_HOLD_HOTKEY
-    effective_toggle_hotkey = (
-        args.toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
+    effective_toggle_hotkey = args.toggle_hotkey or os.getenv(
+        "PULSESCRIBE_TOGGLE_HOTKEY"
     )
-    effective_hold_hotkey = (
-        args.hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
-    )
+    effective_hold_hotkey = args.hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
 
     # Fallback: Wenn nichts konfiguriert, beide Defaults setzen
     if not effective_toggle_hotkey and not effective_hold_hotkey:

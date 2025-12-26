@@ -30,6 +30,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.styles_windows import (
+    CARD_PADDING,
+    CARD_SPACING,
+    COLORS,
+    LANGUAGE_OPTIONS,
+    get_pynput_key_map,
+    get_settings_stylesheet,
+)
 from utils.preferences import (
     get_api_key,
     get_env_setting,
@@ -46,62 +54,11 @@ from utils.onboarding import OnboardingStep
 logger = logging.getLogger("pulsescribe.settings")
 
 # =============================================================================
-# pynput Key-Mapping (einmalig geladen für Performance)
-# =============================================================================
-
-# Cache für pynput-Verfügbarkeit und Key-Map
-_pynput_available: bool | None = None
-_pynput_key_map: dict | None = None
-
-
-def _get_pynput_key_map() -> tuple[bool, dict]:
-    """Lädt pynput einmalig und gibt (available, key_map) zurück."""
-    global _pynput_available, _pynput_key_map
-
-    if _pynput_available is not None:
-        return _pynput_available, _pynput_key_map or {}
-
-    try:
-        from pynput import keyboard  # type: ignore[import-not-found]
-
-        _pynput_key_map = {
-            keyboard.Key.ctrl: "ctrl",
-            keyboard.Key.ctrl_l: "ctrl",
-            keyboard.Key.ctrl_r: "ctrl",
-            keyboard.Key.alt: "alt",
-            keyboard.Key.alt_l: "alt",
-            keyboard.Key.alt_r: "alt",
-            keyboard.Key.alt_gr: "alt",
-            keyboard.Key.shift: "shift",
-            keyboard.Key.shift_l: "shift",
-            keyboard.Key.shift_r: "shift",
-            keyboard.Key.cmd: "win",
-            keyboard.Key.cmd_l: "win",
-            keyboard.Key.cmd_r: "win",
-            keyboard.Key.space: "space",
-            keyboard.Key.tab: "tab",
-            keyboard.Key.backspace: "backspace",
-            keyboard.Key.delete: "delete",
-            keyboard.Key.enter: "enter",
-            keyboard.Key.esc: "esc",
-        }
-        _pynput_available = True
-    except ImportError:
-        _pynput_available = False
-        _pynput_key_map = {}
-
-    return _pynput_available, _pynput_key_map
-
-
-# =============================================================================
-# Window-Konstanten (analog zu macOS)
+# Window-Konstanten (settings-spezifisch)
 # =============================================================================
 
 SETTINGS_WIDTH = 600
 SETTINGS_HEIGHT = 700
-CARD_PADDING = 16
-CARD_CORNER_RADIUS = 12
-CARD_SPACING = 12
 
 # =============================================================================
 # Dropdown-Optionen (identisch mit macOS)
@@ -109,7 +66,6 @@ CARD_SPACING = 12
 
 MODE_OPTIONS = ["deepgram", "openai", "groq", "local"]
 REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
-LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
 LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "mlx", "lightning", "auto"]
 LOCAL_MODEL_OPTIONS = [
     "default",
@@ -128,227 +84,15 @@ DEVICE_OPTIONS = ["auto", "cpu", "cuda"]
 BOOL_OVERRIDE_OPTIONS = ["default", "true", "false"]
 LIGHTNING_QUANT_OPTIONS = ["none", "8bit", "4bit"]
 
-# =============================================================================
-# Farben (Dark Theme, angelehnt an macOS HUD)
-# =============================================================================
-
-COLORS = {
-    "bg_window": "#1a1a1a",
-    "bg_card": "rgba(255, 255, 255, 0.06)",
-    "bg_input": "rgba(255, 255, 255, 0.08)",
-    "border": "rgba(255, 255, 255, 0.15)",
-    "text": "#ffffff",
-    "text_secondary": "rgba(255, 255, 255, 0.6)",
-    "text_hint": "rgba(255, 255, 255, 0.4)",
-    "accent": "#007AFF",
-    "success": "#4CAF50",
-    "error": "#FF5252",
-    "warning": "#FFC107",
-}
-
-# =============================================================================
-# Stylesheet
-# =============================================================================
-
-STYLESHEET = f"""
-QDialog {{
-    background-color: {COLORS["bg_window"]};
-}}
-
-QTabWidget::pane {{
-    border: 1px solid {COLORS["border"]};
-    border-radius: 8px;
-    background-color: transparent;
-    padding: 8px;
-}}
-
-QTabBar::tab {{
-    background-color: transparent;
-    color: {COLORS["text_secondary"]};
-    padding: 8px 16px;
-    margin-right: 4px;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-}}
-
-QTabBar::tab:selected {{
-    background-color: {COLORS["bg_card"]};
-    color: {COLORS["text"]};
-}}
-
-QTabBar::tab:hover:!selected {{
-    background-color: rgba(255, 255, 255, 0.03);
-}}
-
-QLabel {{
-    color: {COLORS["text"]};
-    background: transparent;
-}}
-
-QLineEdit {{
-    background-color: {COLORS["bg_input"]};
-    border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
-    padding: 8px 12px;
-    color: {COLORS["text"]};
-    selection-background-color: {COLORS["accent"]};
-}}
-
-QLineEdit:focus {{
-    border-color: {COLORS["accent"]};
-}}
-
-QLineEdit:disabled {{
-    color: {COLORS["text_hint"]};
-}}
-
-QComboBox {{
-    background-color: {COLORS["bg_input"]};
-    border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
-    padding: 8px 12px;
-    color: {COLORS["text"]};
-    min-width: 120px;
-}}
-
-QComboBox:focus {{
-    border-color: {COLORS["accent"]};
-}}
-
-QComboBox::drop-down {{
-    border: none;
-    width: 24px;
-}}
-
-QComboBox::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 6px solid {COLORS["text_secondary"]};
-    margin-right: 8px;
-}}
-
-QComboBox QAbstractItemView {{
-    background-color: #2a2a2a;
-    border: 1px solid {COLORS["border"]};
-    selection-background-color: {COLORS["accent"]};
-    color: {COLORS["text"]};
-}}
-
-QCheckBox {{
-    color: {COLORS["text"]};
-    spacing: 8px;
-}}
-
-QCheckBox::indicator {{
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    border: 1px solid {COLORS["border"]};
-    background-color: {COLORS["bg_input"]};
-}}
-
-QCheckBox::indicator:checked {{
-    background-color: {COLORS["accent"]};
-    border-color: {COLORS["accent"]};
-}}
-
-QPushButton {{
-    background-color: {COLORS["bg_input"]};
-    border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
-    padding: 8px 16px;
-    color: {COLORS["text"]};
-    min-width: 80px;
-}}
-
-QPushButton:hover {{
-    background-color: rgba(255, 255, 255, 0.12);
-}}
-
-QPushButton:pressed {{
-    background-color: rgba(255, 255, 255, 0.08);
-}}
-
-QPushButton#primary {{
-    background-color: {COLORS["accent"]};
-    border-color: {COLORS["accent"]};
-}}
-
-QPushButton#primary:hover {{
-    background-color: #0066DD;
-}}
-
-QPlainTextEdit {{
-    background-color: {COLORS["bg_input"]};
-    border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
-    padding: 8px;
-    color: {COLORS["text"]};
-    selection-background-color: {COLORS["accent"]};
-}}
-
-QPlainTextEdit:focus {{
-    border-color: {COLORS["accent"]};
-}}
-
-QScrollArea {{
-    background: transparent;
-    border: none;
-}}
-
-QScrollBar:vertical {{
-    background-color: transparent;
-    width: 8px;
-    margin: 0;
-}}
-
-QScrollBar::handle:vertical {{
-    background-color: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-    min-height: 30px;
-}}
-
-QScrollBar::handle:vertical:hover {{
-    background-color: rgba(255, 255, 255, 0.3);
-}}
-
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-    height: 0;
-}}
-
-QSlider::groove:horizontal {{
-    background-color: {COLORS["bg_input"]};
-    height: 4px;
-    border-radius: 2px;
-}}
-
-QSlider::handle:horizontal {{
-    background-color: {COLORS["accent"]};
-    width: 16px;
-    height: 16px;
-    margin: -6px 0;
-    border-radius: 8px;
-}}
-
-QSlider::handle:horizontal:hover {{
-    background-color: #0066DD;
-}}
-
-QFrame#card {{
-    background-color: {COLORS["bg_card"]};
-    border: 1px solid {COLORS["border"]};
-    border-radius: {CARD_CORNER_RADIUS}px;
-}}
-"""
-
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
 
-def create_card(title: str | None = None, description: str | None = None) -> tuple[QFrame, QVBoxLayout]:
+def create_card(
+    title: str | None = None, description: str | None = None
+) -> tuple[QFrame, QVBoxLayout]:
     """Erstellt eine Card mit optionalem Titel und Beschreibung."""
     card = QFrame()
     card.setObjectName("card")
@@ -371,7 +115,9 @@ def create_card(title: str | None = None, description: str | None = None) -> tup
     return card, layout
 
 
-def create_label_row(label_text: str, widget: QWidget, hint: str | None = None) -> QHBoxLayout:
+def create_label_row(
+    label_text: str, widget: QWidget, hint: str | None = None
+) -> QHBoxLayout:
     """Erstellt eine Zeile mit Label und Widget."""
     row = QHBoxLayout()
     row.setSpacing(12)
@@ -456,13 +202,10 @@ class SettingsWindow(QDialog):
         """Konfiguriert das Fenster."""
         self.setWindowTitle("PulseScribe Settings")
         self.setFixedSize(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-        self.setStyleSheet(STYLESHEET)
+        self.setStyleSheet(get_settings_stylesheet())
 
         # Window Flags
-        self.setWindowFlags(
-            Qt.WindowType.Dialog
-            | Qt.WindowType.WindowCloseButtonHint
-        )
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
 
     def _build_ui(self):
         """Erstellt das UI."""
@@ -556,12 +299,11 @@ class SettingsWindow(QDialog):
         layout.setSpacing(CARD_SPACING)
 
         # Status Card
-        card, card_layout = create_card(
-            "✅ Status",
-            "PulseScribe is ready to use."
-        )
+        card, card_layout = create_card("✅ Status", "PulseScribe is ready to use.")
 
-        status_label = QLabel("• Hotkey: Press to start/stop recording\n• Audio will be transcribed and pasted automatically")
+        status_label = QLabel(
+            "• Hotkey: Press to start/stop recording\n• Audio will be transcribed and pasted automatically"
+        )
         status_label.setFont(QFont("Segoe UI", 10))
         status_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         card_layout.addWidget(status_label)
@@ -569,10 +311,7 @@ class SettingsWindow(QDialog):
         layout.addWidget(card)
 
         # How-To Card
-        card, card_layout = create_card(
-            "📖 How to Use",
-            "Quick guide to get started."
-        )
+        card, card_layout = create_card("📖 How to Use", "Quick guide to get started.")
 
         instructions = QLabel(
             "1. Configure your API keys in the Providers tab\n"
@@ -590,7 +329,7 @@ class SettingsWindow(QDialog):
         # Local Mode Presets Card
         card, card_layout = create_card(
             "⚡ Local Mode Presets",
-            "Quick-apply optimized settings for local transcription."
+            "Quick-apply optimized settings for local transcription.",
         )
 
         presets_layout = QHBoxLayout()
@@ -609,7 +348,9 @@ class SettingsWindow(QDialog):
 
         preset_btn_quality = QPushButton("CPU Quality")
         preset_btn_quality.setToolTip("Higher quality transcription (slower)")
-        preset_btn_quality.clicked.connect(lambda: self._apply_local_preset("cpu_quality"))
+        preset_btn_quality.clicked.connect(
+            lambda: self._apply_local_preset("cpu_quality")
+        )
         presets_layout.addWidget(preset_btn_quality)
 
         presets_layout.addStretch()
@@ -639,8 +380,7 @@ class SettingsWindow(QDialog):
 
         # Hotkey Card
         card, card_layout = create_card(
-            "⌨️ Hotkeys",
-            "Configure keyboard shortcuts for recording."
+            "⌨️ Hotkeys", "Configure keyboard shortcuts for recording."
         )
 
         # Toggle Hotkey Row
@@ -657,7 +397,9 @@ class SettingsWindow(QDialog):
 
         self._toggle_record_btn = QPushButton("Record")
         self._toggle_record_btn.setFixedWidth(80)
-        self._toggle_record_btn.clicked.connect(lambda: self._start_hotkey_recording("toggle"))
+        self._toggle_record_btn.clicked.connect(
+            lambda: self._start_hotkey_recording("toggle")
+        )
         toggle_row.addWidget(self._toggle_record_btn)
 
         card_layout.addLayout(toggle_row)
@@ -676,7 +418,9 @@ class SettingsWindow(QDialog):
 
         self._hold_record_btn = QPushButton("Record")
         self._hold_record_btn.setFixedWidth(80)
-        self._hold_record_btn.clicked.connect(lambda: self._start_hotkey_recording("hold"))
+        self._hold_record_btn.clicked.connect(
+            lambda: self._start_hotkey_recording("hold")
+        )
         hold_row.addWidget(self._hold_record_btn)
 
         card_layout.addLayout(hold_row)
@@ -700,15 +444,21 @@ class SettingsWindow(QDialog):
             ("F13 Toggle", "f13", ""),
         ]:
             btn = QPushButton(preset_name)
-            btn.clicked.connect(lambda checked, t=toggle_val, h=hold_val: self._apply_hotkey_preset_pair(t, h))
+            btn.clicked.connect(
+                lambda checked,
+                t=toggle_val,
+                h=hold_val: self._apply_hotkey_preset_pair(t, h)
+            )
             presets_layout.addWidget(btn)
 
         presets_layout.addStretch()
         card_layout.addLayout(presets_layout)
 
         # Hint
-        hint = QLabel("💡 Hold hotkey: Push-to-talk mode. Toggle hotkey: Press to start/stop.\n"
-                      "Click 'Record' and press your desired key combination.")
+        hint = QLabel(
+            "💡 Hold hotkey: Push-to-talk mode. Toggle hotkey: Press to start/stop.\n"
+            "Click 'Record' and press your desired key combination."
+        )
         hint.setFont(QFont("Segoe UI", 9))
         hint.setStyleSheet(f"color: {COLORS['text_hint']};")
         hint.setWordWrap(True)
@@ -735,7 +485,7 @@ class SettingsWindow(QDialog):
         # Settings Card
         card, card_layout = create_card(
             "⚙️ Transcription Settings",
-            "Configure the transcription provider and language."
+            "Configure the transcription provider and language.",
         )
 
         # Mode
@@ -786,8 +536,7 @@ class SettingsWindow(QDialog):
 
         # API Keys Card
         card, card_layout = create_card(
-            "🔑 API Keys",
-            "Enter your API keys for cloud providers."
+            "🔑 API Keys", "Enter your API keys for cloud providers."
         )
 
         for provider, env_key in [
@@ -834,8 +583,7 @@ class SettingsWindow(QDialog):
 
         # Local Settings Card
         card, card_layout = create_card(
-            "🔧 Local Model Settings",
-            "Advanced settings for local Whisper models."
+            "🔧 Local Model Settings", "Advanced settings for local Whisper models."
         )
 
         # Device
@@ -847,13 +595,17 @@ class SettingsWindow(QDialog):
         self._beam_size_field = QLineEdit()
         self._beam_size_field.setPlaceholderText("5")
         self._beam_size_field.setValidator(QIntValidator(1, 20))
-        card_layout.addLayout(create_label_row("Beam Size:", self._beam_size_field, "1-20"))
+        card_layout.addLayout(
+            create_label_row("Beam Size:", self._beam_size_field, "1-20")
+        )
 
         # Temperature (Float 0.0-1.0)
         self._temperature_field = QLineEdit()
         self._temperature_field.setPlaceholderText("0.0")
         self._temperature_field.setValidator(QDoubleValidator(0.0, 1.0, 2))
-        card_layout.addLayout(create_label_row("Temperature:", self._temperature_field, "0.0-1.0"))
+        card_layout.addLayout(
+            create_label_row("Temperature:", self._temperature_field, "0.0-1.0")
+        )
 
         # Best Of (Integer)
         self._best_of_field = QLineEdit()
@@ -865,31 +617,40 @@ class SettingsWindow(QDialog):
 
         # Faster-Whisper Card
         card, card_layout = create_card(
-            "🚀 Faster-Whisper Settings",
-            "Settings for faster-whisper backend."
+            "🚀 Faster-Whisper Settings", "Settings for faster-whisper backend."
         )
 
         # Compute Type
         self._compute_type_combo = QComboBox()
-        self._compute_type_combo.addItems(["default", "float16", "float32", "int8", "int8_float16"])
-        card_layout.addLayout(create_label_row("Compute Type:", self._compute_type_combo))
+        self._compute_type_combo.addItems(
+            ["default", "float16", "float32", "int8", "int8_float16"]
+        )
+        card_layout.addLayout(
+            create_label_row("Compute Type:", self._compute_type_combo)
+        )
 
         # CPU Threads
         self._cpu_threads_field = QLineEdit()
         self._cpu_threads_field.setPlaceholderText("auto")
         self._cpu_threads_field.setValidator(QIntValidator(1, 32))
-        card_layout.addLayout(create_label_row("CPU Threads:", self._cpu_threads_field, "1-32"))
+        card_layout.addLayout(
+            create_label_row("CPU Threads:", self._cpu_threads_field, "1-32")
+        )
 
         # Num Workers
         self._num_workers_field = QLineEdit()
         self._num_workers_field.setPlaceholderText("1")
         self._num_workers_field.setValidator(QIntValidator(1, 8))
-        card_layout.addLayout(create_label_row("Num Workers:", self._num_workers_field, "1-8"))
+        card_layout.addLayout(
+            create_label_row("Num Workers:", self._num_workers_field, "1-8")
+        )
 
         # Boolean Overrides
         self._without_timestamps_combo = QComboBox()
         self._without_timestamps_combo.addItems(BOOL_OVERRIDE_OPTIONS)
-        card_layout.addLayout(create_label_row("Without Timestamps:", self._without_timestamps_combo))
+        card_layout.addLayout(
+            create_label_row("Without Timestamps:", self._without_timestamps_combo)
+        )
 
         self._vad_filter_combo = QComboBox()
         self._vad_filter_combo.addItems(BOOL_OVERRIDE_OPTIONS)
@@ -903,8 +664,7 @@ class SettingsWindow(QDialog):
 
         # Lightning Card
         card, card_layout = create_card(
-            "⚡ Lightning Settings",
-            "Settings for Lightning Whisper backend."
+            "⚡ Lightning Settings", "Settings for Lightning Whisper backend."
         )
 
         # Batch Size
@@ -930,7 +690,9 @@ class SettingsWindow(QDialog):
         # Quantization
         self._lightning_quant_combo = QComboBox()
         self._lightning_quant_combo.addItems(LIGHTNING_QUANT_OPTIONS)
-        card_layout.addLayout(create_label_row("Quantization:", self._lightning_quant_combo))
+        card_layout.addLayout(
+            create_label_row("Quantization:", self._lightning_quant_combo)
+        )
 
         layout.addWidget(card)
         layout.addStretch()
@@ -952,7 +714,7 @@ class SettingsWindow(QDialog):
         # Refine Card
         card, card_layout = create_card(
             "✨ LLM Refinement",
-            "Post-process transcriptions with AI for better formatting."
+            "Post-process transcriptions with AI for better formatting.",
         )
 
         self._refine_checkbox = QCheckBox("Enable LLM Refinement")
@@ -961,7 +723,9 @@ class SettingsWindow(QDialog):
         # Provider
         self._refine_provider_combo = QComboBox()
         self._refine_provider_combo.addItems(REFINE_PROVIDER_OPTIONS)
-        card_layout.addLayout(create_label_row("Provider:", self._refine_provider_combo))
+        card_layout.addLayout(
+            create_label_row("Provider:", self._refine_provider_combo)
+        )
 
         # Model
         self._refine_model_field = QLineEdit()
@@ -972,14 +736,15 @@ class SettingsWindow(QDialog):
 
         # Display Card
         card, card_layout = create_card(
-            "🖥️ Display Settings",
-            "Configure visual feedback during transcription."
+            "🖥️ Display Settings", "Configure visual feedback during transcription."
         )
 
         self._overlay_checkbox = QCheckBox("Show Overlay during recording")
         card_layout.addWidget(self._overlay_checkbox)
 
-        self._rtf_checkbox = QCheckBox("Show RTF (Real-Time Factor) after transcription")
+        self._rtf_checkbox = QCheckBox(
+            "Show RTF (Real-Time Factor) after transcription"
+        )
         card_layout.addWidget(self._rtf_checkbox)
 
         self._clipboard_restore_checkbox = QCheckBox("Restore clipboard after paste")
@@ -1004,14 +769,17 @@ class SettingsWindow(QDialog):
 
         # Prompts Card
         card, card_layout = create_card(
-            "📝 Custom Prompts",
-            "Customize prompts for different contexts."
+            "📝 Custom Prompts", "Customize prompts for different contexts."
         )
 
         # Context Selector
         self._prompt_context_combo = QComboBox()
-        self._prompt_context_combo.addItems(["default", "email", "chat", "code", "voice_commands", "app_mappings"])
-        self._prompt_context_combo.currentTextChanged.connect(self._on_prompt_context_changed)
+        self._prompt_context_combo.addItems(
+            ["default", "email", "chat", "code", "voice_commands", "app_mappings"]
+        )
+        self._prompt_context_combo.currentTextChanged.connect(
+            self._on_prompt_context_changed
+        )
         card_layout.addLayout(create_label_row("Context:", self._prompt_context_combo))
 
         # Prompt Editor
@@ -1064,7 +832,7 @@ class SettingsWindow(QDialog):
         # Vocabulary Card
         card, card_layout = create_card(
             "📚 Custom Vocabulary",
-            "Add custom words and phrases to improve transcription accuracy."
+            "Add custom words and phrases to improve transcription accuracy.",
         )
 
         self._vocab_editor = QPlainTextEdit()
@@ -1078,7 +846,9 @@ class SettingsWindow(QDialog):
         card_layout.addWidget(self._vocab_status)
 
         # Hint
-        vocab_hint = QLabel("💡 Deepgram supports max 100 keywords, Local Whisper max 50.")
+        vocab_hint = QLabel(
+            "💡 Deepgram supports max 100 keywords, Local Whisper max 50."
+        )
         vocab_hint.setFont(QFont("Segoe UI", 9))
         vocab_hint.setStyleSheet(f"color: {COLORS['text_hint']};")
         vocab_hint.setWordWrap(True)
@@ -1126,18 +896,22 @@ class SettingsWindow(QDialog):
         self._logs_btn = QPushButton("🪵 Logs")
         self._logs_btn.setCheckable(True)
         self._logs_btn.setChecked(True)
-        self._logs_btn.setStyleSheet(f"""
+        self._logs_btn.setStyleSheet(
+            f"""
             QPushButton {{ border-radius: 6px 0 0 6px; }}
-            QPushButton:checked {{ background-color: {COLORS['accent']}; }}
-        """)
+            QPushButton:checked {{ background-color: {COLORS["accent"]}; }}
+        """
+        )
         self._logs_btn.clicked.connect(lambda: self._switch_logs_view(0))
 
         self._transcripts_btn = QPushButton("📝 Transcripts")
         self._transcripts_btn.setCheckable(True)
-        self._transcripts_btn.setStyleSheet(f"""
+        self._transcripts_btn.setStyleSheet(
+            f"""
             QPushButton {{ border-radius: 0 6px 6px 0; }}
-            QPushButton:checked {{ background-color: {COLORS['accent']}; }}
-        """)
+            QPushButton:checked {{ background-color: {COLORS["accent"]}; }}
+        """
+        )
         self._transcripts_btn.clicked.connect(lambda: self._switch_logs_view(1))
 
         # Button Group für exklusive Auswahl
@@ -1190,7 +964,9 @@ class SettingsWindow(QDialog):
         self._transcripts_viewer = QPlainTextEdit()
         self._transcripts_viewer.setReadOnly(True)
         self._transcripts_viewer.setMinimumHeight(300)
-        self._transcripts_viewer.setPlaceholderText("Transcripts history will appear here...")
+        self._transcripts_viewer.setPlaceholderText(
+            "Transcripts history will appear here..."
+        )
         transcripts_layout.addWidget(self._transcripts_viewer)
 
         # Transcripts Status
@@ -1255,8 +1031,7 @@ class SettingsWindow(QDialog):
 
         # Description
         desc = QLabel(
-            "Minimalistic voice-to-text for Windows.\n"
-            "Inspired by Wispr Flow."
+            "Minimalistic voice-to-text for Windows.\nInspired by Wispr Flow."
         )
         desc.setFont(QFont("Segoe UI", 10))
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1279,14 +1054,15 @@ class SettingsWindow(QDialog):
 
         # Startup Settings Card
         startup_card, startup_layout = create_card(
-            "⚙️ Startup",
-            "Configure behavior when PulseScribe starts."
+            "⚙️ Startup", "Configure behavior when PulseScribe starts."
         )
 
         # Show at startup checkbox
         self._show_at_startup_checkbox = QCheckBox("Show Settings at startup")
         self._show_at_startup_checkbox.setChecked(get_show_welcome_on_startup())
-        self._show_at_startup_checkbox.stateChanged.connect(self._on_show_at_startup_changed)
+        self._show_at_startup_checkbox.stateChanged.connect(
+            self._on_show_at_startup_changed
+        )
         startup_layout.addWidget(self._show_at_startup_checkbox)
 
         layout.addWidget(startup_card)
@@ -1343,7 +1119,10 @@ class SettingsWindow(QDialog):
             self._toggle_hotkey_field.setText(toggle)
         if self._hold_hotkey_field:
             self._hold_hotkey_field.setText(hold)
-        self._set_hotkey_status(f"Preset applied: Toggle={toggle or 'none'}, Hold={hold or 'none'}", "success")
+        self._set_hotkey_status(
+            f"Preset applied: Toggle={toggle or 'none'}, Hold={hold or 'none'}",
+            "success",
+        )
 
     def _start_hotkey_recording(self, kind: str):
         """Startet Hotkey-Recording für toggle oder hold."""
@@ -1353,12 +1132,18 @@ class SettingsWindow(QDialog):
         # Button-Text ändern
         if kind == "toggle" and hasattr(self, "_toggle_record_btn"):
             self._toggle_record_btn.setText("Press key...")
-            self._toggle_record_btn.setStyleSheet(f"background-color: {COLORS['accent']};")
+            self._toggle_record_btn.setStyleSheet(
+                f"background-color: {COLORS['accent']};"
+            )
         elif kind == "hold" and hasattr(self, "_hold_record_btn"):
             self._hold_record_btn.setText("Press key...")
-            self._hold_record_btn.setStyleSheet(f"background-color: {COLORS['accent']};")
+            self._hold_record_btn.setStyleSheet(
+                f"background-color: {COLORS['accent']};"
+            )
 
-        self._set_hotkey_status("Press your hotkey combination, then press Enter to confirm...", "warning")
+        self._set_hotkey_status(
+            "Press your hotkey combination, then press Enter to confirm...", "warning"
+        )
 
         # Low-level pynput Hook für Win-Taste (Qt kann sie nicht abfangen)
         self._start_pynput_listener()
@@ -1367,7 +1152,7 @@ class SettingsWindow(QDialog):
     def _start_pynput_listener(self):
         """Startet pynput Listener für Low-Level Key-Capture."""
         self._using_qt_grab = False
-        available, _ = _get_pynput_key_map()
+        available, _ = get_pynput_key_map()
 
         if not available:
             logger.warning("pynput nicht verfügbar, Fallback auf Qt grabKeyboard")
@@ -1395,7 +1180,9 @@ class SettingsWindow(QDialog):
                     with self._pressed_keys_lock:
                         self._pressed_keys.discard(key_str)
 
-            self._pynput_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            self._pynput_listener = keyboard.Listener(
+                on_press=on_press, on_release=on_release
+            )
             self._pynput_listener.start()
         except Exception as e:
             logger.warning(f"pynput Listener fehlgeschlagen: {e}, Fallback auf Qt")
@@ -1415,7 +1202,7 @@ class SettingsWindow(QDialog):
 
     def _pynput_key_to_string(self, key) -> str:
         """Konvertiert pynput Key zu String (nutzt gecachten key_map)."""
-        _, key_map = _get_pynput_key_map()
+        _, key_map = get_pynput_key_map()
 
         # Bekannte Tasten aus Cache
         if key in key_map:
@@ -1581,11 +1368,11 @@ class SettingsWindow(QDialog):
 
         # Buchstaben
         if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
-            return chr(ord('a') + key - Qt.Key.Key_A)
+            return chr(ord("a") + key - Qt.Key.Key_A)
 
         # Zahlen
         if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
-            return chr(ord('0') + key - Qt.Key.Key_0)
+            return chr(ord("0") + key - Qt.Key.Key_0)
 
         return ""
 
@@ -1604,7 +1391,9 @@ class SettingsWindow(QDialog):
         """Lädt Prompt für gewählten Kontext."""
         # Aktuellen Prompt im Cache speichern
         if self._prompt_editor and self._current_prompt_context:
-            self._prompts_cache[self._current_prompt_context] = self._prompt_editor.toPlainText()
+            self._prompts_cache[self._current_prompt_context] = (
+                self._prompt_editor.toPlainText()
+            )
 
         self._current_prompt_context = context
         self._load_prompt_for_context(context)
@@ -1645,7 +1434,11 @@ class SettingsWindow(QDialog):
                 parse_app_mappings,
             )
 
-            context = self._prompt_context_combo.currentText() if self._prompt_context_combo else "default"
+            context = (
+                self._prompt_context_combo.currentText()
+                if self._prompt_context_combo
+                else "default"
+            )
             text = self._prompt_editor.toPlainText() if self._prompt_editor else ""
 
             # Aktuelle Daten laden
@@ -1672,7 +1465,11 @@ class SettingsWindow(QDialog):
         try:
             from utils.custom_prompts import get_defaults, format_app_mappings
 
-            context = self._prompt_context_combo.currentText() if self._prompt_context_combo else "default"
+            context = (
+                self._prompt_context_combo.currentText()
+                if self._prompt_context_combo
+                else "default"
+            )
             defaults = get_defaults()
 
             if context == "voice_commands":
@@ -1702,7 +1499,9 @@ class SettingsWindow(QDialog):
         try:
             # Aktuellen Editor-Inhalt zum Cache hinzufügen
             if self._prompt_editor and self._current_prompt_context:
-                self._prompts_cache[self._current_prompt_context] = self._prompt_editor.toPlainText()
+                self._prompts_cache[self._current_prompt_context] = (
+                    self._prompt_editor.toPlainText()
+                )
 
             # Nichts zu speichern?
             if not self._prompts_cache:
@@ -1729,7 +1528,9 @@ class SettingsWindow(QDialog):
                 elif context == "app_mappings":
                     data["app_contexts"] = parse_app_mappings(text)
                 else:
-                    default_text = defaults["prompts"].get(context, {}).get("prompt", "")
+                    default_text = (
+                        defaults["prompts"].get(context, {}).get("prompt", "")
+                    )
                     if text != default_text:
                         if "prompts" not in data:
                             data["prompts"] = {}
@@ -1813,6 +1614,7 @@ class SettingsWindow(QDialog):
         try:
             # Versuche aus CHANGELOG.md zu lesen
             from pathlib import Path
+
             changelog = Path(__file__).parent.parent / "CHANGELOG.md"
             if changelog.exists():
                 for line in changelog.read_text(encoding="utf-8").split("\n"):
@@ -1828,6 +1630,7 @@ class SettingsWindow(QDialog):
         """Lädt Vocabulary aus Datei."""
         try:
             from utils.vocabulary import load_vocabulary, validate_vocabulary
+
             vocab = load_vocabulary()
             if self._vocab_editor:
                 keywords = vocab.get("keywords", [])
@@ -1841,7 +1644,9 @@ class SettingsWindow(QDialog):
                 elif hasattr(self, "_vocab_status"):
                     count = len(keywords)
                     self._vocab_status.setText(f"{count} keywords loaded")
-                    self._vocab_status.setStyleSheet(f"color: {COLORS['text_secondary']};")
+                    self._vocab_status.setStyleSheet(
+                        f"color: {COLORS['text_secondary']};"
+                    )
         except Exception as e:
             logger.error(f"Vocabulary laden fehlgeschlagen: {e}")
             if hasattr(self, "_vocab_status"):
@@ -1852,6 +1657,7 @@ class SettingsWindow(QDialog):
         """Speichert Vocabulary in Datei."""
         try:
             from utils.vocabulary import save_vocabulary, validate_vocabulary
+
             if self._vocab_editor:
                 text = self._vocab_editor.toPlainText()
                 keywords = [line.strip() for line in text.split("\n") if line.strip()]
@@ -1860,7 +1666,9 @@ class SettingsWindow(QDialog):
                 # Validierung nach Speichern
                 warnings = validate_vocabulary()
                 if warnings and hasattr(self, "_vocab_status"):
-                    self._vocab_status.setText(f"✓ Saved ({len(keywords)} keywords) - ⚠ " + "; ".join(warnings))
+                    self._vocab_status.setText(
+                        f"✓ Saved ({len(keywords)} keywords) - ⚠ " + "; ".join(warnings)
+                    )
                     self._vocab_status.setStyleSheet(f"color: {COLORS['warning']};")
                 elif hasattr(self, "_vocab_status"):
                     self._vocab_status.setText(f"✓ Saved ({len(keywords)} keywords)")
@@ -1875,17 +1683,23 @@ class SettingsWindow(QDialog):
         """Aktualisiert Log-Anzeige."""
         try:
             from config import LOG_FILE
+
             if LOG_FILE.exists() and self._logs_viewer:
-                lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").split("\n")
-                
+                lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").split(
+                    "\n"
+                )
+
                 # Check if we are at the bottom before updating
                 scrollbar = self._logs_viewer.verticalScrollBar()
                 # Consider "at bottom" if within 10 pixels of maximum or if maximum is 0 (initial load)
-                was_at_bottom = scrollbar.maximum() == 0 or scrollbar.value() >= scrollbar.maximum() - 10
+                was_at_bottom = (
+                    scrollbar.maximum() == 0
+                    or scrollbar.value() >= scrollbar.maximum() - 10
+                )
 
                 # Letzte 100 Zeilen
                 self._logs_viewer.setPlainText("\n".join(lines[-100:]))
-                
+
                 # Restore bottom position if we were there
                 if was_at_bottom:
                     scrollbar = self._logs_viewer.verticalScrollBar()
@@ -1898,6 +1712,7 @@ class SettingsWindow(QDialog):
         try:
             import subprocess
             from config import LOG_FILE
+
             subprocess.run(["explorer", "/select,", str(LOG_FILE)], check=False)
         except Exception as e:
             logger.error(f"Explorer öffnen fehlgeschlagen: {e}")
@@ -1981,8 +1796,13 @@ class SettingsWindow(QDialog):
             self._num_workers_field.setText(num_workers)
 
         # Faster-Whisper: Without Timestamps
-        without_ts = get_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS") or "default"
-        if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
+        without_ts = (
+            get_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS") or "default"
+        )
+        if (
+            hasattr(self, "_without_timestamps_combo")
+            and self._without_timestamps_combo
+        ):
             idx = self._without_timestamps_combo.findText(without_ts)
             if idx >= 0:
                 self._without_timestamps_combo.setCurrentIndex(idx)
@@ -2169,7 +1989,10 @@ class SettingsWindow(QDialog):
                     remove_env_setting("PULSESCRIBE_LOCAL_NUM_WORKERS")
 
             # Faster-Whisper: Without Timestamps
-            if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
+            if (
+                hasattr(self, "_without_timestamps_combo")
+                and self._without_timestamps_combo
+            ):
                 without_ts = self._without_timestamps_combo.currentText()
                 if without_ts == "default":
                     remove_env_setting("PULSESCRIBE_LOCAL_WITHOUT_TIMESTAMPS")
@@ -2193,12 +2016,17 @@ class SettingsWindow(QDialog):
                     save_env_setting("PULSESCRIBE_LOCAL_FP16", fp16)
 
             # Advanced: Lightning Batch Size
-            if hasattr(self, "_lightning_batch_slider") and self._lightning_batch_slider:
+            if (
+                hasattr(self, "_lightning_batch_slider")
+                and self._lightning_batch_slider
+            ):
                 batch_size = self._lightning_batch_slider.value()
                 if batch_size == 12:
                     remove_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE")  # Default
                 else:
-                    save_env_setting("PULSESCRIBE_LIGHTNING_BATCH_SIZE", str(batch_size))
+                    save_env_setting(
+                        "PULSESCRIBE_LIGHTNING_BATCH_SIZE", str(batch_size)
+                    )
 
             # Advanced: Lightning Quantization
             if hasattr(self, "_lightning_quant_combo") and self._lightning_quant_combo:
@@ -2212,7 +2040,7 @@ class SettingsWindow(QDialog):
             if self._refine_checkbox:
                 save_env_setting(
                     "PULSESCRIBE_REFINE",
-                    "true" if self._refine_checkbox.isChecked() else "false"
+                    "true" if self._refine_checkbox.isChecked() else "false",
                 )
 
             # Refine Provider
@@ -2306,6 +2134,7 @@ class SettingsWindow(QDialog):
             if hasattr(self, "_save_btn") and self._save_btn:
                 self._save_btn.setText("❌ Error!")
                 from PySide6.QtCore import QTimer
+
                 QTimer.singleShot(1500, lambda: self._save_btn.setText("Save && Apply"))
 
     def _apply_local_preset(self, preset: str):
@@ -2354,7 +2183,9 @@ class SettingsWindow(QDialog):
                 self._on_mode_changed("local")  # Sichtbarkeit aktualisieren
 
         if self._local_backend_combo:
-            idx = self._local_backend_combo.findText(values.get("local_backend", "faster"))
+            idx = self._local_backend_combo.findText(
+                values.get("local_backend", "faster")
+            )
             if idx >= 0:
                 self._local_backend_combo.setCurrentIndex(idx)
 
@@ -2369,7 +2200,9 @@ class SettingsWindow(QDialog):
                 self._device_combo.setCurrentIndex(idx)
 
         if hasattr(self, "_compute_type_combo") and self._compute_type_combo:
-            idx = self._compute_type_combo.findText(values.get("compute_type", "default"))
+            idx = self._compute_type_combo.findText(
+                values.get("compute_type", "default")
+            )
             if idx >= 0:
                 self._compute_type_combo.setCurrentIndex(idx)
 
@@ -2387,14 +2220,21 @@ class SettingsWindow(QDialog):
             if idx >= 0:
                 self._vad_filter_combo.setCurrentIndex(idx)
 
-        if hasattr(self, "_without_timestamps_combo") and self._without_timestamps_combo:
-            idx = self._without_timestamps_combo.findText(values.get("without_timestamps", "default"))
+        if (
+            hasattr(self, "_without_timestamps_combo")
+            and self._without_timestamps_combo
+        ):
+            idx = self._without_timestamps_combo.findText(
+                values.get("without_timestamps", "default")
+            )
             if idx >= 0:
                 self._without_timestamps_combo.setCurrentIndex(idx)
 
         # Feedback
         if hasattr(self, "_preset_status") and self._preset_status:
-            self._preset_status.setText(f"✓ '{preset}' preset applied — click 'Save & Apply' to persist.")
+            self._preset_status.setText(
+                f"✓ '{preset}' preset applied — click 'Save & Apply' to persist."
+            )
             self._preset_status.setStyleSheet(f"color: {COLORS['success']};")
 
     def _write_reload_signal(self):
@@ -2411,20 +2251,25 @@ class SettingsWindow(QDialog):
             logger.debug(f"Reload-Signal geschrieben: {signal_file}")
         except Exception as e:
             # Warning statt debug, damit Benutzer sieht wenn Reload nicht funktioniert
-            logger.warning(f"Reload-Signal konnte nicht geschrieben werden: {e} - "
-                          "Daemon wird Änderungen erst nach Neustart übernehmen")
+            logger.warning(
+                f"Reload-Signal konnte nicht geschrieben werden: {e} - "
+                "Daemon wird Änderungen erst nach Neustart übernehmen"
+            )
 
     def _show_save_feedback(self):
         """Zeigt visuelles Feedback nach erfolgreichem Speichern."""
         if hasattr(self, "_save_btn") and self._save_btn:
             self._save_btn.setText("✓ Saved!")
-            self._save_btn.setStyleSheet(f"""
+            self._save_btn.setStyleSheet(
+                f"""
                 QPushButton#primary {{
-                    background-color: {COLORS['success']};
-                    border-color: {COLORS['success']};
+                    background-color: {COLORS["success"]};
+                    border-color: {COLORS["success"]};
                 }}
-            """)
+            """
+            )
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(1500, self._reset_save_button)
 
     def _reset_save_button(self):
