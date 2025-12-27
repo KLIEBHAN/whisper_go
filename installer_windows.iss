@@ -11,11 +11,15 @@
 ;   - PyInstaller build output in dist/PulseScribe/
 
 #define MyAppName "PulseScribe"
-; Version can be passed via command line: iscc /DAppVersion=1.2.0 installer_windows.iss
+; Version can be passed via command line: iscc /DAppVersion=1.2.0 /DVersionSuffix=-Local installer_windows.iss
 #ifndef AppVersion
   #define AppVersion "1.1.1"
 #endif
+#ifndef VersionSuffix
+  #define VersionSuffix ""
+#endif
 #define MyAppVersion AppVersion
+#define MyVersionSuffix VersionSuffix
 #define MyAppPublisher "KLIEBHAN"
 #define MyAppURL "https://pulsescribe.me"
 #define MyAppExeName "PulseScribe.exe"
@@ -40,7 +44,7 @@ DisableProgramGroupPage=yes
 
 ; Output settings
 OutputDir=dist
-OutputBaseFilename=PulseScribe-Setup-{#MyAppVersion}
+OutputBaseFilename=PulseScribe-Setup-{#MyAppVersion}{#MyVersionSuffix}
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 

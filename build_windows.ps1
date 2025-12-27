@@ -4,6 +4,7 @@
 
 .DESCRIPTION
     Builds PulseScribe EXE and optionally creates an installer.
+    Two variants available: API-only (fast, small) or Local (with CUDA Whisper).
 
 .PARAMETER Clean
     Remove build artifacts before building.
@@ -14,13 +15,17 @@
 .PARAMETER SkipExe
     Skip EXE build (only create installer from existing build).
 
-.EXAMPLE
-    .\build_windows.ps1
-    # Standard build (EXE only)
+.PARAMETER Local
+    Include local Whisper with CUDA support. Adds ~4GB, much slower build.
+    Without this flag: API-only build (~30MB, fast).
 
 .EXAMPLE
     .\build_windows.ps1 -Clean -Installer
-    # Clean build with installer
+    # API-only build with installer (recommended, ~30MB)
+
+.EXAMPLE
+    .\build_windows.ps1 -Clean -Installer -Local
+    # Full build with local CUDA Whisper (~4GB, slow)
 
 .EXAMPLE
     .\build_windows.ps1 -Installer -SkipExe
@@ -30,7 +35,8 @@
 param(
     [switch]$Clean,
     [switch]$Installer,
-    [switch]$SkipExe
+    [switch]$SkipExe,
+    [switch]$Local
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,30 +62,43 @@ function Get-AppVersion {
 }
 
 $Version = Get-AppVersion
+$BuildVariant = if ($Local) { "Local (CUDA)" } else { "API-only" }
+$VersionSuffix = if ($Local) { "-Local" } else { "" }
+
 Write-Host "`nPulseScribe Build Script v$Version" -ForegroundColor Magenta
 Write-Host "=================================" -ForegroundColor Magenta
+Write-Host "  Build variant: $BuildVariant" -ForegroundColor $(if ($Local) { "Yellow" } else { "Green" })
+
+# Detect and use venv if available
+$VenvPython = ".\venv\Scripts\python.exe"
+if (Test-Path $VenvPython) {
+    $Python = $VenvPython
+    Write-Host "  Using venv: $Python" -ForegroundColor Gray
+} else {
+    $Python = "python"
+}
 
 # Check prerequisites
 Write-Step "Checking prerequisites..."
 
 # Python
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+if (-not (Test-Path $Python) -and -not (Get-Command $Python -ErrorAction SilentlyContinue)) {
     Write-BuildError "Python not found. Please install Python 3.10+."
     exit 1
 }
-Write-BuildSuccess "  Python: $(python --version)"
+Write-BuildSuccess "  Python: $(& $Python --version)"
 
 # PyInstaller
-$pyinstallerCheck = python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null
+$pyinstallerCheck = & $Python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null
 if (-not $pyinstallerCheck) {
     Write-BuildWarning "  PyInstaller not found. Installing..."
-    pip install pyinstaller
+    & $Python -m pip install pyinstaller
     if ($LASTEXITCODE -ne 0) {
         Write-BuildError "  Failed to install PyInstaller!"
         exit 1
     }
     # Verify installation
-    $pyinstallerCheck = python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null
+    $pyinstallerCheck = & $Python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null
     if (-not $pyinstallerCheck) {
         Write-BuildError "  PyInstaller installation failed!"
         exit 1
@@ -124,11 +143,12 @@ if ($Clean) {
 if (-not $SkipExe) {
     Write-Step "Building PulseScribe.exe..."
 
-    # Set version environment variable
+    # Set build environment variables
     $env:PULSESCRIBE_VERSION = $Version
+    $env:PULSESCRIBE_BUILD_LOCAL = if ($Local) { "1" } else { "0" }
 
     # Run PyInstaller
-    python -m PyInstaller build_windows.spec --clean --noconfirm
+    & $Python -m PyInstaller build_windows.spec --clean --noconfirm
 
     if ($LASTEXITCODE -ne 0) {
         Write-BuildError "PyInstaller build failed!"
@@ -162,8 +182,8 @@ if ($Installer) {
         Write-BuildWarning "  assets\icon.ico not found - using default icon"
     }
 
-    # Run Inno Setup with version parameter
-    $isccArgs = @("/DAppVersion=$Version", "installer_windows.iss")
+    # Run Inno Setup with version and variant parameters
+    $isccArgs = @("/DAppVersion=$Version", "/DVersionSuffix=$VersionSuffix", "installer_windows.iss")
     if ($iscc -is [string]) {
         & $iscc @isccArgs
     } else {
@@ -175,7 +195,7 @@ if ($Installer) {
         exit 1
     }
 
-    $installerPath = "dist\PulseScribe-Setup-$Version.exe"
+    $installerPath = "dist\PulseScribe-Setup-$Version$VersionSuffix.exe"
     if (Test-Path $installerPath) {
         $installerSize = (Get-Item $installerPath).Length / 1MB
         Write-BuildSuccess "  Built: $installerPath ($([math]::Round($installerSize, 1)) MB)"
@@ -187,11 +207,11 @@ Write-Host "`n" -NoNewline
 Write-Host "Build complete!" -ForegroundColor Green
 Write-Host "===============" -ForegroundColor Green
 
-Write-Host "`nOutput files:"
+Write-Host "`nOutput files ($BuildVariant):"
 if (Test-Path "dist\PulseScribe\PulseScribe.exe") {
     Write-Host "  - dist\PulseScribe\PulseScribe.exe (portable)"
 }
-$installerPath = "dist\PulseScribe-Setup-$Version.exe"
+$installerPath = "dist\PulseScribe-Setup-$Version$VersionSuffix.exe"
 if (Test-Path $installerPath) {
     Write-Host "  - $installerPath (installer)"
 }

@@ -16,10 +16,10 @@ Overlay: PySide6 (GPU-accelerated, recommended) or tkinter (fallback, built-in)
 
 block_cipher = None
 
-from PyInstaller.utils.hooks import collect_all
 import os
 import pathlib
 import re
+import glob
 
 
 def _dedupe(items):
@@ -44,26 +44,60 @@ def _read_app_version() -> str:
 
 APP_VERSION = _read_app_version()
 
-# Collect PySide6 completely (binaries, datas, hiddenimports)
-# This is critical - without it, PySide6 won't work in the bundled EXE
-try:
-    pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all('PySide6')
-    print(f"PySide6 collected: {len(pyside6_binaries)} binaries, {len(pyside6_datas)} datas")
-except Exception as e:
-    print(f"WARNING: PySide6 collect failed: {e}")
-    pyside6_datas, pyside6_binaries, pyside6_hiddenimports = [], [], []
+# Build variant: API-only (default) or Local (with CUDA Whisper)
+BUILD_LOCAL = os.getenv("PULSESCRIBE_BUILD_LOCAL", "0") == "1"
+print(f"Build variant: {'Local (CUDA)' if BUILD_LOCAL else 'API-only'}")
 
-# Collect shiboken6 (required C++ bindings for PySide6)
-try:
-    shiboken6_datas, shiboken6_binaries, shiboken6_hiddenimports = collect_all('shiboken6')
-    print(f"shiboken6 collected: {len(shiboken6_binaries)} binaries, {len(shiboken6_datas)} datas")
-except Exception as e:
-    print(f"WARNING: shiboken6 collect failed: {e}")
-    shiboken6_datas, shiboken6_binaries, shiboken6_hiddenimports = [], [], []
+# Collect only required PySide6 modules (not the full ~500MB package)
+# We only need QtCore, QtGui, QtWidgets for the overlay
+from PyInstaller.utils.hooks import get_package_paths
 
-# Paths to modules and resources
-binaries = pyside6_binaries + shiboken6_binaries
-datas = pyside6_datas + shiboken6_datas + [
+pyside6_binaries = []
+pyside6_datas = []
+
+try:
+    _, pyside6_dir = get_package_paths('PySide6')
+    _, shiboken6_dir = get_package_paths('shiboken6')
+
+    # Core Qt DLLs needed for QtWidgets app
+    qt_dlls = [
+        'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Widgets.dll',
+        'Qt6Svg.dll',  # Often needed for icons
+    ]
+    for dll in qt_dlls:
+        dll_path = os.path.join(pyside6_dir, dll)
+        if os.path.exists(dll_path):
+            pyside6_binaries.append((dll_path, 'PySide6'))
+
+    # PySide6 Python bindings (.pyd files)
+    for pyd in ['QtCore', 'QtGui', 'QtWidgets']:
+        pattern = os.path.join(pyside6_dir, f'{pyd}*.pyd')
+        for f in glob.glob(pattern):
+            pyside6_binaries.append((f, 'PySide6'))
+
+    # shiboken6 bindings
+    for f in glob.glob(os.path.join(shiboken6_dir, '*.pyd')):
+        pyside6_binaries.append((f, 'shiboken6'))
+    for f in glob.glob(os.path.join(shiboken6_dir, '*.dll')):
+        pyside6_binaries.append((f, 'shiboken6'))
+
+    # Qt plugins (platforms is required for Windows)
+    plugins_dir = os.path.join(pyside6_dir, 'plugins')
+    if os.path.isdir(plugins_dir):
+        for subdir in ['platforms', 'styles', 'imageformats']:
+            src = os.path.join(plugins_dir, subdir)
+            if os.path.isdir(src):
+                pyside6_datas.append((src, f'PySide6/plugins/{subdir}'))
+
+    print(f"PySide6 collected: {len(pyside6_binaries)} binaries, {len(pyside6_datas)} plugin dirs (minimal)")
+except Exception as e:
+    print(f"WARNING: PySide6 not found or collect failed: {e}")
+    print("  Falling back to Tkinter overlay")
+    pyside6_binaries, pyside6_datas = [], []
+
+# Binaries and data files
+binaries = pyside6_binaries
+datas = pyside6_datas + [
     ('config.py', '.'),
     ('utils', 'utils'),
     ('providers', 'providers'),
@@ -89,6 +123,8 @@ hiddenimports = [
     'sounddevice',
     'soundfile',
     'numpy',
+    'audio',
+    'audio.recording',
 
     # === API SDKs ===
     'deepgram',
@@ -125,61 +161,54 @@ hiddenimports = [
     'PySide6.QtWidgets',
     'shiboken6',
     'tkinter',
-
-    # === Audio ===
-    'audio',
-    'audio.recording',
-
-    # === Local Whisper (faster-whisper) ===
-    'faster_whisper',
-    'ctranslate2',
-    'tokenizers',
-    'huggingface_hub',
 ]
 
-hiddenimports = _dedupe(hiddenimports + pyside6_hiddenimports + shiboken6_hiddenimports)
+# Local Whisper imports (only for -Local builds)
+if BUILD_LOCAL:
+    hiddenimports += [
+        'faster_whisper',
+        'ctranslate2',
+        'tokenizers',
+        'huggingface_hub',
+        'torch',
+        'torchaudio',
+    ]
+
+hiddenimports = _dedupe(hiddenimports)
 
 # Exclude unnecessary modules (reduces size and build time)
 excludes = [
     # GUI Frameworks (not needed - except PySide6/tkinter for overlay)
-    'PyQt5',
-    'PyQt6',
-    'PySide2',
-    # NOTE: PySide6 and tkinter are NOT excluded - used for overlay!
-    'wx',
+    'PyQt5', 'PyQt6', 'PySide2', 'wx',
 
     # Data Science (not needed)
-    'matplotlib',
-    'pandas',
-    'sklearn',
+    'matplotlib', 'pandas', 'sklearn', 'scipy',
 
     # Testing Frameworks
-    'pytest',
-    'unittest',
+    'pytest', 'unittest',
 
     # macOS-specific (not available on Windows)
-    'objc',
-    'Foundation',
-    'AppKit',
-    'Quartz',
-    'AVFoundation',
-    'CoreMedia',
-    'CoreAudio',
-    'CoreFoundation',
-    'rumps',
-    'quickmachotkey',
+    'objc', 'Foundation', 'AppKit', 'Quartz',
+    'AVFoundation', 'CoreMedia', 'CoreAudio', 'CoreFoundation',
+    'rumps', 'quickmachotkey',
 
     # CLI (not needed for Windows daemon)
-    'typer',
-    'click',
+    'typer', 'click',
 
     # Dev Tools
-    'IPython',
-    'jupyter',
+    'IPython', 'jupyter',
 
     # Misc
     'curses',
 ]
+
+# For API-only builds: exclude ML/Whisper packages (saves ~4GB)
+if not BUILD_LOCAL:
+    excludes += [
+        'torch', 'torchaudio', 'torchvision',
+        'ctranslate2', 'faster_whisper', 'openai_whisper', 'whisper',
+        'transformers', 'tokenizers', 'huggingface_hub', 'safetensors',
+    ]
 
 a = Analysis(
     ['pulsescribe_windows.py'],
@@ -212,7 +241,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # Disabled for faster builds
     console=False,  # No console window (tray app)
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -226,7 +255,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,  # Disabled for faster builds
     upx_exclude=[],
     name='PulseScribe',
 )

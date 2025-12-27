@@ -366,16 +366,24 @@ pyinstaller build_app.spec --clean
 ### Windows EXE + Installer
 
 ```powershell
-# Nur EXE (portable)
-.\build_windows.ps1
-
-# EXE + Installer
+# API-only Build (Cloud-APIs, ~30MB, schnell)
 .\build_windows.ps1 -Clean -Installer
 
+# Local Build mit CUDA Whisper (~4GB, langsam)
+.\build_windows.ps1 -Clean -Installer -Local
+
 # Output:
-#   dist/PulseScribe/PulseScribe.exe      (portable)
-#   dist/PulseScribe-Setup-1.1.1.exe      (installer)
+#   dist/PulseScribe/PulseScribe.exe          (portable)
+#   dist/PulseScribe-Setup-1.2.0.exe          (API-only Installer)
+#   dist/PulseScribe-Setup-1.2.0-Local.exe    (Local Installer, mit -Local)
 ```
+
+**Build-Varianten:**
+
+| Flag | Inhalt | Größe | Use Case |
+|------|--------|-------|----------|
+| (ohne) | Cloud-APIs (Deepgram, OpenAI, Groq) | ~30MB | Empfohlen |
+| `-Local` | + CUDA Whisper (faster-whisper, torch) | ~4GB | Offline-Nutzung |
 
 **Besonderheiten:**
 
