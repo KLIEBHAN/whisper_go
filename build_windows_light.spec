@@ -45,12 +45,22 @@ APP_VERSION = _read_app_version()
 # This is critical - without it, PySide6 won't work in the bundled EXE
 try:
     pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all('PySide6')
-except Exception:
+    print(f"PySide6 collected: {len(pyside6_binaries)} binaries, {len(pyside6_datas)} datas")
+except Exception as e:
+    print(f"WARNING: PySide6 collect failed: {e}")
     pyside6_datas, pyside6_binaries, pyside6_hiddenimports = [], [], []
 
+# Collect shiboken6 (required C++ bindings for PySide6)
+try:
+    shiboken6_datas, shiboken6_binaries, shiboken6_hiddenimports = collect_all('shiboken6')
+    print(f"shiboken6 collected: {len(shiboken6_binaries)} binaries, {len(shiboken6_datas)} datas")
+except Exception as e:
+    print(f"WARNING: shiboken6 collect failed: {e}")
+    shiboken6_datas, shiboken6_binaries, shiboken6_hiddenimports = [], [], []
+
 # Paths to modules and resources
-binaries = pyside6_binaries
-datas = pyside6_datas + [
+binaries = pyside6_binaries + shiboken6_binaries
+datas = pyside6_datas + shiboken6_datas + [
     ('config.py', '.'),
     ('utils', 'utils'),
     ('providers', 'providers'),
@@ -98,10 +108,14 @@ hiddenimports = [
     'ui.overlay_pyside6',
     'ui.overlay_windows',
     'ui.animation',
+    'ui.settings_windows',
+    'ui.onboarding_wizard_windows',
+    'ui.styles_windows',
     'PySide6',
     'PySide6.QtCore',
     'PySide6.QtGui',
     'PySide6.QtWidgets',
+    'shiboken6',
     'tkinter',
 
     # === Audio ===
@@ -112,7 +126,7 @@ hiddenimports = [
     # 'faster_whisper', 'ctranslate2', 'tokenizers', 'huggingface_hub'
 ]
 
-hiddenimports = _dedupe(hiddenimports + pyside6_hiddenimports)
+hiddenimports = _dedupe(hiddenimports + pyside6_hiddenimports + shiboken6_hiddenimports)
 
 # Excludes - more aggressive for light build
 excludes = [
