@@ -443,6 +443,23 @@ def _init_warm_stream(
                     logger.warning(f"[{session_id}] Warm-Stream Forwarder Error: {e}")
                 break
 
+        # Queue drainieren nach Stop - verhindert abgeschnittene letzte Wörter
+        drained = 0
+        while True:
+            try:
+                chunk = warm_source.audio_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
+                drained += 1
+            except RuntimeError:
+                # Event-Loop bereits geschlossen - restliche Chunks verwerfen
+                logger.debug(f"[{session_id}] Event-Loop geschlossen, Drain abgebrochen")
+                break
+        if drained > 0:
+            logger.debug(f"[{session_id}] Warm-Stream: {drained} Rest-Chunks geleert")
+
     forwarder_thread = threading.Thread(
         target=_warm_stream_forwarder, daemon=True, name="WarmStreamForwarder"
     )
@@ -946,6 +963,19 @@ async def deepgram_stream_core(
             # Interim-Datei sofort löschen
             INTERIM_FILE.unlink(missing_ok=True)
 
+            # Warm-Stream: Forwarder-Thread beenden BEVOR Graceful Shutdown
+            # Damit alle Rest-Chunks in die Queue geschrieben werden, bevor
+            # das None-Sentinel gesendet wird (verhindert abgeschnittene Wörter)
+            if audio_result.forwarder_thread is not None:
+                audio_result.forwarder_thread.join(timeout=FORWARDER_THREAD_JOIN_TIMEOUT)
+                if audio_result.forwarder_thread.is_alive():
+                    logger.warning(
+                        f"[{session_id}] Forwarder-Thread Timeout - "
+                        "letzte Audio-Chunks könnten verloren gehen"
+                    )
+                else:
+                    logger.debug(f"[{session_id}] Forwarder-Thread beendet")
+
             # Graceful Shutdown durchführen
             await _graceful_shutdown(
                 connection=connection,
@@ -965,12 +995,9 @@ async def deepgram_stream_core(
             except Exception:
                 pass
 
-        # Warm-Stream: Disarm und Forwarder-Thread beenden
+        # Warm-Stream: Disarm (Forwarder ist Daemon-Thread, beendet sich automatisch)
         if warm_stream_source is not None:
             warm_stream_source.arm_event.clear()
-            if audio_result.forwarder_thread is not None:
-                # Thread sollte durch stop_event beendet werden
-                audio_result.forwarder_thread.join(timeout=FORWARDER_THREAD_JOIN_TIMEOUT)
 
         # Signal-Handler entfernen
         _cleanup_stop_mechanism(loop, external_stop_event)
