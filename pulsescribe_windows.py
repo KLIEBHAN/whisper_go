@@ -238,6 +238,8 @@ class PulseScribeWindows:
         self._recording_stop_event = threading.Event()  # Recording stoppen
         self._prewarm_complete = threading.Event()  # Pre-Warm abgeschlossen
         self._overlay = None
+        self._settings_process = None  # Subprocess für Settings-Fenster
+        self._onboarding_process = None  # Subprocess für Onboarding-Wizard
         self._event_loop = None  # Wird in _prewarm_imports() erstellt
 
         # Watchdog für hängende Transcription (wie macOS)
@@ -1382,6 +1384,24 @@ class PulseScribeWindows:
         # Warm-Stream stoppen
         self._stop_warm_stream()
 
+        # Settings-Fenster beenden (falls offen)
+        if self._settings_process and self._settings_process.poll() is None:
+            try:
+                self._settings_process.terminate()
+                self._settings_process.wait(timeout=2)
+            except Exception:
+                pass
+            self._settings_process = None
+
+        # Onboarding-Wizard beenden (falls offen)
+        if self._onboarding_process and self._onboarding_process.poll() is None:
+            try:
+                self._onboarding_process.terminate()
+                self._onboarding_process.wait(timeout=2)
+            except Exception:
+                pass
+            self._onboarding_process = None
+
         # Overlay stoppen
         if self._overlay:
             self._overlay.stop()
@@ -1430,6 +1450,7 @@ class PulseScribeWindows:
                     self._open_env_in_editor()
                     return
 
+                self._settings_process = process
                 logger.info("Settings-Fenster gestartet (--settings)")
                 return
 
@@ -1491,6 +1512,7 @@ class PulseScribeWindows:
                 self._open_env_in_editor()
                 return
 
+            self._settings_process = process
             logger.info("Settings-Fenster gestartet (separater Prozess)")
 
         except Exception as e:
@@ -1935,6 +1957,7 @@ class PulseScribeWindows:
                     self._show_settings()
                     return
 
+                self._onboarding_process = process
                 logger.info("Onboarding-Wizard gestartet (--onboarding)")
                 return
 
@@ -1995,6 +2018,7 @@ class PulseScribeWindows:
                 self._show_settings()
                 return
 
+            self._onboarding_process = process
             logger.info("Onboarding-Wizard gestartet")
 
         except Exception as e:
