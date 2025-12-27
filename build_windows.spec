@@ -44,9 +44,16 @@ def _read_app_version() -> str:
 
 APP_VERSION = _read_app_version()
 
+# Collect PySide6 completely (binaries, datas, hiddenimports)
+# This is critical - without it, PySide6 won't work in the bundled EXE
+try:
+    pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all('PySide6')
+except Exception:
+    pyside6_datas, pyside6_binaries, pyside6_hiddenimports = [], [], []
+
 # Paths to modules and resources
-binaries = []
-datas = [
+binaries = pyside6_binaries
+datas = pyside6_datas + [
     ('config.py', '.'),
     ('utils', 'utils'),
     ('providers', 'providers'),
@@ -116,7 +123,7 @@ hiddenimports = [
     'huggingface_hub',
 ]
 
-hiddenimports = _dedupe(hiddenimports)
+hiddenimports = _dedupe(hiddenimports + pyside6_hiddenimports)
 
 # Exclude unnecessary modules (reduces size and build time)
 excludes = [
