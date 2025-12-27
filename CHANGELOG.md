@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--settings` CLI flag for bundled EXE
 - Local mode: detailed logging + CUDA timeout (120s)
 - Slim build variant (`--slim`) for smaller app size
+- **`-Local` build flag** for Windows: includes CUDA Whisper (~4GB) for offline use
 
 ### Changed
 
@@ -44,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - UTF-8 encoding for prompts.toml on Windows
 - Clipboard restore after paste
 - Subprocess stdout deadlock prevention (DEVNULL)
+- Last word cutoff in Deepgram streaming (drain audio queue before shutdown)
+- PySide6 not loading in bundled EXE (missing shiboken6 bindings)
 
 ## [1.1.1] - 2025-12-24
 
