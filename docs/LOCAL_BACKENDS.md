@@ -276,10 +276,12 @@ The bundled EXE cannot locate cuDNN DLLs installed via pip (they're in `site-pac
 
 **CPU Performance is Good:**
 
-| Model | Speed (8-core CPU) | Speed (RTX 3080) |
-|-------|-------------------|------------------|
-| `turbo` | ~0.5-1x real-time | ~0.1x real-time |
-| `medium` | ~0.3-0.5x real-time | ~0.05x real-time |
+| Model | CPU (8-core) | GPU (RTX 3080) |
+|-------|--------------|----------------|
+| `turbo` | 5–10 sec for 10 sec audio | ~1 sec for 10 sec audio |
+| `medium` | 20–30 sec for 10 sec audio | ~2 sec for 10 sec audio |
+
+> **Note:** GPU is ~10× faster, but CPU performance is sufficient for most use cases.
 
 ---
 
@@ -287,7 +289,7 @@ The bundled EXE cannot locate cuDNN DLLs installed via pip (they're in `site-pac
 
 | Problem | Solution |
 |---------|----------|
-| `ModuleNotFoundError: No module named 'mlx'` | Apple Silicon only. Use `faster` on Intel/Windows. |
+| `ModuleNotFoundError: No module named 'mlx'` | MLX is Apple Silicon only. Use the `faster` backend on Intel/Windows. |
 | Model download 404 | Use short name (`large`) or full repo ID |
 | `beam_size not implemented (mlx)` | Remove `PULSESCRIBE_LOCAL_BEAM_SIZE` |
 | Slow first transcription | Enable `PULSESCRIBE_LOCAL_WARMUP=true` |

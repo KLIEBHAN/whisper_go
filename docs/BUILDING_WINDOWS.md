@@ -89,9 +89,9 @@ The Local variant does **not** bundle the Whisper models. On first transcription
 
 | Model | Download Size | Cache Location |
 |-------|---------------|----------------|
-| `turbo` (default) | ~1.5 GB | `~/.cache/huggingface/hub/` |
-| `large-v3` | ~3 GB | `~/.cache/huggingface/hub/` |
-| `medium` | ~1.5 GB | `~/.cache/huggingface/hub/` |
+| `turbo` (default) | ~1.5 GB | `%USERPROFILE%\.cache\huggingface\hub\` |
+| `large-v3` | ~3 GB | `%USERPROFILE%\.cache\huggingface\hub\` |
+| `medium` | ~1.5 GB | `%USERPROFILE%\.cache\huggingface\hub\` |
 
 After the initial download, transcription works fully offline.
 

@@ -242,7 +242,7 @@ sudo apt install ffmpeg
 
 ## Windows GPU-Unterstützung
 
-Der Windows-Installer (`-Local` Variante) läuft standardmäßig auf **CPU**. Für NVIDIA GPU-Beschleunigung:
+Der Windows-Installer (Variante `-Local`) läuft standardmäßig auf **CPU**. Für NVIDIA GPU-Beschleunigung:
 
 ### Option 1: Aus Quellcode starten (Empfohlen)
 
@@ -276,10 +276,12 @@ Die gebündelte EXE kann cuDNN-DLLs aus pip-Paketen nicht finden (sie liegen in 
 
 **CPU-Performance ist gut:**
 
-| Modell | Geschwindigkeit (8-Kern CPU) | Geschwindigkeit (RTX 3080) |
-|--------|------------------------------|---------------------------|
-| `turbo` | ~0.5-1x Echtzeit | ~0.1x Echtzeit |
-| `medium` | ~0.3-0.5x Echtzeit | ~0.05x Echtzeit |
+| Modell | CPU (8-Kern) | GPU (RTX 3080) |
+|--------|--------------|----------------|
+| `turbo` | 5–10 Sek. für 10 Sek. Audio | ~1 Sek. für 10 Sek. Audio |
+| `medium` | 20–30 Sek. für 10 Sek. Audio | ~2 Sek. für 10 Sek. Audio |
+
+> **Hinweis:** GPU ist ~10× schneller, aber CPU-Performance reicht für die meisten Anwendungsfälle.
 
 ---
 
@@ -287,7 +289,7 @@ Die gebündelte EXE kann cuDNN-DLLs aus pip-Paketen nicht finden (sie liegen in 
 
 | Problem | Lösung |
 |---------|--------|
-| `ModuleNotFoundError: No module named 'mlx'` | Nur Apple Silicon. Auf Intel/Windows `faster` verwenden. |
+| `ModuleNotFoundError: No module named 'mlx'` | MLX ist nur für Apple Silicon. Auf Intel/Windows das `faster`-Backend verwenden. |
 | Modell-Download 404 | Kurznamen (`large`) oder vollständige Repo-ID verwenden |
 | `beam_size not implemented (mlx)` | `PULSESCRIBE_LOCAL_BEAM_SIZE` entfernen |
 | Langsame erste Transkription | `PULSESCRIBE_LOCAL_WARMUP=true` aktivieren |
