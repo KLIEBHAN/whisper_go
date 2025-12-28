@@ -240,16 +240,63 @@ sudo apt install ffmpeg
 
 ---
 
+## Windows GPU Support
+
+The Windows installer (`-Local` variant) runs on **CPU by default**. For NVIDIA GPU acceleration:
+
+### Option 1: Run from Source (Recommended)
+
+```powershell
+# Clone and install
+git clone https://github.com/KLIEBHAN/pulsescribe.git
+cd pulsescribe
+pip install -r requirements.txt
+pip install faster-whisper nvidia-cudnn-cu12
+
+# Run
+python pulsescribe_windows.py
+```
+
+### Option 2: System-wide cuDNN Installation
+
+1. Download cuDNN from [NVIDIA cuDNN](https://developer.nvidia.com/cudnn) (requires NVIDIA account)
+2. Extract and copy DLLs to `C:\Windows\System32\` or add to PATH
+3. Run the bundled PulseScribe installer
+
+### Verifying GPU Support
+
+```powershell
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import ctranslate2; print(f'CUDA devices: {ctranslate2.get_cuda_device_count()}')"
+```
+
+### Why CPU-only in the Installer?
+
+The bundled EXE cannot locate cuDNN DLLs installed via pip (they're in `site-packages/nvidia/*/bin/`). Including these DLLs would add ~2GB to the installer and may have NVIDIA licensing implications.
+
+**CPU Performance is Good:**
+
+| Model | CPU (8-core) | GPU (RTX 3080) |
+|-------|--------------|----------------|
+| `turbo` | 5–10 sec for 10 sec audio | ~1 sec for 10 sec audio |
+| `medium` | 20–30 sec for 10 sec audio | ~2 sec for 10 sec audio |
+
+> **Note:** GPU is ~10× faster, but CPU performance is sufficient for most use cases.
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| `ModuleNotFoundError: No module named 'mlx'` | Apple Silicon only. Use `faster` on Intel. |
+| `ModuleNotFoundError: No module named 'mlx'` | MLX is Apple Silicon only. Use the `faster` backend on Intel/Windows. |
 | Model download 404 | Use short name (`large`) or full repo ID |
 | `beam_size not implemented (mlx)` | Remove `PULSESCRIBE_LOCAL_BEAM_SIZE` |
 | Slow first transcription | Enable `PULSESCRIBE_LOCAL_WARMUP=true` |
 | Out of memory | Use smaller model or `PULSESCRIBE_LIGHTNING_QUANT=4bit` |
 | `Read-only file system` (DMG) | Models stored in `~/.pulsescribe/lightning_models/` |
+| CUDA not detected (Windows) | Install cuDNN system-wide or run from source |
+| First transcription very slow | Model is downloading (~1.5 GB), wait for completion |
 
 ---
 
