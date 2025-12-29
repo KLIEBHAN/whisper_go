@@ -130,7 +130,7 @@ class IPCClient:
         logger.debug(f"IPC command sent: {command} (id={cmd_id})")
         return cmd_id
 
-    def poll_response(self, cmd_id: str, timeout: float = 0.1) -> dict | None:
+    def poll_response(self, cmd_id: str) -> dict | None:
         """Check if daemon has written a response for our command.
 
         Returns the response dict if available, None otherwise.
@@ -264,7 +264,7 @@ class IPCServer:
         try:
             self._on_command(cmd_id, cmd_type)
         except Exception as e:
-            logger.error(f"IPC command handler error: {e}")
+            logger.exception(f"IPC command handler error: {e}")
             self.send_response(cmd_id, STATUS_ERROR, error=str(e))
 
     def _delete_file(self, path: Path) -> None:
