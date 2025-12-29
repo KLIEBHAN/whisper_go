@@ -381,10 +381,10 @@ pyinstaller build_app.spec --clean
 
 **Build-Varianten:**
 
-| Flag | Inhalt | Größe | Use Case |
-|------|--------|-------|----------|
-| (ohne) | Cloud-APIs (Deepgram, OpenAI, Groq) | ~30MB | Empfohlen |
-| `-Local` | + CUDA Whisper (faster-whisper, torch) | ~4GB | Offline-Nutzung |
+| Flag     | Inhalt                                 | Größe | Use Case        |
+| -------- | -------------------------------------- | ----- | --------------- |
+| (ohne)   | Cloud-APIs (Deepgram, OpenAI, Groq)    | ~30MB | Empfohlen       |
+| `-Local` | + CUDA Whisper (faster-whisper, torch) | ~4GB  | Offline-Nutzung |
 
 **Besonderheiten:**
 
@@ -411,5 +411,5 @@ pyinstaller build_app.spec --clean
 - Python 3.10+ (Type Hints mit `|` statt `Union`)
 - Keine unnötigen Abstraktionen
 - Fehler → stderr, Ergebnis → stdout
-- Deutsche CLI-Ausgaben (Zielgruppe)
 - Atomare, kleine Commits
+- **PR-Workflow:** Jede Änderung in eigenem Branch + Pull Request (kein direkter Push auf `master`)
