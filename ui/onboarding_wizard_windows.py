@@ -707,7 +707,12 @@ class OnboardingWizardWindows(QDialog):
     def _can_advance(self) -> bool:
         """Check if user can advance to next step."""
         if self._step == OnboardingStep.CHOOSE_GOAL:
-            return self._choice is not None
+            if self._choice is None:
+                return False
+            # Fast mode requires API key
+            if self._choice == OnboardingChoice.FAST:
+                return self._has_api_key()
+            return True
         elif self._step == OnboardingStep.HOTKEY:
             # At least one hotkey must be configured
             toggle = get_env_setting("PULSESCRIBE_TOGGLE_HOTKEY")
@@ -718,6 +723,17 @@ class OnboardingWizardWindows(QDialog):
     def _go_next(self) -> None:
         """Navigate to next step."""
         self._stop_hotkey_recording()
+
+        # Save API key when leaving CHOOSE_GOAL with FAST mode
+        if (
+            self._step == OnboardingStep.CHOOSE_GOAL
+            and self._choice == OnboardingChoice.FAST
+        ):
+            if self._api_key_field:
+                entered_key = self._api_key_field.text().strip()
+                if entered_key:
+                    save_api_key("DEEPGRAM_API_KEY", entered_key)
+            set_onboarding_choice(self._choice)
 
         if self._step == OnboardingStep.CHEAT_SHEET:
             self._complete()
@@ -762,10 +778,6 @@ class OnboardingWizardWindows(QDialog):
             self._api_key_container.setVisible(show_api)
             if show_api and self._api_key_status:
                 self._api_key_status.setText("Erforderlich für Fast-Modus")
-        else:
-            # Hide for other choices
-            if self._api_key_container:
-                self._api_key_container.setVisible(False)
 
         if save:
             set_onboarding_choice(choice)

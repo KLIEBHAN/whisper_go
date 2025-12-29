@@ -526,8 +526,9 @@ class OnboardingWizardController:
         parent_view.addSubview_(api_container)
         self._api_key_container = api_container
 
+        # Coordinates relative to api_container (height=60)
         api_label = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, api_y + 38, 200, 16)
+            NSMakeRect(CARD_PADDING, 38, 200, 16)
         )
         api_label.setStringValue_("Deepgram API Key:")
         api_label.setBezeled_(False)
@@ -536,18 +537,18 @@ class OnboardingWizardController:
         api_label.setSelectable_(False)
         api_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
         api_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
-        parent_view.addSubview_(api_label)
+        api_container.addSubview_(api_label)
 
         api_field = NSSecureTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x, api_y + 12, card_w - 2 * CARD_PADDING - 80, 22)
+            NSMakeRect(CARD_PADDING, 12, card_w - 2 * CARD_PADDING - 80, 22)
         )
         api_field.setFont_(NSFont.systemFontOfSize_(12))
         api_field.setPlaceholderString_("dg-...")
-        parent_view.addSubview_(api_field)
+        api_container.addSubview_(api_field)
         self._api_key_field = api_field
 
         api_status = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(base_x + card_w - 2 * CARD_PADDING - 70, api_y + 14, 60, 16)
+            NSMakeRect(card_w - CARD_PADDING - 70, 14, 60, 16)
         )
         api_status.setStringValue_("")
         api_status.setBezeled_(False)
@@ -556,7 +557,7 @@ class OnboardingWizardController:
         api_status.setSelectable_(False)
         api_status.setFont_(NSFont.systemFontOfSize_(10))
         api_status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
-        parent_view.addSubview_(api_status)
+        api_container.addSubview_(api_status)
         self._api_key_status = api_status
 
     def _build_step_permissions(self, parent_view, content_h: int) -> None:
@@ -1022,7 +1023,20 @@ class OnboardingWizardController:
 
     def _can_advance(self) -> bool:
         if self._step == OnboardingStep.CHOOSE_GOAL:
-            return self._choice is not None
+            if self._choice is None:
+                return False
+            # Fast mode requires API key
+            if self._choice == OnboardingChoice.FAST:
+                entered_key = ""
+                if self._api_key_field:
+                    entered_key = self._api_key_field.stringValue().strip()
+                has_key = bool(
+                    entered_key
+                    or get_api_key("DEEPGRAM_API_KEY")
+                    or os.getenv("DEEPGRAM_API_KEY")
+                )
+                return has_key
+            return True
         if self._step == OnboardingStep.PERMISSIONS:
             return get_microphone_permission_state() not in ("denied", "restricted")
         if self._step == OnboardingStep.HOTKEY:
@@ -1133,7 +1147,6 @@ class OnboardingWizardController:
         if action in ("choose_fast", "choose_private", "choose_advanced"):
             if action == "choose_fast":
                 self._choice = OnboardingChoice.FAST
-                set_onboarding_choice(self._choice)
 
                 # Check for API key: existing, env var, or just entered
                 entered_key = ""
@@ -1149,6 +1162,7 @@ class OnboardingWizardController:
                 )
 
                 if has_key:
+                    set_onboarding_choice(self._choice)
                     save_env_setting("PULSESCRIBE_MODE", "deepgram")
                     # Hide API key container if shown
                     if self._api_key_container:
