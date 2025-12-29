@@ -592,6 +592,7 @@ Optionally enable an additional warmup inference via `PULSESCRIBE_LOCAL_WARMUP=t
 | MLX model download 404              | Use `PULSESCRIBE_LOCAL_MODEL=large` or a full repo ID (e.g. `mlx-community/whisper-large-v3-mlx`)                                                                       |
 | Beam search not implemented (mlx)   | Remove `PULSESCRIBE_LOCAL_BEAM_SIZE` (ignored on `mlx`) or switch backend                                                                                               |
 | Transcription slow                  | Switch to `--mode groq`/`deepgram`, or use `PULSESCRIBE_LOCAL_BACKEND=mlx` (Apple Silicon) / `faster` (CPU) and `PULSESCRIBE_LOCAL_FAST=true`, or a smaller local model |
+| Deepgram streaming cuts last word   | Update to latest build; streaming drains queued audio before shutdown. Workaround: `PULSESCRIBE_STREAMING=false` (REST mode)                                            |
 | Daemon crashes silently             | Check `~/.pulsescribe/startup.log` for emergency logs                                                                                                                   |
 | Auto-Paste not working (App Bundle) | See [Auto-Paste Troubleshooting](#auto-paste-troubleshooting-app-bundle)                                                                                                |
 

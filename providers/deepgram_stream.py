@@ -728,7 +728,7 @@ async def _graceful_shutdown(
     """
     from deepgram.extensions.types.sockets import ListenV1ControlMessage
 
-    # 1. Audio-Sender beenden
+    # 1. Audio-Sender beenden (einziger Ort für das None-Sentinel)
     await audio_queue.put(None)
     await send_task
 
@@ -922,20 +922,34 @@ async def deepgram_stream_core(
 
             # Async Tasks für bidirektionale Kommunikation
             async def send_audio() -> None:
-                """Sendet Audio-Chunks an Deepgram bis Stop-Signal."""
+                """Sendet Audio-Chunks an Deepgram bis Sentinel."""
+                last_chunk_at = time.monotonic()
                 try:
-                    while not state.stop_event.is_set():
+                    # Auch nach Stop-Signal weiter senden, bis das None-Sentinel kommt.
+                    # So werden bereits gepufferte Chunks nicht abgeschnitten.
+                    while True:
                         try:
                             chunk = await asyncio.wait_for(
                                 audio_queue.get(), timeout=AUDIO_QUEUE_POLL_INTERVAL
                             )
                             if chunk is None:
                                 break
+                            last_chunk_at = time.monotonic()
                             # Timeout für send_media um Hänger zu vermeiden
                             await asyncio.wait_for(
                                 connection.send_media(chunk), timeout=SEND_MEDIA_TIMEOUT
                             )
                         except asyncio.TimeoutError:
+                            # Fallback: Wenn kein Sentinel kommt, nach kurzer Leerlaufzeit beenden.
+                            if (
+                                state.stop_event.is_set()
+                                and time.monotonic() - last_chunk_at >= FINALIZE_TIMEOUT
+                            ):
+                                logger.warning(
+                                    f"[{session_id}] Audio-Send Abbruch ohne Sentinel "
+                                    f"(idle >= {FINALIZE_TIMEOUT:.1f}s)"
+                                )
+                                break
                             continue
                 except asyncio.CancelledError:
                     pass
