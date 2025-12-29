@@ -922,9 +922,11 @@ async def deepgram_stream_core(
 
             # Async Tasks für bidirektionale Kommunikation
             async def send_audio() -> None:
-                """Sendet Audio-Chunks an Deepgram bis Stop-Signal."""
+                """Sendet Audio-Chunks an Deepgram bis Sentinel."""
                 try:
-                    while not state.stop_event.is_set():
+                    # Auch nach Stop-Signal weiter senden, bis das None-Sentinel kommt.
+                    # So werden bereits gepufferte Chunks nicht abgeschnitten.
+                    while True:
                         try:
                             chunk = await asyncio.wait_for(
                                 audio_queue.get(), timeout=AUDIO_QUEUE_POLL_INTERVAL
