@@ -803,11 +803,13 @@ class LocalProvider:
                     "VAD-Modell fehlt (silero_vad_v6.onnx). "
                     "Deaktiviere VAD-Filter und versuche erneut."
                 )
-                faster_opts["vad_filter"] = False
+                retry_opts = dict(faster_opts)
+                retry_opts["vad_filter"] = False
                 try:
-                    segments, _info = model.transcribe(audio, **faster_opts)
+                    segments, _info = model.transcribe(audio, **retry_opts)
                     return "".join(seg.text for seg in segments)
                 except Exception as retry_error:
+                    faster_opts = retry_opts
                     e = retry_error
                     error_msg = str(e).lower()
             # CUDA/cuDNN-Fehler bei Transkription → Fallback auf CPU

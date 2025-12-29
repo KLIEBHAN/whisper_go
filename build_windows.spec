@@ -107,16 +107,18 @@ datas = pyside6_datas + [
     ('audio', 'audio'), # Recording module
 ]
 if BUILD_LOCAL:
-    try:
-        faster_whisper_datas = collect_data_files(
-            "faster_whisper", includes=["assets/*"]
+    faster_whisper_datas = collect_data_files(
+        "faster_whisper", includes=["assets/silero_vad_v6.onnx"]
+    )
+    if not faster_whisper_datas:
+        raise RuntimeError(
+            "Missing faster_whisper assets (silero_vad_v6.onnx). "
+            "Install faster-whisper before Local builds."
         )
-        print(
-            f"faster_whisper assets collected: {len(faster_whisper_datas)} files"
-        )
-        datas += faster_whisper_datas
-    except Exception as e:
-        print(f"WARNING: faster_whisper assets collect failed: {e}")
+    print(
+        f"faster_whisper assets collected: {len(faster_whisper_datas)} files"
+    )
+    datas += faster_whisper_datas
 
 # Hidden imports that PyInstaller doesn't detect automatically
 hiddenimports = [
