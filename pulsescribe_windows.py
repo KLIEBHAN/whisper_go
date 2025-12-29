@@ -1639,7 +1639,6 @@ class PulseScribeWindows:
         finally:
             if set_loading and self.state == AppState.LOADING:
                 self._set_state(AppState.IDLE)
-                self._set_state(AppState.IDLE)
 
     def _start_env_watcher(self):
         """Startet FileWatcher für .env Änderungen (Auto-Reload).
