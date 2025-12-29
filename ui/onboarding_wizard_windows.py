@@ -51,6 +51,7 @@ from utils.preferences import (
     get_onboarding_choice,
     get_onboarding_step,
     remove_env_setting,
+    save_api_key,
     save_env_setting,
     set_onboarding_choice,
     set_onboarding_seen,
@@ -147,6 +148,9 @@ class OnboardingWizardWindows(QDialog):
         # UI state
         self._choice_buttons: dict[OnboardingChoice, QPushButton] = {}
         self._lang_combo: QComboBox | None = None
+        self._api_key_container: QWidget | None = None
+        self._api_key_field: QLineEdit | None = None
+        self._api_key_status: QLabel | None = None
         self._toggle_input: QLineEdit | None = None
         self._hold_input: QLineEdit | None = None
         self._mic_status_label: QLabel | None = None
@@ -317,6 +321,37 @@ class OnboardingWizardWindows(QDialog):
         lang_row.addStretch()
 
         layout.addLayout(lang_row)
+
+        # API Key input (shown when Fast is selected without existing key)
+        api_container = QWidget()
+        api_container.setVisible(False)
+        api_layout = QVBoxLayout(api_container)
+        api_layout.setContentsMargins(0, 8, 0, 0)
+        api_layout.setSpacing(4)
+
+        api_label = QLabel("Deepgram API Key:")
+        api_label.setFont(QFont(DEFAULT_FONT_FAMILY, 10))
+        api_layout.addWidget(api_label)
+
+        api_row = QHBoxLayout()
+        api_field = QLineEdit()
+        api_field.setEchoMode(QLineEdit.EchoMode.Password)
+        api_field.setPlaceholderText("dg-...")
+        api_field.setFont(QFont(DEFAULT_FONT_FAMILY, 11))
+        api_row.addWidget(api_field, 1)
+
+        api_status = QLabel("")
+        api_status.setFont(QFont(DEFAULT_FONT_FAMILY, 9))
+        api_status.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        api_row.addWidget(api_status)
+
+        api_layout.addLayout(api_row)
+        layout.addWidget(api_container)
+
+        self._api_key_container = api_container
+        self._api_key_field = api_field
+        self._api_key_status = api_status
+
         layout.addStretch()
 
         return widget
@@ -721,6 +756,17 @@ class OnboardingWizardWindows(QDialog):
         for c, btn in self._choice_buttons.items():
             btn.setChecked(c == choice)
 
+        # Show/hide API key input based on choice
+        if self._api_key_container:
+            show_api = choice == OnboardingChoice.FAST and not self._has_api_key()
+            self._api_key_container.setVisible(show_api)
+            if show_api and self._api_key_status:
+                self._api_key_status.setText("Erforderlich für Fast-Modus")
+        else:
+            # Hide for other choices
+            if self._api_key_container:
+                self._api_key_container.setVisible(False)
+
         if save:
             set_onboarding_choice(choice)
             self._apply_choice_preset(choice)
@@ -728,24 +774,56 @@ class OnboardingWizardWindows(QDialog):
 
         self._update_navigation()
 
+    def _has_api_key(self) -> bool:
+        """Check if a Deepgram API key exists (entered or saved)."""
+        import os
+
+        entered_key = ""
+        if self._api_key_field:
+            entered_key = self._api_key_field.text().strip()
+        return bool(
+            entered_key
+            or get_api_key("DEEPGRAM_API_KEY")
+            or os.getenv("DEEPGRAM_API_KEY")
+        )
+
     def _apply_choice_preset(self, choice: OnboardingChoice) -> None:
         """Apply the preset for the selected choice."""
+        import os
+
         from utils.presets import (
             apply_local_preset_to_env,
-            default_local_preset_fast,
             default_local_preset_private,
         )
 
         if choice == OnboardingChoice.FAST:
+            # Save entered API key if present
+            if self._api_key_field:
+                entered_key = self._api_key_field.text().strip()
+                if entered_key:
+                    save_api_key("DEEPGRAM_API_KEY", entered_key)
+
             # Check for API keys
-            if get_api_key("deepgram"):
+            has_deepgram = bool(
+                get_api_key("DEEPGRAM_API_KEY") or os.getenv("DEEPGRAM_API_KEY")
+            )
+            has_groq = bool(get_api_key("GROQ_API_KEY") or os.getenv("GROQ_API_KEY"))
+
+            if has_deepgram:
                 save_env_setting("PULSESCRIBE_MODE", "deepgram")
-            elif get_api_key("groq"):
+                if self._api_key_container:
+                    self._api_key_container.setVisible(False)
+            elif has_groq:
                 save_env_setting("PULSESCRIBE_MODE", "groq")
+                if self._api_key_container:
+                    self._api_key_container.setVisible(False)
             else:
-                # Fallback to local
-                save_env_setting("PULSESCRIBE_MODE", "local")
-                apply_local_preset_to_env(default_local_preset_fast())
+                # Show API key input, don't apply preset yet
+                if self._api_key_container:
+                    self._api_key_container.setVisible(True)
+                    if self._api_key_status:
+                        self._api_key_status.setText("Erforderlich für Fast-Modus")
+
         elif choice == OnboardingChoice.PRIVATE:
             save_env_setting("PULSESCRIBE_MODE", "local")
             apply_local_preset_to_env(default_local_preset_private())

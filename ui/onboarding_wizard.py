@@ -28,6 +28,7 @@ from utils.preferences import (
     get_onboarding_step,
     apply_hotkey_setting,
     remove_env_setting,
+    save_api_key,
     save_env_setting,
     set_onboarding_choice,
     set_onboarding_step,
@@ -35,7 +36,6 @@ from utils.preferences import (
 )
 from utils.presets import (
     apply_local_preset_to_env,
-    default_local_preset_fast,
     default_local_preset_private,
 )
 
@@ -133,6 +133,11 @@ class OnboardingWizardController:
 
         # Language selector
         self._lang_popup = None
+
+        # API key input (for Fast mode without existing key)
+        self._api_key_container = None
+        self._api_key_field = None
+        self._api_key_status = None
 
         # Strong refs for ObjC handlers
         self._handler_refs: list[object] = []
@@ -511,6 +516,48 @@ class OnboardingWizardController:
         lang_hint.setFont_(NSFont.systemFontOfSize_(10))
         lang_hint.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
         parent_view.addSubview_(lang_hint)
+
+        # API Key input (shown when Fast is selected without existing key)
+        from AppKit import NSSecureTextField  # type: ignore[import-not-found]
+
+        api_y = card_y - 70
+        api_container = _create_card(PADDING, api_y, card_w, 60)
+        api_container.setHidden_(True)
+        parent_view.addSubview_(api_container)
+        self._api_key_container = api_container
+
+        api_label = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, api_y + 38, 200, 16)
+        )
+        api_label.setStringValue_("Deepgram API Key:")
+        api_label.setBezeled_(False)
+        api_label.setDrawsBackground_(False)
+        api_label.setEditable_(False)
+        api_label.setSelectable_(False)
+        api_label.setFont_(NSFont.systemFontOfSize_weight_(11, NSFontWeightMedium))
+        api_label.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7))
+        parent_view.addSubview_(api_label)
+
+        api_field = NSSecureTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x, api_y + 12, card_w - 2 * CARD_PADDING - 80, 22)
+        )
+        api_field.setFont_(NSFont.systemFontOfSize_(12))
+        api_field.setPlaceholderString_("dg-...")
+        parent_view.addSubview_(api_field)
+        self._api_key_field = api_field
+
+        api_status = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(base_x + card_w - 2 * CARD_PADDING - 70, api_y + 14, 60, 16)
+        )
+        api_status.setStringValue_("")
+        api_status.setBezeled_(False)
+        api_status.setDrawsBackground_(False)
+        api_status.setEditable_(False)
+        api_status.setSelectable_(False)
+        api_status.setFont_(NSFont.systemFontOfSize_(10))
+        api_status.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.5))
+        parent_view.addSubview_(api_status)
+        self._api_key_status = api_status
 
     def _build_step_permissions(self, parent_view, content_h: int) -> None:
         import objc  # type: ignore[import-not-found]
@@ -1087,10 +1134,35 @@ class OnboardingWizardController:
             if action == "choose_fast":
                 self._choice = OnboardingChoice.FAST
                 set_onboarding_choice(self._choice)
-                if get_api_key("DEEPGRAM_API_KEY") or os.getenv("DEEPGRAM_API_KEY"):
+
+                # Check for API key: existing, env var, or just entered
+                entered_key = ""
+                if self._api_key_field:
+                    entered_key = self._api_key_field.stringValue().strip()
+                    if entered_key:
+                        save_api_key("DEEPGRAM_API_KEY", entered_key)
+
+                has_key = bool(
+                    entered_key
+                    or get_api_key("DEEPGRAM_API_KEY")
+                    or os.getenv("DEEPGRAM_API_KEY")
+                )
+
+                if has_key:
                     save_env_setting("PULSESCRIBE_MODE", "deepgram")
+                    # Hide API key container if shown
+                    if self._api_key_container:
+                        self._api_key_container.setHidden_(True)
                 else:
-                    apply_local_preset_to_env(default_local_preset_fast())
+                    # Show API key input and don't advance yet
+                    if self._api_key_container:
+                        self._api_key_container.setHidden_(False)
+                        if self._api_key_status:
+                            self._api_key_status.setStringValue_(
+                                "Required for Fast mode"
+                            )
+                    return  # Don't advance to next step
+
             elif action == "choose_private":
                 self._choice = OnboardingChoice.PRIVATE
                 set_onboarding_choice(self._choice)
