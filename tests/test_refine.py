@@ -8,6 +8,7 @@ from refine.llm import (
     refine_transcript,
     _get_refine_client,
     DEFAULT_REFINE_MODEL,
+    DEFAULT_GEMINI_REFINE_MODEL,
 )
 from transcribe import (
     copy_to_clipboard,
@@ -72,11 +73,13 @@ class TestGetRefineClient:
         refine.llm._groq_client = None
         refine.llm._openai_client = None
         refine.llm._openrouter_client = None
+        refine.llm._gemini_client = None
         yield
         # Cleanup nach Test
         refine.llm._groq_client = None
         refine.llm._openai_client = None
         refine.llm._openrouter_client = None
+        refine.llm._gemini_client = None
 
     def test_openai_default(self):
         """OpenAI-Provider nutzt OpenAI-Client."""
@@ -115,6 +118,22 @@ class TestGetRefineClient:
         client = _get_refine_client("groq")
 
         assert client == mock_groq_client
+
+    def test_gemini_missing_api_key(self, monkeypatch):
+        """Gemini ohne API-Key wirft ValueError (fail-fast statt kryptischer SDK-Fehler)."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        with pytest.raises(ValueError, match="GEMINI_API_KEY nicht gesetzt"):
+            _get_refine_client("gemini")
+
+    def test_gemini_routing(self, monkeypatch):
+        """_get_refine_client("gemini") ruft _get_gemini_client() auf."""
+        mock_gemini_client = Mock()
+        monkeypatch.setattr("refine.llm._get_gemini_client", lambda: mock_gemini_client)
+
+        client = _get_refine_client("gemini")
+
+        assert client == mock_gemini_client
 
 
 # =============================================================================
@@ -221,6 +240,21 @@ class TestRefineModelSelection:
 
         call_kwargs = mock_client.return_value.chat.completions.create.call_args
         assert call_kwargs[1]["model"] == DEFAULT_REFINE_MODEL
+
+    def test_gemini_default_model(self, monkeypatch, clean_env):
+        """Gemini nutzt eigenes Default-Modell (nicht das generische DEFAULT_REFINE_MODEL)."""
+        mock_types = Mock()
+        mock_response = Mock()
+        mock_response.text = "refined"
+
+        with patch("refine.llm._get_refine_client") as mock_client:
+            with patch.dict("sys.modules", {"google.genai.types": mock_types}):
+                mock_client.return_value.models.generate_content.return_value = mock_response
+
+                refine_transcript("test", provider="gemini")
+
+        call_kwargs = mock_client.return_value.models.generate_content.call_args
+        assert call_kwargs[1]["model"] == DEFAULT_GEMINI_REFINE_MODEL
 
     def test_default_model_with_default_provider(self, monkeypatch, clean_env):
         """Default-Provider (groq) nutzt DEFAULT_REFINE_MODEL."""

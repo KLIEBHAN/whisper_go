@@ -30,6 +30,7 @@ class RefineProvider(str, Enum):
     openai = "openai"
     openrouter = "openrouter"
     groq = "groq"
+    gemini = "gemini"
 
 
 class ResponseFormat(str, Enum):

@@ -28,6 +28,7 @@ At least one API key is required for cloud transcription:
 | `OPENAI_API_KEY` | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) |
 | `GROQ_API_KEY` | Groq | [console.groq.com](https://console.groq.com) – free tier |
 | `OPENROUTER_API_KEY` | OpenRouter (for Refine) | [openrouter.ai](https://openrouter.ai/keys) |
+| `GEMINI_API_KEY` | Google Gemini (for Refine) | [aistudio.google.com](https://aistudio.google.com/apikey) |
 
 ---
 
@@ -60,7 +61,7 @@ Removes filler words, fixes grammar, formats paragraphs:
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `PULSESCRIBE_REFINE` | `true`, `false` | `false` | Enable LLM post-processing |
-| `PULSESCRIBE_REFINE_PROVIDER` | `groq`, `openai`, `openrouter` | `openai` | LLM provider |
+| `PULSESCRIBE_REFINE_PROVIDER` | `groq`, `openai`, `openrouter`, `gemini` | `openai` | LLM provider |
 | `PULSESCRIBE_REFINE_MODEL` | Provider-specific | Auto | Model for refine |
 
 ### Refine Models by Provider
@@ -70,6 +71,7 @@ Removes filler words, fixes grammar, formats paragraphs:
 | **Groq** | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
 | **OpenAI** | `gpt-4o`, `gpt-4o-mini` |
 | **OpenRouter** | `openai/gpt-4o`, `anthropic/claude-3.5-sonnet` |
+| **Gemini** | `gemini-3-flash-preview`, `gemini-3-pro-preview` |
 
 ### Context Awareness
 

@@ -35,7 +35,7 @@ CARD_SPACING = 12
 
 # Verfügbare Optionen für Dropdowns
 MODE_OPTIONS = ["deepgram", "openai", "groq", "local"]
-REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
+REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter", "gemini"]
 LANGUAGE_OPTIONS = ["auto", "de", "en", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh"]
 LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "mlx", "lightning", "auto"]
 LOCAL_MODEL_OPTIONS = [
@@ -914,6 +914,12 @@ class WelcomeController:
         # OpenRouter (for refine)
         self._build_api_row_compact(
             row_y, "OpenRouter", "OPENROUTER_API_KEY", "openrouter", parent_view
+        )
+        row_y -= row_spacing
+
+        # Gemini (for refine)
+        self._build_api_row_compact(
+            row_y, "Gemini", "GEMINI_API_KEY", "gemini", parent_view
         )
 
         return card_y - CARD_SPACING
@@ -2817,12 +2823,13 @@ class WelcomeController:
 
         log = logging.getLogger(__name__)
 
-        # API Keys (alle 4 Provider)
+        # API Keys (alle 5 Provider)
         api_keys = [
             ("deepgram", "DEEPGRAM_API_KEY"),
             ("groq", "GROQ_API_KEY"),
             ("openai", "OPENAI_API_KEY"),
             ("openrouter", "OPENROUTER_API_KEY"),
+            ("gemini", "GEMINI_API_KEY"),
         ]
         for provider, env_key in api_keys:
             field = getattr(self, f"_{provider}_field", None)

@@ -241,6 +241,7 @@ DEFAULT_LOCAL_MODEL = "turbo"
 DEFAULT_DEEPGRAM_MODEL = "nova-3"
 DEFAULT_GROQ_MODEL = "whisper-large-v3"
 DEFAULT_REFINE_MODEL = "openai/gpt-oss-120b"
+DEFAULT_GEMINI_REFINE_MODEL = "gemini-3-flash-preview"
 
 # =============================================================================
 # Audio-Analyse
@@ -316,6 +317,7 @@ __all__ = [
     "DEFAULT_DEEPGRAM_MODEL",
     "DEFAULT_GROQ_MODEL",
     "DEFAULT_REFINE_MODEL",
+    "DEFAULT_GEMINI_REFINE_MODEL",
     # IPC
     "TEMP_RECORDING_FILENAME",
     "INTERIM_FILE",

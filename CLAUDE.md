@@ -202,7 +202,7 @@ python transcribe.py --record --copy --language de
 | ----------------------------- | -------------------------------------------------- |
 | `PULSESCRIBE_REFINE`          | LLM-Nachbearbeitung: `true`/`false`                |
 | `PULSESCRIBE_REFINE_MODEL`    | Modell für Refine (default: `openai/gpt-oss-120b`) |
-| `PULSESCRIBE_REFINE_PROVIDER` | Provider: `groq`, `openai` oder `openrouter`       |
+| `PULSESCRIBE_REFINE_PROVIDER` | Provider: `groq`, `openai`, `openrouter`, `gemini` |
 | `PULSESCRIBE_CONTEXT`         | Kontext-Override: `email`/`chat`/`code`            |
 | `PULSESCRIBE_APP_CONTEXTS`    | Custom App-Mappings (JSON)                         |
 
@@ -253,6 +253,7 @@ python transcribe.py --record --copy --language de
 | `DEEPGRAM_API_KEY`   | Für Deepgram-Modus (REST + Streaming) |
 | `GROQ_API_KEY`       | Für Groq-Modus und Groq-Refine        |
 | `OPENROUTER_API_KEY` | Für OpenRouter-Refine                 |
+| `GEMINI_API_KEY`     | Für Gemini-Refine                     |
 
 ### OpenRouter-Optionen
 

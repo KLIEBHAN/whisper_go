@@ -17,6 +17,7 @@ from utils.env import get_env_bool_default
 # Zentrale Konfiguration importieren
 from config import (
     DEFAULT_REFINE_MODEL,
+    DEFAULT_GEMINI_REFINE_MODEL,
     OPENROUTER_BASE_URL,
     LLM_REFINE_TIMEOUT,
 )
@@ -28,6 +29,7 @@ _client_lock = threading.Lock()
 _groq_client = None
 _openai_client = None
 _openrouter_client = None
+_gemini_client = None
 
 
 def _get_groq_client():
@@ -77,12 +79,33 @@ def _get_openrouter_client():
     return _openrouter_client
 
 
+def _get_gemini_client():
+    """Gibt Gemini-Client Singleton zurück (Lazy Init, Thread-Safe).
+
+    Nutzt google-genai SDK für Gemini 3 API.
+    """
+    global _gemini_client
+    if _gemini_client is None:
+        with _client_lock:
+            if _gemini_client is None:  # Double-check nach Lock
+                from google import genai
+
+                api_key = os.getenv("GEMINI_API_KEY")
+                if not api_key:
+                    raise ValueError("GEMINI_API_KEY nicht gesetzt")
+                _gemini_client = genai.Client(api_key=api_key)
+                logger.debug(f"[{get_session_id()}] Gemini-Client initialisiert")
+    return _gemini_client
+
+
 def _get_refine_client(provider: str):
-    """Gibt gecachten Client für Nachbearbeitung zurück (OpenAI, OpenRouter oder Groq)."""
+    """Gibt gecachten Client für Nachbearbeitung zurück (OpenAI, OpenRouter, Groq oder Gemini)."""
     if provider == "groq":
         return _get_groq_client()
     if provider == "openrouter":
         return _get_openrouter_client()
+    if provider == "gemini":
+        return _get_gemini_client()
     return _get_openai_client()
 
 
@@ -156,9 +179,11 @@ def refine_transcript(
     ).lower()
 
     # Provider-spezifisches Default-Modell (CLI > ENV > Default)
-    effective_model = (
-        model or os.getenv("PULSESCRIBE_REFINE_MODEL") or DEFAULT_REFINE_MODEL
-    )
+    if effective_provider == "gemini":
+        default_model = DEFAULT_GEMINI_REFINE_MODEL
+    else:
+        default_model = DEFAULT_REFINE_MODEL
+    effective_model = model or os.getenv("PULSESCRIBE_REFINE_MODEL") or default_model
 
     logger.info(
         f"[{session_id}] LLM-Nachbearbeitung: provider={effective_provider}, model={effective_model}"
@@ -205,6 +230,19 @@ def refine_transcript(
 
             response = client.chat.completions.create(**create_kwargs)
             result = _extract_message_content(response.choices[0].message.content)
+        elif effective_provider == "gemini":
+            # Gemini 3: "minimal" thinking für schnelle Korrekturen ohne tiefe Analyse
+            # (analog zu GPT-5 reasoning=minimal, spart Latenz und Tokens)
+            from google.genai import types
+
+            response = client.models.generate_content(
+                model=effective_model,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                ),
+            )
+            result = response.text.strip()
         else:
             # OpenAI responses API
             api_params: dict = {

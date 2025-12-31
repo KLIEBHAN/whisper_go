@@ -28,6 +28,7 @@ Mindestens ein API-Key für Cloud-Transkription erforderlich:
 | `OPENAI_API_KEY` | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) |
 | `GROQ_API_KEY` | Groq | [console.groq.com](https://console.groq.com) – kostenlose Stufe |
 | `OPENROUTER_API_KEY` | OpenRouter (für Refine) | [openrouter.ai](https://openrouter.ai/keys) |
+| `GEMINI_API_KEY` | Google Gemini (für Refine) | [aistudio.google.com](https://aistudio.google.com/apikey) |
 
 ---
 
@@ -60,7 +61,7 @@ Entfernt Füllwörter, korrigiert Grammatik, formatiert Absätze:
 | Variable | Werte | Default | Beschreibung |
 |----------|-------|---------|--------------|
 | `PULSESCRIBE_REFINE` | `true`, `false` | `false` | LLM-Nachbearbeitung aktivieren |
-| `PULSESCRIBE_REFINE_PROVIDER` | `groq`, `openai`, `openrouter` | `openai` | LLM-Provider |
+| `PULSESCRIBE_REFINE_PROVIDER` | `groq`, `openai`, `openrouter`, `gemini` | `openai` | LLM-Provider |
 | `PULSESCRIBE_REFINE_MODEL` | Provider-spezifisch | Auto | Modell für Refine |
 
 ### Kontext-Awareness

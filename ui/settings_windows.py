@@ -65,7 +65,7 @@ SETTINGS_HEIGHT = 700
 # =============================================================================
 
 MODE_OPTIONS = ["deepgram", "openai", "groq", "local"]
-REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter"]
+REFINE_PROVIDER_OPTIONS = ["groq", "openai", "openrouter", "gemini"]
 LOCAL_BACKEND_OPTIONS = ["whisper", "faster", "mlx", "lightning", "auto"]
 LOCAL_MODEL_OPTIONS = [
     "default",
@@ -544,6 +544,7 @@ class SettingsWindow(QDialog):
             ("OpenAI", "OPENAI_API_KEY"),
             ("Groq", "GROQ_API_KEY"),
             ("OpenRouter", "OPENROUTER_API_KEY"),
+            ("Gemini", "GEMINI_API_KEY"),
         ]:
             row = QHBoxLayout()
             row.setSpacing(8)
