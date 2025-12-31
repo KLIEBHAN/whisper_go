@@ -366,6 +366,9 @@ def paste_transcript(text: str) -> bool:
             logger.error(f"Clipboard-Fehler: {e}")
             return False
 
+        # Kurze Pause damit Zielanwendung das Clipboard-Update sieht
+        time.sleep(0.05)
+
         if not _paste_via_pynput_windows():
             logger.error(
                 "Auto-Paste fehlgeschlagen. "
