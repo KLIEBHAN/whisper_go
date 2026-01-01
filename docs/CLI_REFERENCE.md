@@ -201,6 +201,3 @@ python transcribe.py interview.mp4 --format srt --mode deepgram > interview.srt
 python transcribe.py --record --language de --refine
 ```
 
----
-
-_Last updated: January 2026_

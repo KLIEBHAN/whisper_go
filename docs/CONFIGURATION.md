@@ -262,6 +262,3 @@ PULSESCRIBE_REFINE=true
 PULSESCRIBE_REFINE_PROVIDER=openai
 ```
 
----
-
-_Last updated: December 2025_
