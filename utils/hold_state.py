@@ -66,6 +66,7 @@ class HoldHotkeyState:
 
     def reset(self):
         """Reset after recording ends."""
+        self.active_sources.clear()
         self.started_by_hold = False
 
     def clear(self):
