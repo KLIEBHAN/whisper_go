@@ -263,11 +263,19 @@ class SettingsWindow(QDialog):
         return header
 
     def _build_footer(self) -> QWidget:
-        """Erstellt den Footer mit Save- und Close-Button."""
+        """Erstellt den Footer mit Checkbox links, Buttons rechts (wie macOS)."""
         footer = QWidget()
         footer.setFixedHeight(60)
         layout = QHBoxLayout(footer)
         layout.setContentsMargins(20, 10, 20, 20)
+
+        # Checkbox links (wie macOS Welcome Window)
+        self._show_at_startup_checkbox = QCheckBox("Show at startup")
+        self._show_at_startup_checkbox.setChecked(get_show_welcome_on_startup())
+        self._show_at_startup_checkbox.stateChanged.connect(
+            self._on_show_at_startup_changed
+        )
+        layout.addWidget(self._show_at_startup_checkbox)
 
         layout.addStretch()
 
@@ -1052,21 +1060,6 @@ class SettingsWindow(QDialog):
         card_layout.addWidget(links)
 
         layout.addWidget(card)
-
-        # Startup Settings Card
-        startup_card, startup_layout = create_card(
-            "⚙️ Startup", "Configure behavior when PulseScribe starts."
-        )
-
-        # Show at startup checkbox
-        self._show_at_startup_checkbox = QCheckBox("Show Settings at startup")
-        self._show_at_startup_checkbox.setChecked(get_show_welcome_on_startup())
-        self._show_at_startup_checkbox.stateChanged.connect(
-            self._on_show_at_startup_changed
-        )
-        startup_layout.addWidget(self._show_at_startup_checkbox)
-
-        layout.addWidget(startup_card)
         layout.addStretch()
 
         return content
