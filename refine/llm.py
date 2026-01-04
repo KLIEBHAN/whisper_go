@@ -240,7 +240,7 @@ def refine_transcript(
             # "minimal" nur für Flash (schnellste Latenz), Pro braucht "low"
             is_flash_model = "flash" in effective_model.lower()
             thinking_level = "minimal" if is_flash_model else "low"
-            logger.debug(f"[{session_id}] Gemini thinking_level={thinking_level}")
+            logger.info(f"[{session_id}] Gemini thinking_level={thinking_level}")
 
             # SDK-Timeout: 60s Default, kein zuverlässiger Override möglich
             response = client.models.generate_content(
