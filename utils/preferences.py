@@ -186,12 +186,22 @@ def save_api_key(key_name: str, value: str) -> None:
     Args:
         key_name: Name des Keys (z.B. "DEEPGRAM_API_KEY")
         value: Der API-Key Wert
+
+    Raises:
+        OSError: Bei Schreibfehlern (Disk voll, keine Berechtigung)
     """
+    import logging
+    logger = logging.getLogger("pulsescribe")
+
     env_path = ENV_FILE
 
     lines = []
-    if env_path.exists():
-        lines = env_path.read_text().splitlines()
+    try:
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        logger.error(f"Konnte .env nicht lesen: {e}")
+        raise
 
     # Key aktualisieren oder hinzufügen
     found = False
@@ -204,7 +214,12 @@ def save_api_key(key_name: str, value: str) -> None:
     if not found:
         lines.append(f"{key_name}={value}")
 
-    env_path.write_text("\n".join(lines) + "\n")
+    try:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        logger.error(f"Konnte .env nicht schreiben: {e}")
+        raise
     _invalidate_env_cache()
 
 
@@ -248,15 +263,20 @@ def remove_env_setting(key_name: str) -> None:
     Args:
         key_name: Name der Einstellung (z.B. "PULSESCRIBE_REFINE")
     """
+    import logging
+    logger = logging.getLogger("pulsescribe")
+
     env_path = ENV_FILE
 
     if not env_path.exists():
         return
 
-    lines = env_path.read_text().splitlines()
-    new_lines = [line for line in lines if not line.startswith(f"{key_name}=")]
-
-    env_path.write_text("\n".join(new_lines) + "\n" if new_lines else "")
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        new_lines = [line for line in lines if not line.startswith(f"{key_name}=")]
+        env_path.write_text("\n".join(new_lines) + "\n" if new_lines else "", encoding="utf-8")
+    except OSError as e:
+        logger.warning(f"Konnte .env nicht aktualisieren: {e}")
     _invalidate_env_cache()
 
 
