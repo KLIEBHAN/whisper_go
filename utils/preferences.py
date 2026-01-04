@@ -5,9 +5,12 @@ API-Keys werden in ~/.pulsescribe/.env gespeichert.
 """
 
 import json
+import logging
 from pathlib import Path
 
 from config import USER_CONFIG_DIR
+
+logger = logging.getLogger("pulsescribe")
 from utils.onboarding import (
     OnboardingChoice,
     OnboardingStep,
@@ -190,17 +193,14 @@ def save_api_key(key_name: str, value: str) -> None:
     Raises:
         OSError: Bei Schreibfehlern (Disk voll, keine Berechtigung)
     """
-    import logging
-    logger = logging.getLogger("pulsescribe")
-
     env_path = ENV_FILE
 
     lines = []
     try:
         if env_path.exists():
             lines = env_path.read_text(encoding="utf-8").splitlines()
-    except OSError as e:
-        logger.error(f"Konnte .env nicht lesen: {e}")
+    except OSError:
+        logger.exception("Konnte .env nicht lesen")
         raise
 
     # Key aktualisieren oder hinzufügen
@@ -222,10 +222,11 @@ def save_api_key(key_name: str, value: str) -> None:
             env_path.chmod(0o600)
         except OSError:
             pass  # Windows unterstützt chmod nicht vollständig
-    except OSError as e:
-        logger.error(f"Konnte .env nicht schreiben: {e}")
+        # Cache erst nach erfolgreichem Schreiben invalidieren
+        _invalidate_env_cache()
+    except OSError:
+        logger.exception("Konnte .env nicht schreiben")
         raise
-    _invalidate_env_cache()
 
 
 def get_api_key(key_name: str) -> str | None:
@@ -268,9 +269,6 @@ def remove_env_setting(key_name: str) -> None:
     Args:
         key_name: Name der Einstellung (z.B. "PULSESCRIBE_REFINE")
     """
-    import logging
-    logger = logging.getLogger("pulsescribe")
-
     env_path = ENV_FILE
 
     if not env_path.exists():
@@ -280,9 +278,10 @@ def remove_env_setting(key_name: str) -> None:
         lines = env_path.read_text(encoding="utf-8").splitlines()
         new_lines = [line for line in lines if not line.startswith(f"{key_name}=")]
         env_path.write_text("\n".join(new_lines) + "\n" if new_lines else "", encoding="utf-8")
-    except OSError as e:
-        logger.warning(f"Konnte .env nicht aktualisieren: {e}")
-    _invalidate_env_cache()
+        # Cache erst nach erfolgreichem Schreiben invalidieren
+        _invalidate_env_cache()
+    except OSError:
+        logger.warning("Konnte .env nicht aktualisieren", exc_info=True)
 
 
 def apply_hotkey_setting(kind: str, hotkey_str: str) -> None:

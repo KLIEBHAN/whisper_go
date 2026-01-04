@@ -4,9 +4,12 @@ Gemeinsame Konstanten für Audio, Streaming und IPC.
 Vermeidet Duplikation zwischen Modulen.
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger("pulsescribe")
 
 # =============================================================================
 # Audio-Konfiguration
@@ -200,6 +203,7 @@ def _get_float_env(name: str, default: float) -> float:
     try:
         return float(raw)
     except (TypeError, ValueError):
+        logger.warning(f"Ungültiger Wert für {name}='{raw}', verwende Default {default}")
         return default
 
 

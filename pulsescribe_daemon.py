@@ -143,10 +143,12 @@ class PulseScribeDaemon:
         self.toggle_hotkey = toggle_hotkey or os.getenv("PULSESCRIBE_TOGGLE_HOTKEY")
         self.hold_hotkey = hold_hotkey or os.getenv("PULSESCRIBE_HOLD_HOTKEY")
 
-        # State (mit Lock für Thread-Safety)
+        # State (mit RLock für Thread-Safety)
+        # RLock erlaubt verschachtelte Aufrufe aus demselben Thread,
+        # verhindert Deadlocks wenn Properties innerhalb von Lock-Kontexten aufgerufen werden
         self.__recording = False
         self.__current_state = AppState.IDLE
-        self._state_lock = threading.Lock()  # Schützt _recording und _current_state
+        self._state_lock = threading.RLock()  # Schützt _recording und _current_state
         self._toggle_lock = threading.Lock()
         self._last_hotkey_time = 0.0
         self._last_rtf: float | None = (
