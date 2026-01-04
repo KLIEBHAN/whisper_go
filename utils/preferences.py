@@ -217,6 +217,11 @@ def save_api_key(key_name: str, value: str) -> None:
     try:
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Sichere Permissions: Nur Owner lesen/schreiben (enthält API-Keys)
+        try:
+            env_path.chmod(0o600)
+        except OSError:
+            pass  # Windows unterstützt chmod nicht vollständig
     except OSError as e:
         logger.error(f"Konnte .env nicht schreiben: {e}")
         raise

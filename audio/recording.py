@@ -38,8 +38,8 @@ def _play_sound(name: str) -> None:
         from whisper_platform import get_sound_player
         player = get_sound_player()
         player.play(name)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Sound '{name}' konnte nicht abgespielt werden: {e}")
 
 
 class AudioRecorder:
