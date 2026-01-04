@@ -9,10 +9,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import numpy as np
 
 # Zentrale Konfiguration importieren
 from config import (
@@ -83,7 +79,8 @@ class AudioRecorder:
         """
         import sounddevice as sd
 
-        self._recorded_chunks = []
+        with self._chunks_lock:
+            self._recorded_chunks = []
         self._stop_event.clear()
         self._recording_start = time.perf_counter()
 
@@ -164,8 +161,9 @@ class AudioRecorder:
 
     @property
     def chunks(self) -> list:
-        """Gibt die bisher aufgenommenen Chunks zurück."""
-        return self._recorded_chunks
+        """Gibt eine Kopie der bisher aufgenommenen Chunks zurück (thread-safe)."""
+        with self._chunks_lock:
+            return list(self._recorded_chunks)
 
 
 def record_audio() -> Path:
