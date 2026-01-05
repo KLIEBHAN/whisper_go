@@ -443,23 +443,23 @@ def _init_warm_stream(
                     logger.warning(f"[{session_id}] Warm-Stream Forwarder Error: {e}")
                 break
 
-        # Audio-Callback stoppen BEVOR wir drainieren
-        # Verhindert Race Condition: Callback schreibt während Drain
+        # Audio-Callback stoppen und Queue drainieren
+        # arm_event.clear() signalisiert dem Callback, keine neuen Chunks zu schreiben.
+        # Wir drainieren dann für 50ms, um auch Chunks zu erfassen, die der Callback
+        # noch zwischen is_set()-Prüfung und put_nowait() geschrieben hat (TOCTOU).
         warm_source.arm_event.clear()
-        time.sleep(0.05)  # 2-3 Callback-Zyklen abwarten (bei 20ms Blocksize)
 
-        # Queue drainieren nach Stop - jetzt stabil, keine neuen Chunks mehr
         drained = 0
-        while True:
+        drain_deadline = time.monotonic() + 0.05  # 50ms = 2-3 Callback-Zyklen
+        while time.monotonic() < drain_deadline:
             try:
-                chunk = warm_source.audio_queue.get_nowait()
-            except queue.Empty:
-                break
-            try:
+                chunk = warm_source.audio_queue.get(timeout=0.01)
                 loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
                 drained += 1
+            except queue.Empty:
+                continue
             except RuntimeError:
-                # Event-Loop bereits geschlossen - restliche Chunks verwerfen
+                # Event-Loop bereits geschlossen
                 logger.debug(f"[{session_id}] Event-Loop geschlossen, Drain abgebrochen")
                 break
         if drained > 0:
@@ -1014,7 +1014,10 @@ async def deepgram_stream_core(
             except Exception as e:
                 logger.debug(f"Mikrofon-Cleanup fehlgeschlagen: {e}")
 
-        # Warm-Stream: Disarm (Forwarder ist Daemon-Thread, beendet sich automatisch)
+        # Warm-Stream: Safety-Net Disarm
+        # Normalerweise hat der Forwarder-Thread bereits arm_event.clear() aufgerufen.
+        # Dieser Aufruf ist ein Safety-Net für den Fall, dass der Daemon-Thread
+        # vorzeitig beendet wurde (z.B. bei Prozess-Shutdown).
         if warm_stream_source is not None:
             warm_stream_source.arm_event.clear()
 
