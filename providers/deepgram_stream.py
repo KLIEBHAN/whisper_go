@@ -443,7 +443,12 @@ def _init_warm_stream(
                     logger.warning(f"[{session_id}] Warm-Stream Forwarder Error: {e}")
                 break
 
-        # Queue drainieren nach Stop - verhindert abgeschnittene letzte Wörter
+        # Audio-Callback stoppen BEVOR wir drainieren
+        # Verhindert Race Condition: Callback schreibt während Drain
+        warm_source.arm_event.clear()
+        time.sleep(0.05)  # 2-3 Callback-Zyklen abwarten (bei 20ms Blocksize)
+
+        # Queue drainieren nach Stop - jetzt stabil, keine neuen Chunks mehr
         drained = 0
         while True:
             try:
