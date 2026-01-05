@@ -36,6 +36,8 @@ from config import (
     DEEPGRAM_CLOSE_TIMEOUT,
     DEEPGRAM_WS_URL,
     DEFAULT_DEEPGRAM_MODEL,
+    DRAIN_EMPTY_THRESHOLD,
+    DRAIN_MAX_DURATION,
     DRAIN_POLL_INTERVAL,
     FINALIZE_TIMEOUT,
     FORWARDER_THREAD_JOIN_TIMEOUT,
@@ -444,17 +446,26 @@ def _init_warm_stream(
                     logger.warning(f"[{session_id}] Warm-Stream Forwarder Error: {e}")
                 break
 
-        # Audio-Callback stoppen und Queue drainieren
+        # Audio-Callback stoppen und Queue drainieren:
         # 1. arm_event.clear() signalisiert dem Callback, keine neuen Chunks zu schreiben
-        # 2. Kurze Pause gibt dem Callback Zeit, seinen aktuellen Schreibvorgang
-        #    abzuschließen (TOCTOU: Callback hat is_set() bereits geprüft)
-        # 3. Queue komplett leeren bis sie leer bleibt
+        # 2. Kurze Pause (DRAIN_POLL_INTERVAL) gibt dem Callback Zeit, seinen aktuellen
+        #    Schreibvorgang abzuschließen (TOCTOU: Callback hat is_set() bereits geprüft)
+        # 3. Queue leeren bis DRAIN_EMPTY_THRESHOLD aufeinanderfolgende leere Polls
+        # 4. Safety: DRAIN_MAX_DURATION als absolute Obergrenze gegen Endlosschleifen
         warm_source.arm_event.clear()
-        time.sleep(DRAIN_POLL_INTERVAL)  # Warten auf laufenden Callback
+        time.sleep(DRAIN_POLL_INTERVAL)
 
         drained = 0
         empty_count = 0
-        while empty_count < 2:  # 2x leer = sicher fertig
+        drain_deadline = time.monotonic() + DRAIN_MAX_DURATION
+        while empty_count < DRAIN_EMPTY_THRESHOLD:
+            # Safety-Limit: Verhindert Endlosschleife bei sporadischen Chunks
+            if time.monotonic() >= drain_deadline:
+                logger.warning(
+                    f"[{session_id}] Drain-Timeout nach {DRAIN_MAX_DURATION}s "
+                    f"({drained} Chunks)"
+                )
+                break
             try:
                 chunk = warm_source.audio_queue.get(timeout=DRAIN_POLL_INTERVAL)
                 loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
