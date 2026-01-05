@@ -190,7 +190,7 @@ def get_input_device() -> tuple[int | None, int]:
 
 INTERIM_THROTTLE_MS = 150  # Max. Update-Rate für Interim-File (Menübar pollt 200ms)
 FINALIZE_TIMEOUT = (
-    1.0  # Warten auf finale Transkripte (Deepgram antwortet meist in 300-500ms)
+    2.0  # Warten auf finale Transkripte (erhöht für Windows/Netzwerk-Latenz)
 )
 DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
 
@@ -244,8 +244,11 @@ TRANSCRIBING_TIMEOUT = 45.0  # Sekunden (Deepgram + Refine sollten < 30s dauern)
 AUDIO_QUEUE_POLL_INTERVAL = 0.1  # Sekunden zwischen Queue-Polls
 SEND_MEDIA_TIMEOUT = 5.0  # Max. Wartezeit für WebSocket send_media()
 FORWARDER_THREAD_JOIN_TIMEOUT = 0.5  # Timeout beim Beenden des Forwarder-Threads
-DRAIN_WINDOW_DURATION = 0.05  # Drain-Fenster nach arm_event.clear() (50ms = 2-3 Callback-Zyklen)
-DRAIN_POLL_INTERVAL = 0.01  # Queue-Poll-Interval während Drain (10ms)
+
+# Drain-Konfiguration: Leeren der Audio-Queue nach Aufnahme-Stop
+DRAIN_POLL_INTERVAL = 0.01  # Timeout pro Queue.get() während Drain (10ms)
+DRAIN_MAX_DURATION = 0.2  # Maximale Drain-Dauer als Safety-Limit (200ms)
+DRAIN_EMPTY_THRESHOLD = 2  # Anzahl leerer Polls bevor Drain beendet wird
 
 # LLM-Refine Timeout: Maximale Wartezeit für API-Calls
 # Verhindert "hängende" Requests bei Netzwerkproblemen
@@ -330,8 +333,9 @@ __all__ = [
     "AUDIO_QUEUE_POLL_INTERVAL",
     "SEND_MEDIA_TIMEOUT",
     "FORWARDER_THREAD_JOIN_TIMEOUT",
-    "DRAIN_WINDOW_DURATION",
     "DRAIN_POLL_INTERVAL",
+    "DRAIN_MAX_DURATION",
+    "DRAIN_EMPTY_THRESHOLD",
     # Models
     "DEFAULT_API_MODEL",
     "DEFAULT_LOCAL_MODEL",
