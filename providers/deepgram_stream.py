@@ -44,6 +44,7 @@ from config import (
     INT16_MAX,
     INTERIM_FILE,
     INTERIM_THROTTLE_MS,
+    PRE_DRAIN_DURATION,
     SEND_MEDIA_TIMEOUT,
     WHISPER_BLOCKSIZE,
     WHISPER_CHANNELS,
@@ -446,7 +447,26 @@ def _init_warm_stream(
                     logger.warning(f"[{session_id}] Warm-Stream Forwarder Error: {e}")
                 break
 
-        # Audio-Callback stoppen und Queue drainieren:
+        # === PRE-DRAIN PHASE ===
+        # Callback läuft noch! Gibt sounddevice Zeit, seine internen Buffer zu leeren.
+        # Problem: sounddevice buffert ~23ms Audio (blocksize=1024 @ 44100Hz).
+        # Wenn wir arm_event.clear() sofort aufrufen, gehen diese Chunks verloren.
+        pre_drained = 0
+        pre_drain_deadline = time.monotonic() + PRE_DRAIN_DURATION
+        while time.monotonic() < pre_drain_deadline:
+            try:
+                chunk = warm_source.audio_queue.get(timeout=DRAIN_POLL_INTERVAL)
+                loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
+                pre_drained += 1
+            except queue.Empty:
+                continue
+            except RuntimeError:
+                break
+
+        if pre_drained > 0:
+            logger.debug(f"[{session_id}] Pre-Drain: {pre_drained} Chunks geleert")
+
+        # === POST-DRAIN PHASE ===
         # 1. arm_event.clear() signalisiert dem Callback, keine neuen Chunks zu schreiben
         # 2. Kurze Pause (DRAIN_POLL_INTERVAL) gibt dem Callback Zeit, seinen aktuellen
         #    Schreibvorgang abzuschließen (TOCTOU: Callback hat is_set() bereits geprüft)

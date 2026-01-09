@@ -246,6 +246,8 @@ SEND_MEDIA_TIMEOUT = 5.0  # Max. Wartezeit für WebSocket send_media()
 FORWARDER_THREAD_JOIN_TIMEOUT = 0.5  # Timeout beim Beenden des Forwarder-Threads
 
 # Drain-Konfiguration: Leeren der Audio-Queue nach Aufnahme-Stop
+# Pre-Drain: Callback läuft noch, gibt sounddevice Zeit Buffer zu leeren
+PRE_DRAIN_DURATION = 0.05  # Pre-Drain Phase bevor Callback gestoppt wird (50ms)
 DRAIN_POLL_INTERVAL = 0.01  # Timeout pro Queue.get() während Drain (10ms)
 DRAIN_MAX_DURATION = 0.2  # Maximale Drain-Dauer als Safety-Limit (200ms)
 DRAIN_EMPTY_THRESHOLD = 2  # Anzahl leerer Polls bevor Drain beendet wird
