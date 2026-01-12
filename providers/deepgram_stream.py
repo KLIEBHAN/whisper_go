@@ -95,6 +95,7 @@ class WarmStreamSource:
         audio_queue: Queue mit Audio-Chunks (bytes, int16 PCM)
         sample_rate: Sample Rate des Streams (z.B. 16000, 48000)
         arm_event: Steuert ob Audio gesammelt wird (set=aktiv, clear=ignoriert)
+        drain_event: Optional, erlaubt Audio-Sammlung während Drain-Phase
         stream: Der laufende InputStream (für Cleanup/Reference)
     """
 
@@ -102,6 +103,7 @@ class WarmStreamSource:
     sample_rate: int
     arm_event: threading.Event
     stream: sd.InputStream
+    drain_event: threading.Event | None = None
 
     def __post_init__(self) -> None:
         """Validiert Sample Rate."""
@@ -468,39 +470,49 @@ def _init_warm_stream(
             logger.debug(f"[{session_id}] Pre-Drain: {pre_drained} Chunks geleert")
 
         # === POST-DRAIN PHASE ===
-        # 1. arm_event.clear() signalisiert dem Callback, keine neuen Chunks zu schreiben
-        # 2. Kurze Pause (DRAIN_POLL_INTERVAL) gibt dem Callback Zeit, seinen aktuellen
+        # 1. drain_event.set() erlaubt dem Callback weiter Audio zu sammeln
+        # 2. arm_event.clear() signalisiert dem Callback, keine neuen Chunks zu schreiben
+        #    (außer drain_event ist gesetzt - für die Drain-Phase)
+        # 3. Kurze Pause (DRAIN_POLL_INTERVAL) gibt dem Callback Zeit, seinen aktuellen
         #    Schreibvorgang abzuschließen (TOCTOU: Callback hat is_set() bereits geprüft)
-        # 3. Queue leeren bis DRAIN_EMPTY_THRESHOLD aufeinanderfolgende leere Polls
-        # 4. Safety: DRAIN_MAX_DURATION als absolute Obergrenze gegen Endlosschleifen
+        # 4. Queue leeren bis DRAIN_EMPTY_THRESHOLD aufeinanderfolgende leere Polls
+        # 5. Safety: DRAIN_MAX_DURATION als absolute Obergrenze gegen Endlosschleifen
+        # 6. drain_event.clear() beendet die Drain-Phase
+        if warm_source.drain_event is not None:
+            warm_source.drain_event.set()
         warm_source.arm_event.clear()
         time.sleep(DRAIN_POLL_INTERVAL)
 
-        drained = 0
-        empty_count = 0
-        drain_deadline = time.monotonic() + DRAIN_MAX_DURATION
-        while empty_count < DRAIN_EMPTY_THRESHOLD:
-            # Safety-Limit: Verhindert Endlosschleife bei sporadischen Chunks
-            if time.monotonic() >= drain_deadline:
-                logger.warning(
-                    f"[{session_id}] Drain-Timeout nach {DRAIN_MAX_DURATION}s "
-                    f"({drained} Chunks)"
-                )
-                break
-            try:
-                chunk = warm_source.audio_queue.get(timeout=DRAIN_POLL_INTERVAL)
-                loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
-                drained += 1
-                empty_count = 0  # Reset bei erfolgreichem Chunk
-            except queue.Empty:
-                empty_count += 1
-            except RuntimeError:
-                # Event-Loop bereits geschlossen
-                logger.debug(f"[{session_id}] Event-Loop geschlossen, Drain abgebrochen")
-                break
+        try:
+            drained = 0
+            empty_count = 0
+            drain_deadline = time.monotonic() + DRAIN_MAX_DURATION
+            while empty_count < DRAIN_EMPTY_THRESHOLD:
+                # Safety-Limit: Verhindert Endlosschleife bei sporadischen Chunks
+                if time.monotonic() >= drain_deadline:
+                    logger.warning(
+                        f"[{session_id}] Drain-Timeout nach {DRAIN_MAX_DURATION}s "
+                        f"({drained} Chunks)"
+                    )
+                    break
+                try:
+                    chunk = warm_source.audio_queue.get(timeout=DRAIN_POLL_INTERVAL)
+                    loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)
+                    drained += 1
+                    empty_count = 0  # Reset bei erfolgreichem Chunk
+                except queue.Empty:
+                    empty_count += 1
+                except RuntimeError:
+                    # Event-Loop bereits geschlossen
+                    logger.debug(f"[{session_id}] Event-Loop geschlossen, Drain abgebrochen")
+                    break
 
-        if drained > 0:
-            logger.debug(f"[{session_id}] Warm-Stream: {drained} Rest-Chunks geleert")
+            if drained > 0:
+                logger.debug(f"[{session_id}] Warm-Stream: {drained} Rest-Chunks geleert")
+        finally:
+            # KRITISCH: drain_event MUSS gelöscht werden, sonst sammelt Callback ewig
+            if warm_source.drain_event is not None:
+                warm_source.drain_event.clear()
 
     forwarder_thread = threading.Thread(
         target=_warm_stream_forwarder, daemon=True, name="WarmStreamForwarder"
@@ -1077,7 +1089,12 @@ async def deepgram_stream_core(
                     "Warm-Stream arm_event noch gesetzt im finally-Block - "
                     "Forwarder-Thread wurde vermutlich vorzeitig beendet"
                 )
+            # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
+            if warm_stream_source.drain_event is not None:
+                warm_stream_source.drain_event.set()
             warm_stream_source.arm_event.clear()
+            if warm_stream_source.drain_event is not None:
+                warm_stream_source.drain_event.clear()
 
         # Signal-Handler entfernen
         _cleanup_stop_mechanism(loop, external_stop_event)

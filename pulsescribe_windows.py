@@ -258,6 +258,7 @@ class PulseScribeWindows:
         # ═══════════════════════════════════════════════════════════════════
         self._warm_stream = None  # sd.InputStream (läuft dauerhaft)
         self._warm_stream_armed = threading.Event()  # Wenn gesetzt: Samples sammeln
+        self._warm_stream_draining = threading.Event()  # Erlaubt Sammeln während Drain-Phase
         # Queue mit maxsize: via PULSESCRIBE_WARM_STREAM_QUEUE_SIZE (default: 300)
         # Verhindert Memory Leak wenn Forwarder nicht läuft
         self._warm_stream_queue: queue.Queue[bytes] = queue.Queue(
@@ -547,8 +548,8 @@ class PulseScribeWindows:
                     logger.debug(f"VAD triggered: level={rms:.4f}")
                     self._set_state(AppState.RECORDING)
 
-            # Audio sammeln nur wenn armed
-            if self._warm_stream_armed.is_set():
+            # Audio sammeln wenn armed ODER draining (für Drain-Phase)
+            if self._warm_stream_armed.is_set() or self._warm_stream_draining.is_set():
                 audio_bytes = indata.tobytes()
                 try:
                     self._warm_stream_queue.put_nowait(audio_bytes)
@@ -828,8 +829,35 @@ class PulseScribeWindows:
             time.sleep(1.0)
             self._set_state(AppState.IDLE)
         finally:
-            # Warm-Stream disarmen
+            # === DRAIN-PHASE ===
+            # Wichtig: sounddevice hat noch ~23ms Audio im Buffer.
+            # drain_event setzen BEVOR arm_event gelöscht wird,
+            # damit Callback weiter Audio sammelt während Queue geleert wird.
+            self._warm_stream_draining.set()
             self._warm_stream_armed.clear()
+
+            try:
+                # Queue leeren (max 200ms, 2 leere Polls = fertig)
+                drain_deadline = time.monotonic() + 0.2
+                empty_count = 0
+                drained = 0
+                while empty_count < 2 and time.monotonic() < drain_deadline:
+                    try:
+                        chunk = self._warm_stream_queue.get(timeout=0.01)
+                        audio_int16 = np.frombuffer(chunk, dtype=np.int16)
+                        audio_float32 = audio_int16.astype(np.float32) / INT16_MAX
+                        with self._audio_lock:
+                            self._audio_buffer.append(audio_float32)
+                        drained += 1
+                        empty_count = 0
+                    except queue.Empty:
+                        empty_count += 1
+
+                if drained > 0:
+                    logger.debug(f"REST-Mode Drain: {drained} Rest-Chunks gesammelt")
+            finally:
+                # KRITISCH: drain_event MUSS gelöscht werden, sonst sammelt Callback ewig
+                self._warm_stream_draining.clear()
 
     def _streaming_worker(self):
         """Streaming-Worker: Recording + Transcription via WebSocket."""
@@ -943,6 +971,7 @@ class PulseScribeWindows:
                 sample_rate=self._warm_stream_sample_rate,
                 arm_event=self._warm_stream_armed,
                 stream=self._warm_stream,
+                drain_event=self._warm_stream_draining,
             )
 
             # Event-Loop erstellen
@@ -990,14 +1019,20 @@ class PulseScribeWindows:
 
         except ImportError as e:
             logger.error(f"Import-Fehler: {e}")
-            self._warm_stream_armed.clear()  # Safety: Disarm bei frühem Fehler
+            # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
+            self._warm_stream_draining.set()
+            self._warm_stream_armed.clear()
+            self._warm_stream_draining.clear()
             self._set_state(AppState.ERROR)
             self._play_sound("error")
             time.sleep(1.0)
             self._set_state(AppState.IDLE)
         except Exception as e:
             logger.error(f"Streaming-Fehler (Warm): {e}")
-            self._warm_stream_armed.clear()  # Safety: Disarm bei frühem Fehler
+            # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
+            self._warm_stream_draining.set()
+            self._warm_stream_armed.clear()
+            self._warm_stream_draining.clear()
             self._set_state(AppState.ERROR)
             self._play_sound("error")
             time.sleep(1.0)
