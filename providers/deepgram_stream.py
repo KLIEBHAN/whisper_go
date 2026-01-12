@@ -1090,11 +1090,12 @@ async def deepgram_stream_core(
                     "Forwarder-Thread wurde vermutlich vorzeitig beendet"
                 )
             # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
-            if warm_stream_source.drain_event is not None:
-                warm_stream_source.drain_event.set()
+            drain_event = warm_stream_source.drain_event
+            if drain_event is not None:
+                drain_event.set()
             warm_stream_source.arm_event.clear()
-            if warm_stream_source.drain_event is not None:
-                warm_stream_source.drain_event.clear()
+            if drain_event is not None:
+                drain_event.clear()
 
         # Signal-Handler entfernen
         _cleanup_stop_mechanism(loop, external_stop_event)

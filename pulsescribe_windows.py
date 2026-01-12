@@ -938,14 +938,9 @@ class PulseScribeWindows:
             finally:
                 loop.close()
 
-        except ImportError as e:
-            logger.error(f"Import-Fehler: {e}")
-            self._set_state(AppState.ERROR)
-            self._play_sound("error")
-            time.sleep(1.0)
-            self._set_state(AppState.IDLE)
         except Exception as e:
-            logger.error(f"Streaming-Fehler: {e}")
+            error_type = "Import-Fehler" if isinstance(e, ImportError) else "Streaming-Fehler"
+            logger.error(f"{error_type}: {e}")
             self._set_state(AppState.ERROR)
             self._play_sound("error")
             time.sleep(1.0)
@@ -1017,18 +1012,9 @@ class PulseScribeWindows:
                 loop.close()
                 # Disarm wird automatisch in deepgram_stream_core finally gemacht
 
-        except ImportError as e:
-            logger.error(f"Import-Fehler: {e}")
-            # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
-            self._warm_stream_draining.set()
-            self._warm_stream_armed.clear()
-            self._warm_stream_draining.clear()
-            self._set_state(AppState.ERROR)
-            self._play_sound("error")
-            time.sleep(1.0)
-            self._set_state(AppState.IDLE)
         except Exception as e:
-            logger.error(f"Streaming-Fehler (Warm): {e}")
+            error_type = "Import-Fehler" if isinstance(e, ImportError) else "Streaming-Fehler (Warm)"
+            logger.error(f"{error_type}: {e}")
             # Safety-Drain: drain_event kurz setzen um Race-Condition zu vermeiden
             self._warm_stream_draining.set()
             self._warm_stream_armed.clear()
