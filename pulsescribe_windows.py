@@ -1894,6 +1894,8 @@ class PulseScribeWindows:
                     logger.info(
                         f"Local-Modell '{model}' vorab geladen ({preload_ms:.0f}ms{runtime_info})"
                     )
+                    # Auditive Rückmeldung: User kann jetzt mit minimaler Latenz aufnehmen
+                    get_sound_player().play("warmup")
                 except Exception as e:
                     logger.warning(f"Local-Modell Preload fehlgeschlagen: {e}")
 

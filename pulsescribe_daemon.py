@@ -548,6 +548,8 @@ class PulseScribeDaemon:
                 self._local_preload_complete.set()
                 # Zurück zu IDLE nach erfolgreichem Preload
                 self._update_state(AppState.IDLE)
+                # Auditive Rückmeldung: User kann jetzt mit minimaler Latenz aufnehmen
+                get_sound_player().play("warmup")
             except Exception as e:
                 logger.warning(f"Preload lokales Modell fehlgeschlagen: {e}")
                 self._local_preload_complete.set()  # Setze trotzdem um Deadlock zu vermeiden

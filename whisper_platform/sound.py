@@ -17,6 +17,7 @@ MACOS_SYSTEM_SOUNDS = {
     "stop": "/System/Library/Sounds/Pop.aiff",
     "done": "/System/Library/Sounds/Bottle.aiff",  # Erfolgs-Feedback (Korken-Pop = "geschafft")
     "error": "/System/Library/Sounds/Basso.aiff",
+    "warmup": "/System/Library/Sounds/Glass.aiff",  # Preload/Warmup fertig
 }
 
 # Windows System-Sound Aliases (Win10/11 optimiert)
@@ -25,6 +26,7 @@ WINDOWS_SYSTEM_SOUNDS = {
     "stop": "DeviceDisconnect",  # Aufnahme stoppt
     "done": "Notification.SMS",  # Text eingefügt
     "error": "SystemHand",  # Fehler (kritischer Ton)
+    "warmup": "SystemAsterisk",  # Preload/Warmup fertig
 }
 
 
