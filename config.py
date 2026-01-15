@@ -20,6 +20,9 @@ WHISPER_SAMPLE_RATE = 16000
 WHISPER_CHANNELS = 1
 WHISPER_BLOCKSIZE = 1024
 
+# Warmup-Dauer für lokale Modelle (MLX/Lightning Metal-Compilation, Whisper/Faster GPU-Init)
+PRELOAD_WARMUP_DURATION = 0.5
+
 # Konstante für Audio-Konvertierung (float32 → int16)
 INT16_MAX = 32767
 
@@ -321,6 +324,7 @@ __all__ = [
     "WHISPER_CHANNELS",
     "WHISPER_BLOCKSIZE",
     "INT16_MAX",
+    "PRELOAD_WARMUP_DURATION",
     # Audio Analysis
     "VAD_THRESHOLD",
     "VISUAL_NOISE_GATE",

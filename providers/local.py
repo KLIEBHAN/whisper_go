@@ -18,7 +18,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator
 
-from config import DEFAULT_LOCAL_MODEL, USER_CONFIG_DIR, WHISPER_SAMPLE_RATE
+from config import (
+    DEFAULT_LOCAL_MODEL,
+    PRELOAD_WARMUP_DURATION,
+    USER_CONFIG_DIR,
+    WHISPER_SAMPLE_RATE,
+)
 from utils.env import get_env_bool, get_env_int
 from utils.logging import log
 from utils.timing import timed_operation
@@ -35,6 +40,15 @@ CPU_COMPUTE_TYPE = "int8"
 # Timeout for CUDA model loading (seconds) - prevents hanging on cuDNN issues
 # 120s allows for first-time model downloads (~1.5GB for medium)
 CUDA_MODEL_LOAD_TIMEOUT = 120
+
+
+def _get_warmup_language() -> str:
+    """Gibt die Warmup-Sprache zurueck (fuer Metal-Compilation bei MLX/Lightning).
+
+    Normalisiert 'auto' zu 'en', da Warmup eine konkrete Sprache braucht.
+    """
+    lang = os.getenv("PULSESCRIBE_LANGUAGE") or "en"
+    return "en" if lang.strip().lower() == "auto" else lang
 
 
 def _register_nvidia_dll_directories() -> None:
@@ -704,24 +718,20 @@ class LocalProvider:
             self._get_faster_model(model_name)
         elif self._backend == "mlx":
             with self._transcribe_lock:
+                import numpy as np
+
                 t0 = time.perf_counter()
                 mlx_whisper = _import_mlx_whisper()
                 t_import = time.perf_counter() - t0
 
-                import numpy as np
-
                 repo = self._map_mlx_model_name(model_name)
                 logger.debug(f"MLX preload: repo={repo}, import={t_import*1000:.0f}ms")
 
-                warmup_s = 0.2
-                warmup_audio = np.zeros(
-                    int(WHISPER_SAMPLE_RATE * warmup_s), dtype=np.float32
-                )
-                warmup_language = os.getenv("PULSESCRIBE_LANGUAGE") or "en"
-                if warmup_language.strip().lower() == "auto":
-                    warmup_language = "en"
+                # Warmup mit Dummy-Audio fuer vollstaendige Metal-Compilation
+                warmup_samples = int(WHISPER_SAMPLE_RATE * PRELOAD_WARMUP_DURATION)
+                warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
                 warmup_opts: dict = {
-                    "language": warmup_language,
+                    "language": _get_warmup_language(),
                     "temperature": 0.0,
                     "condition_on_previous_text": False,
                 }
@@ -747,19 +757,12 @@ class LocalProvider:
                 model = self._get_lightning_model(model_name)
                 t_load = time.perf_counter() - t0
 
-                # Warmup mit kurzem Dummy-Audio
-                warmup_s = 0.2
-                warmup_audio = np.zeros(
-                    int(WHISPER_SAMPLE_RATE * warmup_s), dtype=np.float32
-                )
-                warmup_language = os.getenv("PULSESCRIBE_LANGUAGE") or "en"
-                if warmup_language.strip().lower() == "auto":
-                    warmup_language = "en"
+                warmup_samples = int(WHISPER_SAMPLE_RATE * PRELOAD_WARMUP_DURATION)
+                warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
 
                 t1 = time.perf_counter()
-                # Warmup im selben Verzeichnis wie Model-Download
                 with _lightning_workdir():
-                    model.transcribe(warmup_audio, language=warmup_language)  # type: ignore[union-attr]
+                    model.transcribe(warmup_audio, language=_get_warmup_language())  # type: ignore[union-attr]
                 t_warmup = time.perf_counter() - t1
 
                 logger.debug(

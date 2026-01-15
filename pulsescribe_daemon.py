@@ -53,7 +53,7 @@ emergency_log("=== Booting PulseScribe Daemon ===")
 
 try:
     from config import INTERIM_FILE, VAD_THRESHOLD, WHISPER_SAMPLE_RATE
-    from config import TRANSCRIBING_TIMEOUT
+    from config import TRANSCRIBING_TIMEOUT, PRELOAD_WARMUP_DURATION
     from utils import setup_logging, show_error_alert
     from config import DEFAULT_DEEPGRAM_MODEL, DEFAULT_LOCAL_MODEL
     from utils.env import (
@@ -518,29 +518,23 @@ class PulseScribeDaemon:
                 backend = getattr(provider, "backend", None) or getattr(
                     provider, "_backend", None
                 )
-                device = getattr(provider, "device", None) or getattr(
-                    provider, "_device", None
-                )
-                # Default: nur Warmup für openai-whisper auf MPS (größter "cold start" Effekt).
+                # Daemon-Warmup nur fuer whisper/faster (MLX/Lightning haben eigenes Warmup)
                 should_warmup = (
                     warmup_flag
                     if warmup_flag is not None
-                    else (backend == "whisper" and device == "mps")
+                    else backend in ("whisper", "faster")
                 )
                 if should_warmup and hasattr(provider, "transcribe_audio"):
                     import numpy as np
 
-                    # Phase 2: Warmup
                     self._update_state(AppState.LOADING, "Warming up...")
-                    warmup_s = 0.5
-                    warmup_samples = int(WHISPER_SAMPLE_RATE * warmup_s)
+                    warmup_samples = int(WHISPER_SAMPLE_RATE * PRELOAD_WARMUP_DURATION)
                     warmup_audio = np.zeros(warmup_samples, dtype=np.float32)
-                    warmup_language = self.language or "en"
                     try:
                         provider.transcribe_audio(  # type: ignore[attr-defined]
                             warmup_audio,
                             model=self.model,
-                            language=warmup_language,
+                            language=self.language or "en",
                         )
                         logger.debug("Lokales Modell warmup abgeschlossen")
                     except Exception as e:
